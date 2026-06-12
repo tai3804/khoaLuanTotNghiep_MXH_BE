@@ -1,0 +1,52 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: graduation-thesis
+
+  # ─── Cấu hình đa ngôn ngữ (i18n) ───
+  messages:
+    basename: i18n/messages
+    encoding: UTF-8
+    cache-duration: 3600        # Cache 1 giờ
+    use-code-as-default-message: true   # Nếu không tìm thấy key, trả key thay vì lỗi
+
+  # ─── DevTools: Hot-reload khi Ctrl+S ───
+  devtools:
+    restart:
+      enabled: true
+      quiet-period: 1s            # Đợi 1s sau lần thay đổi cuối rồi mới restart
+      poll-interval: 2s           # Kiểm tra file thay đổi mỗi 2s (cần cho Docker volume mount)
+    livereload:
+      enabled: true
+
+# ─── Locale mặc định ───
+app:
+  locale:
+    default: ${APP_DEFAULT_LOCALE:en}     # en hoặc vi
+
+# ─── DataSource cho từng Module ───
+  datasource:
+    auth:
+      jdbc-url: ${AUTH_DB_URL:jdbc:mariadb://localhost:3306/auth_db?createDatabaseIfNotExist=true}
+      username: ${AUTH_DB_USERNAME:root}
+      password: ${AUTH_DB_PASSWORD:root}
+      driver-class-name: ${AUTH_DB_DRIVER_CLASS_NAME:org.mariadb.jdbc.Driver}
+
+# ─── JWT Config ───
+jwt:
+  private-key-path: ${JWT_PRIVATE_KEY_PATH:certs/private_key.pem}
+  public-key-path: ${JWT_PUBLIC_KEY_PATH:certs/public_key.pem}
+  expiration-minute: ${JWT_EXPIRATION_MINUTE:5}
+  refresh-token-expiration-day: ${JWT_REFRESH_TOKEN_EXPIRATION_DAY:7}
+
+# ─── Swagger / OpenAPI ───
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html               # URL truy cập Swagger UI
+    operations-sorter: method             # Sắp xếp theo HTTP method
+    tags-sorter: alpha                    # Sắp xếp tags theo alphabet
+    doc-expansion: list                   # Mặc định mở rộng danh sách API
+  api-docs:
+    path: /v3/api-docs                    # URL lấy OpenAPI JSON spec

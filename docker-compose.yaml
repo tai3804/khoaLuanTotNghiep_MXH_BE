@@ -1,0 +1,66 @@
+# ==========================================
+# 🐳 Docker Compose — Development Mode
+# Hot-reload: Ctrl+S → tự động restart
+# ==========================================
+
+services:
+  # ─── MariaDB Database ───
+  mariadb:
+    image: mariadb:11
+    container_name: graduation-mariadb
+    restart: unless-stopped
+    ports:
+      - "${MARIADB_PORT:-3306}:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: ${AUTH_DB_PASSWORD:-root}
+      MARIADB_DATABASE: auth_db
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - graduation-net
+
+  # ─── Spring Boot App (Development — Hot-reload) ───
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev                          # 👈 Dùng stage "dev" để có hot-reload
+    container_name: graduation-app
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    environment:
+      # Override DB URL: thay localhost → tên service "mariadb"
+      AUTH_DB_URL: jdbc:mariadb://mariadb:3306/auth_db?createDatabaseIfNotExist=true
+      AUTH_DB_USERNAME: ${AUTH_DB_USERNAME:-root}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-root}
+      AUTH_DB_DRIVER_CLASS_NAME: org.mariadb.jdbc.Driver
+      JWT_PRIVATE_KEY_PATH: ${JWT_PRIVATE_KEY_PATH:-certs/private_key.pem}
+      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH:-certs/public_key.pem}
+      JWT_EXPIRATION_MINUTE: ${JWT_EXPIRATION_MINUTE:-5}
+      JWT_REFRESH_TOKEN_EXPIRATION_DAY: ${JWT_REFRESH_TOKEN_EXPIRATION_DAY:-7}
+      APP_DEFAULT_LOCALE: ${APP_DEFAULT_LOCALE:-en}
+      SERVER_PORT: 8080
+    volumes:
+      # 🔥 Mount source code → thay đổi file trên host → DevTools tự restart
+      - ./src:/app/src
+      - ./pom.xml:/app/pom.xml
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - graduation-net
+
+volumes:
+  mariadb_data:
+    driver: local
+
+networks:
+  graduation-net:
+    driver: bridge
