@@ -1,66 +1,41 @@
-# ==========================================
-# 🐳 Docker Compose — Development Mode
-# Hot-reload: Ctrl+S → tự động restart
-# ==========================================
+version: '3.8'
 
 services:
-  # ─── MariaDB Database ───
-  mariadb:
-    image: mariadb:11
-    container_name: graduation-mariadb
-    restart: unless-stopped
+  redis:
+    image: redis:alpine
+    container_name: redis
     ports:
-      - "${MARIADB_PORT:-3306}:3306"
-    environment:
-      MARIADB_ROOT_PASSWORD: ${AUTH_DB_PASSWORD:-root}
-      MARIADB_DATABASE: auth_db
-    volumes:
-      - mariadb_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    networks:
-      - graduation-net
+      - "6379:6379"
 
-  # ─── Spring Boot App (Development — Hot-reload) ───
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: dev                          # 👈 Dùng stage "dev" để có hot-reload
-    container_name: graduation-app
-    restart: unless-stopped
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: redis-insight
     ports:
-      - "${SERVER_PORT:-8080}:8080"
-    environment:
-      # Override DB URL: thay localhost → tên service "mariadb"
-      AUTH_DB_URL: jdbc:mariadb://mariadb:3306/auth_db?createDatabaseIfNotExist=true
-      AUTH_DB_USERNAME: ${AUTH_DB_USERNAME:-root}
-      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-root}
-      AUTH_DB_DRIVER_CLASS_NAME: org.mariadb.jdbc.Driver
-      JWT_PRIVATE_KEY_PATH: ${JWT_PRIVATE_KEY_PATH:-certs/private_key.pem}
-      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH:-certs/public_key.pem}
-      JWT_EXPIRATION_MINUTE: ${JWT_EXPIRATION_MINUTE:-5}
-      JWT_REFRESH_TOKEN_EXPIRATION_DAY: ${JWT_REFRESH_TOKEN_EXPIRATION_DAY:-7}
-      APP_DEFAULT_LOCALE: ${APP_DEFAULT_LOCALE:-en}
-      SERVER_PORT: 8080
-    volumes:
-      # 🔥 Mount source code → thay đổi file trên host → DevTools tự restart
-      - ./src:/app/src
-      - ./pom.xml:/app/pom.xml
+      - "5540:5540"
     depends_on:
-      mariadb:
-        condition: service_healthy
-    networks:
-      - graduation-net
+      - redis
 
-volumes:
-  mariadb_data:
-    driver: local
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093'
+      KAFKA_LISTENERS: 'EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093'
+      KAFKA_ADVERTISED_LISTENERS: 'EXTERNAL://localhost:9092,INTERNAL://kafka:29092'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT'
 
-networks:
-  graduation-net:
-    driver: bridge
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8089:8089"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      - kafka

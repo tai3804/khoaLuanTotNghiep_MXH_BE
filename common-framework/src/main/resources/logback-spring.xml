@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Biến định dạng log (kèm traceId) -->
+    <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - [%X{traceId:-System}] - %msg%n"/>
+
+    <!-- Cấu hình ném log ra Console (Dùng cho môi trường dev hiện tại) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 
+    ========================================================================
+    Cấu hình ném log ra file theo ngày (Dùng cho khi đưa lên môi trường thật).
+    Khi nào code xong cần ghi log ra file thì hãy bỏ comment phần <appender> 
+    này và bỏ comment <appender-ref ref="FILE" /> ở dưới cùng nhé.
+    ========================================================================
+    -->
+    <!--
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/application.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/application-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+    -->
+
+    <!-- Mức log cơ bản của toàn hệ thống là INFO -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        
+        <!-- Bỏ comment dòng dưới đây để kích hoạt ghi log ra file -->
+        <!-- <appender-ref ref="FILE" /> -->
+    </root>
+
+</configuration>
