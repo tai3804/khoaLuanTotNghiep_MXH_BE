@@ -12,12 +12,22 @@ graph TD
     A --> E["Kafka<br/>(Event Streaming)"]
 ```
 
-### Hai Module Chính
+### Cấu Trúc Microservices
 
-| Module | Vai trò | Packaging |
-|--------|---------|-----------|
-| [common-framework](file:///e:/KhoaLuan/KLTN_BE/common-framework/pom.xml) | Thư viện dùng chung: Security, Exception, BaseEntity, Mapper, Cache, Filter | JAR (library) |
-| [auth-service](file:///e:/KhoaLuan/KLTN_BE/auth-service/pom.xml) | Service xác thực: Register, Login, Logout, Quản lý thiết bị | Executable JAR |
+| Service | Port | Vai trò | Packaging |
+|---------|------|---------|-----------|
+| [common-framework](file:///e:/KhoaLuan/KLTN_BE/common-framework/pom.xml) | N/A | Thư viện dùng chung (Security, Exception, Kafka, Mapper) | JAR (library) |
+| [eureka-server](file:///e:/KhoaLuan/KLTN_BE/eureka-server/pom.xml) | 8761 | Service Discovery cho toàn bộ hệ thống | Executable JAR |
+| [api-gateway](file:///e:/KhoaLuan/KLTN_BE/api-gateway/pom.xml) | 8080 | Cổng giao tiếp API, định tuyến request | Executable JAR |
+| [auth-service](file:///e:/KhoaLuan/KLTN_BE/auth-service/pom.xml) | 8081 | Xác thực, phân quyền, cấp token | Executable JAR |
+| [user-service](file:///e:/KhoaLuan/KLTN_BE/user-service/pom.xml) | 8082 | Quản lý thông tin và profile người dùng | Executable JAR |
+| [notification-service](file:///e:/KhoaLuan/KLTN_BE/notification-service/pom.xml) | 8083 | Gửi email, push notification qua Kafka | Executable JAR |
+| [post-service](file:///e:/KhoaLuan/KLTN_BE/post-service/pom.xml) | 8084 | Quản lý bài viết, comments, likes | Executable JAR |
+| [chat-service](file:///e:/KhoaLuan/KLTN_BE/chat-service/pom.xml) | 8085 | Nhắn tin thời gian thực | Executable JAR |
+| [feed-service](file:///e:/KhoaLuan/KLTN_BE/feed-service/pom.xml) | 8086 | Tổng hợp bảng tin (News Feed) | Executable JAR |
+| [media-service](file:///e:/KhoaLuan/KLTN_BE/media-service/pom.xml) | 8087 | Xử lý ảnh, video, lưu trữ tĩnh | Executable JAR |
+| [call-service](file:///e:/KhoaLuan/KLTN_BE/call-service/pom.xml) | 8088 | Gọi điện (Audio/Video Call) bằng WebRTC | Executable JAR |
+| [moderation-service](file:///e:/KhoaLuan/KLTN_BE/moderation-service/pom.xml) | 8089 | AI tự động kiểm duyệt nội dung | Executable JAR |
 
 ---
 
