@@ -4,7 +4,8 @@ server:
 spring:
   application:
     name: media-service
-
+  config:
+    import: classpath:application-common.yaml
 eureka:
   client:
     serviceUrl:

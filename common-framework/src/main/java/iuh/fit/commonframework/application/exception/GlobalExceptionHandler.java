@@ -8,6 +8,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -37,6 +38,12 @@ public class GlobalExceptionHandler {
                 ErrorCode errorCode = ErrorCode.UNAUTHORIZED;
                 return ResponseEntity.status(errorCode.getStatusCode()).body(
                                 ApiResponse.error(errorCode.getCode(), errorCode.getMessage()));
+        }
+
+        @ExceptionHandler(value = NoResourceFoundException.class)
+        public ResponseEntity<ApiResponse<Void>> handlingNoResourceFoundException(NoResourceFoundException exception) {
+                return ResponseEntity.status(404).body(
+                                ApiResponse.error(404, "Resource not found: " + exception.getResourcePath()));
         }
 
 

@@ -18,6 +18,6 @@ public interface RegisterUserMapper extends BaseMapper<User, RegisterUserResult>
     @Mapping(target = "roles", expression = "java(Set.of(\"ROLE_USER\"))")
     @Mapping(target = "permissions", expression = "java(Set.of())")
     @Mapping(target = "mfaEnabled", constant = "false")
-    @Mapping(target = "password", ignore = true) // Will be set manually after hashing
+    @Mapping(target = "password", ignore = true)
     User toEntityFromCommand(RegisterUserCommand command);
 }

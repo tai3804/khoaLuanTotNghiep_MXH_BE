@@ -20,7 +20,7 @@ public class ApiResponse<T> {
     int code;
     String message;
     T data;
-    
+
     @Builder.Default
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     LocalDateTime timestamp = LocalDateTime.now();

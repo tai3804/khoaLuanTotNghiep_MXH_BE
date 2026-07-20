@@ -1,0 +1,15 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: ai-service
+  config:
+    import: classpath:application-common.yaml
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true

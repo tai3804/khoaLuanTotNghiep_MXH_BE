@@ -1,19 +1,19 @@
 version: '3.8'
 
 services:
-  redis:
-    image: redis:alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
+  # redis:
+  #   image: redis:alpine
+  #   container_name: redis
+  #   ports:
+  #     - "6379:6379"
 
-  redis-insight:
-    image: redis/redisinsight:latest
-    container_name: redis-insight
-    ports:
-      - "5540:5540"
-    depends_on:
-      - redis
+  # redis-insight:
+  #   image: redis/redisinsight:latest
+  #   container_name: redis-insight
+  #   ports:
+  #     - "5540:5540"
+  #   depends_on:
+  #     - redis
 
   kafka:
     image: apache/kafka:3.7.0
@@ -26,14 +26,18 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093'
       KAFKA_LISTENERS: 'EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093'
       KAFKA_ADVERTISED_LISTENERS: 'EXTERNAL://localhost:9092,INTERNAL://kafka:29092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     ports:
-      - "8089:8089"
+      - "8089:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092

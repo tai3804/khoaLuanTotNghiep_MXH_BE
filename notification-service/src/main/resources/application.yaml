@@ -4,11 +4,12 @@ server:
 spring:
   application:
     name: notification-service
-
+  config:
+    import: classpath:application-common.yaml
 brevo:
   api:
     url: ${BREVO_API_URL:https://api.brevo.com/v3/smtp/email}
-    key: ${BREVO_API_KEY}
+    key: ${BREVO_API_KEY:temp}
   sender:
     email: ${BREVO_SENDER_EMAIL:tranthanhtai1928@gmail.com}
     name: ${BREVO_SENDER_NAME:System Notification}

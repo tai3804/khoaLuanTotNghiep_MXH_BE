@@ -4,10 +4,22 @@ server:
 spring:
   application:
     name: auth-service
+  config:
+    import: classpath:application-common.yaml
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/auth_db}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:root}
   jpa:
     hibernate:
       ddl-auto: update
@@ -26,8 +38,7 @@ eureka:
 app:
   security:
     jwt:
-      public-key: classpath:certs/public.pem
-      private-key: classpath:certs/private.pem
+      private-key: "${JWT_PRIVATE_KEY:-----BEGIN PRIVATE KEY----- MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDoOiK5kGG1PdZY2WszKIETYO8krxOIbtdOBAGZaRD8rEGzptA7Y5STi8UolDctulyqp7DzNdMmioxRy4ZzFKg8sIOKURnenw2B4n2woTqi1YJpQiQvoVqm00MTci3zwshNnWbXMle1H5fxcWd2N2s7tJa2Nn0ZspgTjyWFoyrOFHW+KledpMVXFfbSheKswrbO1D0TDCZLYC+kj38JojHtkQb+CL5gD/4gFbFmRFkJ/i7bBR+EOYnPfwpDlMYTs3K8GcIi+sDAIVkZj1F0Xwux4qCrRoVvGMh6ZkGWWE0nwh1oApqcViQq4791j/vRSneFkRkZivbBOVok5JA48CCxAgMBAAECggEAH/vrzu90CZyR8kxFn7bnKiZaYYzMbajIdhoGp1ypZoeKCAaEXP2e18BzH97kB6QIgceVTzX9VixUXaqgoqZ4cl1kTI9VdwwkddxeL87Q7t7ltn4R0k6Ql/P2Y84Axrcv08LHSIHKQyuuB2a1V3qUBhXeAQwZqEmo+N6pDhIWQeobz5jPTS+K9ng7W7V/i39WyUacMz4qa59XzN0GOZlwGSdxVs3fsTVtcoD43Ty+kwBco1nKi0aixWxSaZeXXRgQvtgH2Ud9wncBwLYNolzJ46xbI2NXNz8+WRGpFDlsz9VzMkZLQxje9iqR/94GQsoQF8r162jBdT9KgGQWRES5XQKBgQD2UErn3tWECu3L52ikfWDJYEHoi+lIGugkMZeN2A+qMhDJ7VS7Atbvujm166fCngHUXiR/GxCESZPs1Nvca2tUkKtcVgL7/VQ7bOgQE9kfZA26C63Rbs4Novr8gNrRLIHq0DPJXlKY91zoZQE3Qv9HuDnYoZRiV9U5VGvo4zuDnQKBgQDxXAekYoSTDpBb/GItDDIt9zxJ2pZYWzsebKCoDWZEITDTbp3ypH/kbnvKSzWE83xWwJCQf3nPAMzO29nc+0NWG89ujG2eF0pTpc86gHB5dh6eS0q4OXwG5ERC3i9IbTqm7SmqfwIPaIxNV4g/gIlCe36VYVUpqkhj9J92Up8XJQKBgQCDIGGQKO/QGKVZfLsXfmutKOJNc1ZgfXqB8ii1aYWFXJvVc9Q8rplQC/q3H1oy4D0nGmshg336ftUSKotVP5Zm8ZFYWa3DCqzx6dts27Ql4vTvy1HggbWOSuqEy/AxlRkgsXAwTld4eY9rZIIOMkuGmcupyPMem5W2rHu6AmZnfQKBgQCw5GI1eH7xyJrE0BSkL2wXhDwLZMkLuNF7WuHkSO3KwQin7UqVqzqQkOjpOnXfGxTl//vz63m63Ts94KOr8ftIANnmi8VLOIahB8T5e2jznD6UhVod6wObiXD+ERlWW7fA39DJxIwd/uHVTXHuGKaAs0Hy+YMRJlwn5gF5FtTCgQKBgAFWqGbRfxi8HrUv6UH+ZE88U4qBESv7m9N7l4mGhItnrLZTMlGQyBpf9xI6SFzP3tl7a93wvz/dGz93Q0v7fwFrxpkzKNmFxWvlVX9MwGumCRi6XYzVvew2l2IJ/NBoiXjNcWSajvdZYcsftBfP7sY7XecheFpPvzGqKH6HuBZi -----END PRIVATE KEY-----}"
       issuer-uri: https://auth.iuh.fit
       expiration:
         access-token: 3600000

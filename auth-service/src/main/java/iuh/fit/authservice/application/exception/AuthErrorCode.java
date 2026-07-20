@@ -14,7 +14,9 @@ public enum AuthErrorCode implements BaseError {
     USER_NOT_FOUND(404, "User not found", 404),
     EMAIL_ALREADY_EXISTS(400, "Email already exists", 400),
     EMAIL_NOT_FOUND(404, "Email not found", 404),
-    INVALID_PASSWORD(400, "Password is incorrect", 400);
+    INVALID_PASSWORD(400, "Password is incorrect", 400),
+    DEVICE_NOT_FOUND(404, "Device not found", 404),
+    ;
 
     int code;
     String message;

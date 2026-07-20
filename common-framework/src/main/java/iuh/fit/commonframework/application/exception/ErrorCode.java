@@ -12,7 +12,6 @@ public enum ErrorCode implements BaseError {
 
     UNCATEGORIZED_EXCEPTION(500, "Uncategorized error", 500),
     INVALID_KEY(400, "Invalid key", 400),
-    USER_EXISTED(400, "User existed", 400),
     UNAUTHENTICATED(401, "Unauthenticated", 401),
     UNAUTHORIZED(403, "You do not have permission", 403),
     NOT_FOUND(404, "Resource not found", 404),

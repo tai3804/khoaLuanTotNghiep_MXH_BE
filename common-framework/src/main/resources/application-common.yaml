@@ -1,32 +1,17 @@
 spring:
-  application:
-    name: common-framework
-app:
-  security:
-    jwt:
-      issuer-uri: ${JWT_ISSUER_URI:http://localhost:8080/auth}
-      public-key: |
-        ${JWT_PUBLIC_KEY:-----BEGIN PUBLIC KEY-----
-        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyWt3dExzZKPa2GpoMIwU
-        KA5Prybb6+sjd2mC0jwXFbTtzpbCAWwUFavGTcV8eqzUVwRoo63lAsP3p2tRhuLN
-        JxrsOjaz27zQmljQDYcgjWV2eata+6Rwqj8mrBz7jy1zZmha+ealojI/oRA/1GSt
-        /U/5fWWn2BBt7swL+FEh/U7CT5T6sH3aaeX2gtQt84j65pWHrHcuVjAtY0iXuXUJ
-        GSk9wfCDmoslzEPGKwg3U3sFTulv5rHPZV91/ASH+D62LNcJypBlr8C2zmP5c0Bk
-        snO32rqy9/SyOE3YcoJHhWZrjH5hN/54lRxIQZWn5R+roibEd30YL3sIAXf2T9oO
-        ewIDAQAB
-        -----END PUBLIC KEY-----}
-
-  # ========================================================
-  # Caching Configuration
-  # ========================================================
   cache:
     type: ${CACHE_TYPE:redis} 
     redis:
       # Thời gian sống của cache (VD: 60m, 2h)
       time-to-live: ${CACHE_TTL_MINUTES:60m}
-
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       # password: ${REDIS_PASSWORD:}
+
+app:
+  security:
+    jwt:
+      issuer-uri: ${JWT_ISSUER_URI:http://localhost:8080/auth}
+      public-key: "${JWT_PUBLIC_KEY:-----BEGIN PUBLIC KEY----- MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6DoiuZBhtT3WWNlrMyiBE2DvJK8TiG7XTgQBmWkQ/KxBs6bQO2OUk4vFKJQ3Lbpcqqew8zXTJoqMUcuGcxSoPLCDilEZ3p8NgeJ9sKE6otWCaUIkL6FaptNDE3It88LITZ1m1zJXtR+X8XFndjdrO7SWtjZ9GbKYE48lhaMqzhR1vipXnaTFVxX20oXirMK2ztQ9EwwmS2AvpI9/CaIx7ZEG/gi+YA/+IBWxZkRZCf4u2wUfhDmJz38KQ5TGE7NyvBnCIvrAwCFZGY9RdF8LseKgq0aFbxjIemZBllhNJ8IdaAKanFYkKuO/dY/70Up3hZEZGYr2wTlaJOSQOPAgsQIDAQAB -----END PUBLIC KEY-----}"
