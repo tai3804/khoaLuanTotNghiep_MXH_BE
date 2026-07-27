@@ -16,7 +16,11 @@ public enum AuthErrorCode implements BaseError {
     EMAIL_NOT_FOUND(404, "Email not found", 404),
     INVALID_PASSWORD(400, "Password is incorrect", 400),
     DEVICE_NOT_FOUND(404, "Device not found", 404),
-    ;
+    INVALID_TOKEN(401, "Invalid or expired token", 401),
+    REFRESH_TOKEN_EXPIRED(401, "Refresh token has expired", 401),
+    UNAUTHORIZED(401, "Unauthorized access", 401),
+    INVALID_OTP(400, "Invalid or expired OTP code", 400),
+    INVALID_MFA_TYPE(400, "Invalid MFA type. Must be TOTP or EMAIL", 400);
 
     int code;
     String message;

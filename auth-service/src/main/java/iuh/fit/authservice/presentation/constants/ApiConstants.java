@@ -11,5 +11,5 @@ public final class ApiConstants {
 
     // Service specific paths
     public static final String AUTH_API = BASE_API_V1 + "/auth";
-    public static final String PASSWORD_API = BASE_API_V1 + "/password";
+    public static final String PASSWORD_API = AUTH_API + "/password";
 }

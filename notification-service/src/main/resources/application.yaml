@@ -6,6 +6,17 @@ spring:
     name: notification-service
   config:
     import: classpath:application-common.yaml
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+
 brevo:
   api:
     url: ${BREVO_API_URL:https://api.brevo.com/v3/smtp/email}

@@ -1,6 +1,7 @@
 package iuh.fit.authservice.presentation.dto.response;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
+import iuh.fit.authservice.application.features.auth.commands.login_user.UserResult;
+import iuh.fit.authservice.domain.enums.MfaType;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Data;
@@ -9,9 +10,11 @@ import lombok.experimental.FieldDefaults;
 @Data
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public class LoginUserResponse {
     String accessToken;
     String refreshToken;
-    UserResponse user;
+    UserResult user;
+    Boolean mfaRequired;
+    String mfaToken;
+    MfaType mfaType;
 }

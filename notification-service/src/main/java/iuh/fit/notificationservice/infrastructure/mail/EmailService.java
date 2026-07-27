@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
@@ -37,31 +38,35 @@ public class EmailService {
 
     public void sendPasswordResetEmail(String toEmail, String resetToken) {
         log.info("Sending password reset email to {} via Brevo", toEmail);
+
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("api-key", apiKey);
+            headers.set("api-key", apiKey != null ? apiKey.trim() : "");
             headers.setAccept(List.of(MediaType.APPLICATION_JSON));
 
             Map<String, Object> body = Map.of(
                     "sender", Map.of("name", senderName, "email", senderEmail),
                     "to", List.of(Map.of("email", toEmail)),
                     "subject", "Password Reset Request",
-                    "htmlContent", "<p>To reset your password, please use the following token: <strong>" + resetToken + "</strong></p><p>If you did not request this, please ignore this email.</p>"
-            );
+                    "htmlContent",
+                    "<p>To reset your password, please use the following OTP token: <strong>" + resetToken
+                            + "</strong></p><p>If you did not request this, please ignore this email.</p>");
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-            
             ResponseEntity<String> response = restTemplate.postForEntity(apiUrl, request, String.class);
 
             if (response.getStatusCode().is2xxSuccessful()) {
                 log.info("Password reset email successfully sent to {}", toEmail);
             } else {
-                log.error("Failed to send email to {}. Brevo response: {}", toEmail, response.getBody());
-                throw new RuntimeException("Brevo API returned error: " + response.getStatusCode());
+                log.error("Failed to send email to {}. Response: {}", toEmail, response.getBody());
             }
+        } catch (HttpStatusCodeException e) {
+            log.error("Failed to send email to {} via Brevo [HTTP {}]: {}", toEmail, e.getStatusCode(),
+                    e.getResponseBodyAsString());
+            throw new RuntimeException("Brevo API error: " + e.getResponseBodyAsString(), e);
         } catch (Exception e) {
-            log.error("Failed to send email to {} via Brevo", toEmail, e);
+            log.error("Unexpected error sending email to {} via Brevo", toEmail, e);
             throw new RuntimeException("Failed to send email", e);
         }
     }

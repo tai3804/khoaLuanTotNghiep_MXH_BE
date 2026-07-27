@@ -11,7 +11,8 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public enum UserServiceErrorCode implements BaseError {
     RESOURCE_NOT_FOUND(404, "Resource not found", 404),
-    PROFILE_ALREADY_EXISTS(400, "User profile already exists", 400);
+    PROFILE_ALREADY_EXISTS(400, "User profile already exists", 400),
+    USER_PROFILE_NOT_FOUND(404, "User profile not found", 404);
 
     int code;
     String message;

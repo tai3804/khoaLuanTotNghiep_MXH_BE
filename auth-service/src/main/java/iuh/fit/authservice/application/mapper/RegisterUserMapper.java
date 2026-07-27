@@ -4,6 +4,7 @@ import iuh.fit.authservice.application.features.auth.commands.register_user.Regi
 import iuh.fit.authservice.application.features.auth.commands.register_user.RegisterUserResult;
 import iuh.fit.authservice.domain.entities.User;
 import iuh.fit.authservice.domain.enums.UserStatus;
+import iuh.fit.authservice.presentation.dto.event.UserRegisteredEvent;
 import iuh.fit.commonframework.application.mapper.BaseMapper;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -20,4 +21,13 @@ public interface RegisterUserMapper extends BaseMapper<User, RegisterUserResult>
     @Mapping(target = "mfaEnabled", constant = "false")
     @Mapping(target = "password", ignore = true)
     User toEntityFromCommand(RegisterUserCommand command);
+
+    @Mapping(target = "userId", source = "user.id")
+    @Mapping(target = "email", source = "user.email")
+    @Mapping(target = "firstName", source = "user.firstName")
+    @Mapping(target = "lastName", source = "user.lastName")
+    @Mapping(target = "middleName", source = "user.middleName")
+    @Mapping(target = "dateOfBirth", source = "command.dateOfBirth")
+    @Mapping(target = "gender", source = "command.gender")
+    UserRegisteredEvent toEvent(User user, RegisterUserCommand command);
 }
