@@ -87,13 +87,15 @@ public class RedisCacheService {
 
     // Token Versioning & Revocation
     public void setTokenVersion(UUID userId, int version, Duration timeout) {
-        if (userId == null) return;
+        if (userId == null)
+            return;
         String key = TOKEN_VERSION_PREFIX + userId;
         set(key, version, timeout);
     }
 
     public Integer getTokenVersion(UUID userId) {
-        if (userId == null) return null;
+        if (userId == null)
+            return null;
         String key = TOKEN_VERSION_PREFIX + userId;
         Object val = get(key);
         if (val instanceof Integer) {
