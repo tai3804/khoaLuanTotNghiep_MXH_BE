@@ -60,6 +60,13 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- UUID Creator (UUID v7 Generator) -->
+        <dependency>
+            <groupId>com.github.f4b6a3</groupId>
+            <artifactId>uuid-creator</artifactId>
+            <version>6.0.0</version>
+        </dependency>
+
         <!-- Kafka -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -151,8 +158,3 @@
     </build>
 
 </project>
-
-
-
-
-

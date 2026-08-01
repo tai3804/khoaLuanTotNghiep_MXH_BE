@@ -22,8 +22,16 @@ public class RegisterUserRequest {
     @Size(min = 6, message = "{user.password.size}")
     String password;
 
-    @NotBlank(message = "{user.fullName.required}")
-    String fullName;
+    @NotBlank(message = "{user.firstName.required}")
+    @Size(max = 50, message = "{user.firstName.size}")
+    String firstName;
+
+    @NotBlank(message = "{user.lastName.required}")
+    @Size(max = 50, message = "{user.lastName.size}")
+    String lastName;
+
+    @Size(max = 50, message = "{user.middleName.size}")
+    String middleName;
 
     LocalDate dateOfBirth;
 

@@ -35,13 +35,7 @@ public class RegisterUserCommandHandler {
 
         User savedUser = userRepository.save(newUser);
 
-        UserRegisteredEvent event = UserRegisteredEvent.builder()
-                .userId(savedUser.getId())
-                .email(savedUser.getEmail())
-                .fullName(savedUser.getFullName())
-                .dateOfBirth(command.getDateOfBirth())
-                .gender(command.getGender())
-                .build();
+        UserRegisteredEvent event = registerUserMapper.toEvent(savedUser, command);
         kafkaTemplate.send("user.registered", event);
 
         return registerUserMapper.toDto(savedUser);

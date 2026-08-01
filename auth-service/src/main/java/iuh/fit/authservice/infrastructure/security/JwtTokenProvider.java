@@ -1,12 +1,12 @@
 package iuh.fit.authservice.infrastructure.security;
 
 import iuh.fit.authservice.domain.entities.User;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Component;
-import lombok.RequiredArgsConstructor;
 
 import java.time.Instant;
 
@@ -28,7 +28,8 @@ public class JwtTokenProvider implements TokenProvider {
     @Override
     public String generateAccessToken(User user) {
         Instant now = Instant.now();
-        
+        int version = user.getTokenVersion() != null ? user.getTokenVersion() : 1;
+
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuerUri)
                 .issuedAt(now)
@@ -37,6 +38,7 @@ public class JwtTokenProvider implements TokenProvider {
                 .claim("email", user.getEmail())
                 .claim("roles", user.getRoles())
                 .claim("permissions", user.getPermissions())
+                .claim("tokenVersion", version)
                 .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
@@ -45,13 +47,15 @@ public class JwtTokenProvider implements TokenProvider {
     @Override
     public String generateRefreshToken(User user) {
         Instant now = Instant.now();
-        
+        int version = user.getTokenVersion() != null ? user.getTokenVersion() : 1;
+
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuerUri)
                 .issuedAt(now)
                 .expiresAt(now.plusMillis(refreshTokenExpiration))
                 .subject(user.getId().toString())
                 .claim("type", "refresh")
+                .claim("tokenVersion", version)
                 .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();

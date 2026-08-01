@@ -15,7 +15,9 @@ import java.util.UUID;
 public class UserRegisteredEvent {
     private UUID userId;
     private String email;
-    private String fullName;
+    private String firstName;
+    private String lastName;
+    private String middleName;
     private LocalDate dateOfBirth;
     private String gender;
 }

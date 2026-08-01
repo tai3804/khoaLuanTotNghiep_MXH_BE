@@ -43,3 +43,9 @@ app:
       expiration:
         access-token: 3600000
         refresh-token: 86400000
+  mfa:
+    totp:
+      issuer: ${MFA_TOTP_ISSUER:SocialNetworkApp}
+      secret-size: ${MFA_TOTP_SECRET_SIZE:20}
+      time-step-seconds: ${MFA_TOTP_TIME_STEP_SECONDS:30}
+      code-digits: ${MFA_TOTP_CODE_DIGITS:6}

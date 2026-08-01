@@ -12,7 +12,9 @@ import java.time.LocalDate;
 public class RegisterUserCommand {
     String email;
     String password;
-    String fullName;
+    String firstName;
+    String lastName;
+    String middleName;
     LocalDate dateOfBirth;
     String gender;
 }
