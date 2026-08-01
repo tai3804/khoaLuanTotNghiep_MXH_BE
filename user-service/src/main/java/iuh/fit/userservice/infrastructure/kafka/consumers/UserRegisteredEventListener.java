@@ -1,10 +1,11 @@
 package iuh.fit.userservice.infrastructure.kafka.consumers;
 
 import iuh.fit.commonframework.application.exception.BusinessException;
-import iuh.fit.userservice.presentation.dto.event.UserRegisteredEvent;
 import iuh.fit.userservice.application.exception.UserServiceErrorCode;
+import iuh.fit.userservice.application.mapper.UserProfileMapper;
+import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.repository.UserProfileRepository;
-import iuh.fit.userservice.infrastructure.persistence.models.UserProfileDbModel;
+import iuh.fit.userservice.presentation.dto.event.UserRegisteredEvent;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 public class UserRegisteredEventListener {
 
     UserProfileRepository userProfileRepository;
+    UserProfileMapper userProfileMapper;
 
     @KafkaListener(topics = "user.registered", groupId = "user-service-group")
     public void handleUserRegisteredEvent(UserRegisteredEvent event) {
@@ -29,20 +31,7 @@ public class UserRegisteredEventListener {
             throw new BusinessException(UserServiceErrorCode.PROFILE_ALREADY_EXISTS);
         }
 
-        iuh.fit.userservice.domain.enums.Gender parsedGender = null;
-        if (event.getGender() != null && !event.getGender().isEmpty()) {
-            try {
-                parsedGender = iuh.fit.userservice.domain.enums.Gender.valueOf(event.getGender().toUpperCase());
-            } catch (IllegalArgumentException e) {
-                log.warn("Invalid gender value received: {}, defaulting to null", event.getGender());
-            }
-        }
-
-        UserProfileDbModel newProfile = UserProfileDbModel.builder()
-                .userId(event.getUserId())
-                .dateOfBirth(event.getDateOfBirth())
-                .gender(parsedGender)
-                .build();
+        UserProfile newProfile = userProfileMapper.toEntity(event);
 
         userProfileRepository.save(newProfile);
         log.info("Successfully created UserProfile for userId: {}", event.getUserId());

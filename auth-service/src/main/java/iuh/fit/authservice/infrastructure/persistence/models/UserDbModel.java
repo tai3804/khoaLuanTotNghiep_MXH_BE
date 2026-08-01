@@ -1,5 +1,6 @@
 package iuh.fit.authservice.infrastructure.persistence.models;
 
+import iuh.fit.authservice.domain.enums.MfaType;
 import iuh.fit.authservice.domain.enums.UserStatus;
 import iuh.fit.commonframework.domain.entity.BaseEntity;
 import jakarta.persistence.*;
@@ -33,9 +34,19 @@ public class UserDbModel extends BaseEntity {
     @Column(nullable = false)
     String password;
 
-    @Size(max = 100, message = "{user.fullName.size}")
-    @Column(name = "full_name", length = 100)
-    String fullName;
+    @NotBlank(message = "{user.firstName.required}")
+    @Size(max = 50, message = "{user.firstName.size}")
+    @Column(name = "first_name", nullable = false, length = 50)
+    String firstName;
+
+    @NotBlank(message = "{user.lastName.required}")
+    @Size(max = 50, message = "{user.lastName.size}")
+    @Column(name = "last_name", nullable = false, length = 50)
+    String lastName;
+
+    @Size(max = 50, message = "{user.middleName.size}")
+    @Column(name = "middle_name", length = 50)
+    String middleName;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -45,6 +56,18 @@ public class UserDbModel extends BaseEntity {
     @Column(name = "mfa_enabled", nullable = false)
     @Builder.Default
     boolean mfaEnabled = false;
+
+    @Column(name = "mfa_secret")
+    String mfaSecret;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mfa_type", length = 20)
+    @Builder.Default
+    MfaType mfaType = MfaType.NONE;
+
+    @Column(name = "token_version", nullable = false)
+    @Builder.Default
+    Integer tokenVersion = 1;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"))

@@ -13,7 +13,9 @@ import java.util.Set;
 public class UserResponse {
     String id;
     String email;
-    String fullName;
+    String firstName;
+    String lastName;
+    String middleName;
     Set<String> roles;
     Set<String> permissions;
 }

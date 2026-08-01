@@ -1,5 +1,6 @@
 package iuh.fit.authservice.presentation.controller.auth.v1;
 
+import iuh.fit.authservice.application.exception.AuthErrorCode;
 import iuh.fit.authservice.application.features.auth.commands.change_password.ChangePasswordCommand;
 import iuh.fit.authservice.application.features.auth.commands.change_password.ChangePasswordCommandHandler;
 import iuh.fit.authservice.application.features.auth.commands.forgot_password.ForgotPasswordCommand;
@@ -12,6 +13,7 @@ import iuh.fit.authservice.presentation.dto.request.ForgotPasswordRequest;
 import iuh.fit.authservice.presentation.dto.request.ResetPasswordRequest;
 import iuh.fit.authservice.presentation.mapper.PasswordPresentationMapper;
 import iuh.fit.commonframework.application.dto.ApiResponse;
+import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -44,32 +46,33 @@ public class PasswordController {
     @PostMapping("/change")
     @Operation(summary = "Change password", description = "Allows an authenticated user to change their password", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<ApiResponse<Void>> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
-        ChangePasswordCommand command = passwordPresentationMapper.toCommand(request);
-        
         String userIdStr = jwtUtil.getCurrentUserId();
-        if (userIdStr != null) {
-            command.setUserId(UUID.fromString(userIdStr));
-            changePasswordCommandHandler.handle(command);
+        if (userIdStr == null) {
+            throw new BusinessException(AuthErrorCode.USER_NOT_FOUND);
         }
+
+        ChangePasswordCommand command = passwordPresentationMapper.toCommand(request);
+        command.setUserId(UUID.fromString(userIdStr));
+        changePasswordCommandHandler.handle(command);
 
         return ResponseEntity.ok(ApiResponse.success(null, "Password changed successfully"));
     }
 
     @PostMapping("/forgot")
-    @Operation(summary = "Forgot password", description = "Initiates the password reset process by generating a reset token")
+    @Operation(summary = "Forgot password", description = "Initiates the password reset process by generating an OTP token")
     public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         ForgotPasswordCommand command = passwordPresentationMapper.toCommand(request);
         forgotPasswordCommandHandler.handle(command);
-        
-        return ResponseEntity.ok(ApiResponse.success(null, "Password reset instructions have been sent (check logs)"));
+
+        return ResponseEntity.ok(ApiResponse.success(null, "Password reset instructions and OTP have been sent to your email"));
     }
 
     @PostMapping("/reset")
-    @Operation(summary = "Reset password", description = "Resets the user's password using a valid reset token")
+    @Operation(summary = "Reset password", description = "Resets the user's password using a valid reset OTP token")
     public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         ResetPasswordCommand command = passwordPresentationMapper.toCommand(request);
         resetPasswordCommandHandler.handle(command);
-        
+
         return ResponseEntity.ok(ApiResponse.success(null, "Password has been successfully reset"));
     }
 }

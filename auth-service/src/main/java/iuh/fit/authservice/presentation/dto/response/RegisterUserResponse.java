@@ -14,7 +14,9 @@ import java.util.UUID;
 public class RegisterUserResponse {
     UUID id;
     String email;
-    String fullName;
+    String firstName;
+    String lastName;
+    String middleName;
     Set<String> roles;
     Set<String> permissions;
 }
