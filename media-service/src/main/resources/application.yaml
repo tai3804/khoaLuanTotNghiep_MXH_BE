@@ -6,6 +6,20 @@ spring:
     name: media-service
   config:
     import: classpath:application-common.yaml
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 105MB
+      enabled: true
+
+aws:
+  s3:
+    region: ${AWS_REGION:ap-southeast-1}
+    access-key-id: ${AWS_ACCESS_KEY_ID:}
+    secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+    bucket-name: ${AWS_S3_BUCKET_NAME:social-network-media-bucket}
+    custom-domain: ${AWS_S3_CUSTOM_DOMAIN:}
+
 eureka:
   client:
     serviceUrl:
