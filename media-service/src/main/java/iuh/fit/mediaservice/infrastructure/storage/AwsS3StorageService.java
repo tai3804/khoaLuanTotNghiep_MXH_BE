@@ -131,30 +131,19 @@ public class AwsS3StorageService {
     }
 
     private String buildFileKey(String folder, String originalFilename) {
-        String uuidV7 = UuidUtil.generateUuidV7().toString();
-        String cleanFilename = "file";
-        if (originalFilename != null && !originalFilename.isBlank()) {
-            cleanFilename = originalFilename.replaceAll("[^a-zA-Z0-9._-]", "_");
-        }
-        String fileNameWithUuid = uuidV7 + "_" + cleanFilename;
-
-        if (folder != null && !folder.isBlank()) {
-            String cleanFolder = folder.startsWith("/") ? folder.substring(1) : folder;
-            if (!cleanFolder.endsWith("/")) {
-                cleanFolder += "/";
-            }
-            return cleanFolder + fileNameWithUuid;
-        }
-        return fileNameWithUuid;
+        String cleanFolder = (folder != null && !folder.isBlank()) ? folder.trim() : "uploads";
+        String uuid = UuidUtil.generateUuidV7().toString();
+        String extension = getFileExtension(originalFilename);
+        return String.format("%s/%s%s", cleanFolder, uuid, extension);
     }
 
     private String buildFileUrl(String fileKey) {
-        if (awsS3Properties.getCustomDomain() != null && !awsS3Properties.getCustomDomain().isBlank()) {
-            String domain = awsS3Properties.getCustomDomain().endsWith("/")
-                    ? awsS3Properties.getCustomDomain().substring(0, awsS3Properties.getCustomDomain().length() - 1)
-                    : awsS3Properties.getCustomDomain();
-            return domain + "/" + fileKey;
+        String customDomain = awsS3Properties.getCustomDomain();
+        if (customDomain != null && !customDomain.isBlank()) {
+            String baseUrl = customDomain.endsWith("/") ? customDomain.substring(0, customDomain.length() - 1) : customDomain;
+            return String.format("%s/%s", baseUrl, fileKey);
         }
+
         return String.format("https://%s.s3.%s.amazonaws.com/%s",
                 awsS3Properties.getBucketName(),
                 awsS3Properties.getRegion(),

@@ -17,3 +17,14 @@ The following rules apply to all tasks within this workspace.
 
 - **Auto-configuration over Manual**: You MUST use `spring-boot-starter-kafka` and configure Kafka entirely via `application.yaml` auto-configuration.
 - **No Custom Config Classes**: Do NOT create custom `@Configuration` classes for Kafka producers/consumers/topics unless absolutely necessary for complex scenarios that `application.yaml` cannot handle.
+
+## Unified Domain Entity & Infrastructure Repository Rule
+
+- **Direct Database Mapping**: Domain Entities in `domain/entities` MUST extend `BaseEntity` and be annotated directly with JPA annotations (`@Entity`, `@Table`, etc.).
+- **Infrastructure Repositories**: Repository interfaces (`PostRepository`, `CommentRepository`, etc.) reside in `infrastructure/persistence/repository/`, extending `BaseJpaRepository<Entity, UUID>` from `common-framework` and annotated with `@Repository`.
+- **No Extra Layers**: Do NOT create separate `DbModel` classes, `ModelMapper` instances, or `RepositoryImpl` wrapper classes. Handlers import repository interfaces directly from `infrastructure/persistence/repository` for maximum simplicity and efficiency.
+
+## MapStruct Feature Mapping Rule
+
+- **Use MapStruct for Mappings**: All object transformations between Commands $\leftrightarrow$ Entities, Entities $\rightarrow$ Results, and Results $\rightarrow$ Presentation Responses MUST use MapStruct mappers annotated with `@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)`.
+- **No Manual Builders in Handlers**: Handlers MUST NOT manually assign fields line-by-line using Lombok `.builder()` when mapping Entity to Result or Command to Entity. Inject MapStruct mappers into Handlers instead.

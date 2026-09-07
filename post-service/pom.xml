@@ -81,6 +81,12 @@
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
 
+        <!-- OpenFeign Inter-service Communication -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+
         <!-- Springdoc OpenAPI UI  -->
         <dependency>
             <groupId>org.springdoc</groupId>

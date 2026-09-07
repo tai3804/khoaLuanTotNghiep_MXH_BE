@@ -10,8 +10,9 @@ import lombok.experimental.FieldDefaults;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public enum FeedServiceErrorCode implements BaseError {
-    // TODO: Add service-specific error codes
-    RESOURCE_NOT_FOUND(404, "Resource not found", 404);
+
+    FEED_ITEM_NOT_FOUND(404, "Feed item not found", 404),
+    UNAUTHORIZED(401, "Unauthenticated", 401);
 
     int code;
     String message;

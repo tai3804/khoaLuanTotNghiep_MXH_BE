@@ -10,5 +10,5 @@ public final class ApiConstants {
     public static final String BASE_API_V1 = API_PREFIX + VERSION_V1;
 
     // Service specific paths
-    public static final String CALL_API = BASE_API_V1 + "/call";
+    public static final String CALL_API = BASE_API_V1 + "/calls";
 }

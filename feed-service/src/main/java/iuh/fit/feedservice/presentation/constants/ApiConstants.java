@@ -1,14 +1,9 @@
 package iuh.fit.feedservice.presentation.constants;
 
-import lombok.experimental.UtilityClass;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 
-@UtilityClass
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ApiConstants {
-
-    public static final String API_PREFIX = "/api";
-    public static final String VERSION_V1 = "/v1";
-    public static final String BASE_API_V1 = API_PREFIX + VERSION_V1;
-
-    // Service specific paths
-    public static final String FEED_API = BASE_API_V1 + "/feed";
+    public static final String FEED_API = "/api/v1/feeds";
 }
