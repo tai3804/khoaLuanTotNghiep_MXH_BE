@@ -6,29 +6,45 @@ spring:
     name: api-gateway
   cloud:
     gateway:
-      discovery:
-        locator:
-          enabled: true
-      routes:
-        - id: auth-service
-          uri: lb://auth-service
-          predicates:
-            - Path=/api/v1/auth/**
-            
-        - id: user-service
-          uri: lb://user-service
-          predicates:
-            - Path=/api/v1/users/**
-            
-        - id: notification-service
-          uri: lb://notification-service
-          predicates:
-            - Path=/api/v1/notifications/**
-            
-        - id: media-service
-          uri: lb://media-service
-          predicates:
-            - Path=/api/v1/media/**
+      server:
+        webflux:
+          discovery:
+            locator:
+              enabled: true
+              lower-case-service-id: true
+          routes:
+            - id: auth-service
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/v1/auth/**, /api/v1/devices/**
+            - id: user-service
+              uri: lb://user-service
+              predicates:
+                - Path=/api/v1/users/**
+            - id: notification-service
+              uri: lb://notification-service
+              predicates:
+                - Path=/api/v1/notifications/**
+            - id: media-service
+              uri: lb://media-service
+              predicates:
+                - Path=/api/v1/media/**
+            - id: feed-service
+              uri: lb://feed-service
+              predicates:
+                - Path=/api/v1/feeds/**
+            - id: post-service
+              uri: lb://post-service
+              predicates:
+                - Path=/api/v1/posts/**
+            - id: chat-service
+              uri: lb://chat-service
+              predicates:
+                - Path=/api/v1/chat/**
+            - id: call-service
+              uri: lb://call-service
+              predicates:
+                - Path=/api/v1/calls/**, /api/v1/call/**
 
 eureka:
   client:

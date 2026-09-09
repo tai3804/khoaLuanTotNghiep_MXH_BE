@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -23,6 +24,10 @@ public interface UserConnectionRepository extends JpaRepository<UserConnection, 
 
     @Query(UserConnectionQueryConstants.FIND_CONNECTION_BETWEEN)
     Optional<UserConnection> findConnectionBetween(@Param("user1") UUID user1, @Param("user2") UUID user2, @Param("type") ConnectionType type);
+
+    @Query("SELECT c FROM UserConnection c WHERE " +
+           "((c.requesterId = :user1 AND c.targetId = :user2) OR (c.requesterId = :user2 AND c.targetId = :user1))")
+    List<UserConnection> findAllConnectionsBetween(@Param("user1") UUID user1, @Param("user2") UUID user2);
 
     @Query(UserConnectionQueryConstants.FIND_ACCEPTED_FRIENDSHIP)
     Optional<UserConnection> findAcceptedFriendship(@Param("user1") UUID user1, @Param("user2") UUID user2);

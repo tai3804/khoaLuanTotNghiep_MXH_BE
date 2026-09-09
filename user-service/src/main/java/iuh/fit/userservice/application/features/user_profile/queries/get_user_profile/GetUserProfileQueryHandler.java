@@ -22,6 +22,7 @@ public class GetUserProfileQueryHandler {
     @Transactional(readOnly = true)
     public GetUserProfileResult handle(GetUserProfileQuery query) {
         UserProfile userProfile = userProfileRepository.findByUserId(query.getUserId())
+                .or(() -> userProfileRepository.findById(query.getUserId()))
                 .orElseThrow(() -> new BusinessException(UserServiceErrorCode.USER_PROFILE_NOT_FOUND));
 
         return userProfileApplicationMapper.toQueryResult(userProfile);

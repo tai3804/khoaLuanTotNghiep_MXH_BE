@@ -38,15 +38,15 @@ public class CreateDirectChatCommandHandler {
         }
 
         // Check if direct conversation already exists
-        Optional<Conversation> existingOpt = conversationRepository.findDirectConversationBetweenUsers(
+        List<Conversation> existing = conversationRepository.findDirectConversationBetweenUsers(
                 ConversationType.DIRECT,
                 command.getCurrentUserId(),
                 command.getTargetUserId()
         );
 
         Conversation conversation;
-        if (existingOpt.isPresent()) {
-            conversation = existingOpt.get();
+        if (!existing.isEmpty()) {
+            conversation = existing.get(0);
         } else {
             // Create new DIRECT conversation
             conversation = Conversation.builder()

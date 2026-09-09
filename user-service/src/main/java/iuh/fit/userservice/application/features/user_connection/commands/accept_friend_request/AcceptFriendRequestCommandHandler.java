@@ -27,15 +27,20 @@ public class AcceptFriendRequestCommandHandler {
     public void handle(AcceptFriendRequestCommand command) {
         UserConnection friendConn = userConnectionRepository.findConnectionBetween(
                 command.getRequesterId(), command.getUserId(), ConnectionType.FRIEND
-        ).orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
+        ).or(() -> userConnectionRepository.findById(command.getRequesterId()))
+        .orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
 
         friendConn.setStatus(ConnectionStatus.ACCEPTED);
         userConnectionRepository.save(friendConn);
 
+        UUID requesterId = friendConn.getRequesterId().equals(command.getUserId())
+                ? friendConn.getTargetId()
+                : friendConn.getRequesterId();
+
         // Rule: Accepting friend request means User B also FOLLOWS User A
-        ensureFollow(command.getUserId(), command.getRequesterId());
+        ensureFollow(command.getUserId(), requesterId);
         // Ensure User A also FOLLOWS User B
-        ensureFollow(command.getRequesterId(), command.getUserId());
+        ensureFollow(requesterId, command.getUserId());
     }
 
     private void ensureFollow(UUID followerId, UUID targetId) {

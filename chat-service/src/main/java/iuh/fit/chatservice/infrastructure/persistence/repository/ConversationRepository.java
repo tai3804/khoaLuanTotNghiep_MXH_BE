@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -20,8 +20,9 @@ public interface ConversationRepository extends BaseJpaRepository<Conversation, 
         WHERE c.type = :type
           AND cm1.userId = :userId1 AND cm1.status = 'ACTIVE'
           AND cm2.userId = :userId2 AND cm2.status = 'ACTIVE'
+        ORDER BY c.createdAt DESC
     """)
-    Optional<Conversation> findDirectConversationBetweenUsers(
+    List<Conversation> findDirectConversationBetweenUsers(
             @Param("type") ConversationType type,
             @Param("userId1") UUID userId1,
             @Param("userId2") UUID userId2
