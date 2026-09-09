@@ -11,4 +11,5 @@ public final class ApiConstants {
 
     // Service specific paths
     public static final String USER_API = BASE_API_V1 + "/users";
+    public static final String USER_BLOCK_API = USER_API + "/blocks";
 }

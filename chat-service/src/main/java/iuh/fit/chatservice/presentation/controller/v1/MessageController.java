@@ -8,16 +8,20 @@ import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.chatservice.application.exception.ChatServiceErrorCode;
-import iuh.fit.chatservice.application.features.message.commands.delete_message.DeleteMessageCommand;
-import iuh.fit.chatservice.application.features.message.commands.delete_message.DeleteMessageCommandHandler;
+import iuh.fit.chatservice.application.features.message.commands.delete_for_me.DeleteMessageForMeCommand;
+import iuh.fit.chatservice.application.features.message.commands.delete_for_me.DeleteMessageForMeHandler;
 import iuh.fit.chatservice.application.features.message.commands.mark_as_read.MarkAsReadCommand;
 import iuh.fit.chatservice.application.features.message.commands.mark_as_read.MarkAsReadCommandHandler;
+import iuh.fit.chatservice.application.features.message.commands.recall_message.RecallMessageCommand;
+import iuh.fit.chatservice.application.features.message.commands.recall_message.RecallMessageHandler;
 import iuh.fit.chatservice.application.features.message.commands.send_message.SendMessageCommand;
 import iuh.fit.chatservice.application.features.message.commands.send_message.SendMessageCommandHandler;
 import iuh.fit.chatservice.application.features.message.commands.send_message.SendMessageResult;
+import iuh.fit.chatservice.application.features.message.queries.get_messages.GetMessagesHandler;
 import iuh.fit.chatservice.application.features.message.queries.get_messages.GetMessagesQuery;
-import iuh.fit.chatservice.application.features.message.queries.get_messages.GetMessagesQueryHandler;
 import iuh.fit.chatservice.application.features.message.queries.get_messages.GetMessagesResult;
+import iuh.fit.chatservice.application.features.message.queries.search_messages.SearchMessagesHandler;
+import iuh.fit.chatservice.application.features.message.queries.search_messages.SearchMessagesQuery;
 import iuh.fit.chatservice.presentation.constants.ApiConstants;
 import iuh.fit.chatservice.presentation.dto.request.SendMessageRequest;
 import iuh.fit.chatservice.presentation.dto.response.MessageResponse;
@@ -30,21 +34,22 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
 @RequestMapping(ApiConstants.CHAT_API + "/conversations/{conversationId}/messages")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Tag(name = "Message Management", description = "APIs for sending, retrieving, deleting, and marking messages as read")
+@Tag(name = "Message Management", description = "APIs for sending, retrieving, recalling, deleting for me, searching, and marking messages as read")
 @SecurityRequirement(name = "bearerAuth")
 public class MessageController {
 
     SendMessageCommandHandler sendMessageCommandHandler;
-    DeleteMessageCommandHandler deleteMessageCommandHandler;
+    RecallMessageHandler recallMessageHandler;
+    DeleteMessageForMeHandler deleteMessageForMeHandler;
     MarkAsReadCommandHandler markAsReadCommandHandler;
-    GetMessagesQueryHandler getMessagesQueryHandler;
+    GetMessagesHandler getMessagesHandler;
+    SearchMessagesHandler searchMessagesHandler;
     SimpMessagingTemplate messagingTemplate;
     ChatPresentationMapper chatPresentationMapper;
     JwtUtil jwtUtil;
@@ -67,7 +72,7 @@ public class MessageController {
 
     @GetMapping
     @Operation(summary = "Get conversation messages", description = "Retrieves paginated message history of a conversation in reverse chronological order")
-    public ResponseEntity<ApiResponse<List<MessageResponse>>> getMessages(
+    public ResponseEntity<ApiResponse<PagedResponse<MessageResponse>>> getMessages(
             @PathVariable UUID conversationId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -78,24 +83,73 @@ public class MessageController {
                 .page(page)
                 .size(size)
                 .build();
-        PagedResponse<GetMessagesResult> result = getMessagesQueryHandler.handle(query);
+        PagedResponse<GetMessagesResult> result = getMessagesHandler.handle(query);
         PagedResponse<MessageResponse> pagedResponse = chatPresentationMapper.toPagedMessageResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "Messages retrieved successfully"));
     }
 
-    @DeleteMapping("/{messageId}")
-    @Operation(summary = "Delete message", description = "Soft-deletes a message (Only the sender can delete their message)")
-    public ResponseEntity<ApiResponse<Void>> deleteMessage(
+    @GetMapping("/search")
+    @Operation(summary = "Search messages in conversation", description = "Searches messages in a conversation by content keyword")
+    public ResponseEntity<ApiResponse<PagedResponse<MessageResponse>>> searchMessages(
+            @PathVariable UUID conversationId,
+            @RequestParam(name = "q", defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        UUID currentUserId = getCurrentUserId();
+        SearchMessagesQuery query = SearchMessagesQuery.builder()
+                .conversationId(conversationId)
+                .currentUserId(currentUserId)
+                .keyword(keyword)
+                .page(page)
+                .size(size)
+                .build();
+
+        PagedResponse<GetMessagesResult> result = searchMessagesHandler.handle(query);
+        PagedResponse<MessageResponse> pagedResponse = chatPresentationMapper.toPagedMessageResponse(result);
+        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "Search results retrieved successfully"));
+    }
+
+    @DeleteMapping("/{messageId}/recall")
+    @Operation(summary = "Recall message for everyone", description = "Recalls a message for everyone in the conversation (Only the sender can recall)")
+    public ResponseEntity<ApiResponse<Void>> recallMessage(
             @PathVariable UUID conversationId,
             @PathVariable UUID messageId) {
         UUID currentUserId = getCurrentUserId();
-        DeleteMessageCommand command = chatPresentationMapper.toDeleteMessageCommand(messageId, currentUserId);
-        deleteMessageCommandHandler.handle(command);
+        RecallMessageCommand command = RecallMessageCommand.builder()
+                .conversationId(conversationId)
+                .messageId(messageId)
+                .currentUserId(currentUserId)
+                .build();
+        recallMessageHandler.handle(command);
 
-        // Broadcast deletion event to WebSocket
-        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/deleted", messageId);
+        // Broadcast recall event to WebSocket subscribers
+        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/recalled", messageId);
 
-        return ResponseEntity.ok(ApiResponse.success(null, "Message deleted successfully"));
+        return ResponseEntity.ok(ApiResponse.success(null, "Message recalled for everyone"));
+    }
+
+    @DeleteMapping("/{messageId}/for-me")
+    @Operation(summary = "Delete message for me", description = "Removes a message from current user's chat view only")
+    public ResponseEntity<ApiResponse<Void>> deleteMessageForMe(
+            @PathVariable UUID conversationId,
+            @PathVariable UUID messageId) {
+        UUID currentUserId = getCurrentUserId();
+        DeleteMessageForMeCommand command = DeleteMessageForMeCommand.builder()
+                .conversationId(conversationId)
+                .messageId(messageId)
+                .currentUserId(currentUserId)
+                .build();
+        deleteMessageForMeHandler.handle(command);
+
+        return ResponseEntity.ok(ApiResponse.success(null, "Message deleted for you"));
+    }
+
+    @DeleteMapping("/{messageId}")
+    @Operation(summary = "Delete message (Legacy endpoint)", description = "Defaults to recalling message for everyone")
+    public ResponseEntity<ApiResponse<Void>> deleteMessage(
+            @PathVariable UUID conversationId,
+            @PathVariable UUID messageId) {
+        return recallMessage(conversationId, messageId);
     }
 
     @PostMapping("/read")

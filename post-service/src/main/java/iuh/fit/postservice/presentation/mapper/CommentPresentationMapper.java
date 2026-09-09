@@ -22,5 +22,17 @@ public interface CommentPresentationMapper {
 
     CommentResponse toResponse(CreateCommentResult result);
 
-    PagedResponse<CommentResponse> toPagedResponse(PagedResponse<CreateCommentResult> result);
+    default PagedResponse<CommentResponse> toPagedResponse(PagedResponse<CreateCommentResult> result) {
+        if (result == null) return null;
+        java.util.List<CommentResponse> list = result.getContent() == null ? java.util.Collections.emptyList() :
+                result.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<CommentResponse>builder()
+                .content(list)
+                .page(result.getPage())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .last(result.isLast())
+                .build();
+    }
 }

@@ -116,6 +116,19 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
     }
 
+    @GetMapping("/search")
+    @Operation(summary = "Search posts by keyword", description = "Retrieves paginated list of posts matching the keyword query")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> searchPosts(
+            @RequestParam(required = false, defaultValue = "") String query,
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+        BaseFilter searchFilter = filter != null ? filter : new BaseFilter();
+        searchFilter.setKeyword(query);
+        GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter).build();
+        PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(searchQuery);
+        PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
+        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+    }
+
     @GetMapping("/{postId}")
     @Operation(summary = "Get post details", description = "Retrieves detail information of a specific post by ID")
     public ResponseEntity<ApiResponse<PostResponse>> getPostById(@PathVariable UUID postId) {

@@ -1,4 +1,4 @@
-package iuh.fit.chatservice.application.features.message.commands.delete_message;
+package iuh.fit.chatservice.application.features.message.commands.recall_message;
 
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.chatservice.application.exception.ChatServiceErrorCode;
@@ -7,18 +7,20 @@ import iuh.fit.chatservice.infrastructure.persistence.repository.MessageReposito
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-public class DeleteMessageCommandHandler {
+public class RecallMessageHandler {
 
     MessageRepository messageRepository;
 
     @Transactional
-    public void handle(DeleteMessageCommand command) {
+    public Message handle(RecallMessageCommand command) {
         Message message = messageRepository.findById(command.getMessageId())
                 .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND));
 
@@ -27,6 +29,7 @@ public class DeleteMessageCommandHandler {
         }
 
         message.setDeleted(true);
-        messageRepository.save(message);
+        log.info("Recalled message {} for everyone in conversation {}", message.getId(), command.getConversationId());
+        return messageRepository.save(message);
     }
 }

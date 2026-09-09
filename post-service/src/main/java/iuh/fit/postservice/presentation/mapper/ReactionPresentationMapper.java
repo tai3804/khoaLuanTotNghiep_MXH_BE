@@ -20,5 +20,17 @@ public interface ReactionPresentationMapper {
 
     ReactionResponse toResponse(GetPostReactionsResult result);
 
-    PagedResponse<ReactionResponse> toPagedResponse(PagedResponse<GetPostReactionsResult> result);
+    default PagedResponse<ReactionResponse> toPagedResponse(PagedResponse<GetPostReactionsResult> result) {
+        if (result == null) return null;
+        java.util.List<ReactionResponse> list = result.getContent() == null ? java.util.Collections.emptyList() :
+                result.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<ReactionResponse>builder()
+                .content(list)
+                .page(result.getPage())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .last(result.isLast())
+                .build();
+    }
 }

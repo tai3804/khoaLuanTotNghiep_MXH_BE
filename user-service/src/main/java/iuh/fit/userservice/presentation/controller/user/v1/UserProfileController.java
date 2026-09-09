@@ -27,7 +27,14 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
+
+import iuh.fit.commonframework.application.dto.PagedResponse;
+import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
+import iuh.fit.userservice.application.features.user_profile.queries.search_users.SearchUsersHandler;
+import iuh.fit.userservice.application.features.user_profile.queries.search_users.SearchUsersQuery;
+import org.springdoc.core.annotations.ParameterObject;
 
 @RestController
 @RequestMapping(ApiConstants.USER_API + "/profile")
@@ -39,8 +46,21 @@ public class UserProfileController {
     GetUserProfileQueryHandler getUserProfileQueryHandler;
     UpdateUserProfileCommandHandler updateUserProfileCommandHandler;
     DeleteUserProfileCommandHandler deleteUserProfileCommandHandler;
+    SearchUsersHandler searchUsersHandler;
     UserProfilePresentationMapper userProfilePresentationMapper;
     JwtUtil jwtUtil;
+
+    @GetMapping("/search")
+    @Operation(summary = "Search users by name", description = "Retrieves paginated list of user profiles matching the keyword query in BaseFilter", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<List<UserProfileResponse>>> searchUsers(
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+        SearchUsersQuery searchQuery = SearchUsersQuery.builder()
+                .filter(filter)
+                .build();
+        PagedResponse<GetUserProfileResult> result = searchUsersHandler.handle(searchQuery);
+        PagedResponse<UserProfileResponse> response = userProfilePresentationMapper.toPagedResponse(result);
+        return ResponseEntity.ok(ApiResponse.paged(response, "User profiles retrieved successfully"));
+    }
 
     @GetMapping("/me")
     @Operation(summary = "Get current user profile", description = "Retrieves profile details of the authenticated user", security = @SecurityRequirement(name = "bearerAuth"))

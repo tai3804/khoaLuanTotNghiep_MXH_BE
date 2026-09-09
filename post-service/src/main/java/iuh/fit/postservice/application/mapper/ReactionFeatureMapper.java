@@ -23,11 +23,15 @@ public interface ReactionFeatureMapper {
 
     GetPostReactionsResult toGetReactionsResult(Reaction reaction);
 
-    @Mapping(target = "content", source = "content")
-    @Mapping(target = "page", source = "page.number")
-    @Mapping(target = "size", source = "page.size")
-    @Mapping(target = "totalElements", source = "page.totalElements")
-    @Mapping(target = "totalPages", source = "page.totalPages")
-    @Mapping(target = "last", source = "page.last")
-    PagedResponse<GetPostReactionsResult> toPagedResponse(Page<Reaction> page, List<GetPostReactionsResult> content);
+    default PagedResponse<GetPostReactionsResult> toPagedResponse(Page<Reaction> page, List<GetPostReactionsResult> content) {
+        if (page == null) return null;
+        return PagedResponse.<GetPostReactionsResult>builder()
+                .content(content)
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
 }

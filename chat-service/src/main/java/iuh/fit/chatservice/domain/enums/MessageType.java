@@ -6,5 +6,7 @@ public enum MessageType {
     VIDEO,
     AUDIO,
     FILE,
+    STICKER,
+    GIF,
     SYSTEM
 }

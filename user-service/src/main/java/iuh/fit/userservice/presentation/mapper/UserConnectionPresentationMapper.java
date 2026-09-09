@@ -21,7 +21,35 @@ public interface UserConnectionPresentationMapper {
 
     UserConnectionResponse toResponse(UserConnectionResult result);
 
-    PagedResponse<UserConnectionResponse> toPagedResponse(PagedResponse<UserConnectionResult> pagedResult);
+    iuh.fit.userservice.presentation.dto.response.FriendSuggestionResponse toSuggestionResponse(iuh.fit.userservice.application.features.user_connection.queries.get_suggestions.FriendSuggestionResult result);
+
+    default PagedResponse<UserConnectionResponse> toPagedResponse(PagedResponse<UserConnectionResult> pagedResult) {
+        if (pagedResult == null) return null;
+        java.util.List<UserConnectionResponse> content = pagedResult.getContent() == null ? java.util.Collections.emptyList() :
+                pagedResult.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<UserConnectionResponse>builder()
+                .content(content)
+                .page(pagedResult.getPage())
+                .size(pagedResult.getSize())
+                .totalElements(pagedResult.getTotalElements())
+                .totalPages(pagedResult.getTotalPages())
+                .last(pagedResult.isLast())
+                .build();
+    }
+
+    default PagedResponse<iuh.fit.userservice.presentation.dto.response.FriendSuggestionResponse> toPagedSuggestionResponse(PagedResponse<iuh.fit.userservice.application.features.user_connection.queries.get_suggestions.FriendSuggestionResult> pagedResult) {
+        if (pagedResult == null) return null;
+        java.util.List<iuh.fit.userservice.presentation.dto.response.FriendSuggestionResponse> content = pagedResult.getContent() == null ? java.util.Collections.emptyList() :
+                pagedResult.getContent().stream().map(this::toSuggestionResponse).toList();
+        return PagedResponse.<iuh.fit.userservice.presentation.dto.response.FriendSuggestionResponse>builder()
+                .content(content)
+                .page(pagedResult.getPage())
+                .size(pagedResult.getSize())
+                .totalElements(pagedResult.getTotalElements())
+                .totalPages(pagedResult.getTotalPages())
+                .last(pagedResult.isLast())
+                .build();
+    }
 
     @Mapping(target = "requesterId", source = "userId")
     @Mapping(target = "targetId", source = "targetId")

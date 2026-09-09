@@ -88,8 +88,6 @@ public class AuthController {
                     .sameSite("Strict")
                     .build();
             httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
-
-            response.setRefreshToken(null);
         }
 
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.USER_LOGGED_IN_SUCCESSFULLY));
@@ -125,8 +123,6 @@ public class AuthController {
                     .sameSite("Strict")
                     .build();
             httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
-
-            response.setRefreshToken(null);
         }
 
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.TOKEN_REFRESHED_SUCCESSFULLY));

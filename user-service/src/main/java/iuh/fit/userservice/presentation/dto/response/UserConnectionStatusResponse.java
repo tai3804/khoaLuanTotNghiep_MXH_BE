@@ -20,5 +20,7 @@ public class UserConnectionStatusResponse {
     boolean isFollowedBy;
     boolean hasPendingSent;
     boolean hasPendingReceived;
+    boolean isBlockedByMe;
+    boolean isBlockedByTarget;
     UUID pendingRequestId;
 }

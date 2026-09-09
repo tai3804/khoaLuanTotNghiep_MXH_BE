@@ -8,6 +8,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -84,4 +85,11 @@ public class UserProfile extends BaseEntity {
     @Column(name = "friend_count", nullable = false)
     @Builder.Default
     Long friendCount = 0L;
+
+    @Column(name = "is_online")
+    @Builder.Default
+    Boolean isOnline = false;
+
+    @Column(name = "last_active_at")
+    Instant lastActiveAt;
 }

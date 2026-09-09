@@ -6,6 +6,22 @@ spring:
     name: api-gateway
   cloud:
     gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:5173"
+              - "http://localhost:3000"
+              - "http://127.0.0.1:5173"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+              - PATCH
+            allowedHeaders: "*"
+            allowCredentials: true
       server:
         webflux:
           discovery:
@@ -16,35 +32,35 @@ spring:
             - id: auth-service
               uri: lb://auth-service
               predicates:
-                - Path=/api/v1/auth/**, /api/v1/devices/**
+                - Path=/api/v1/auth, /api/v1/auth/**, /api/v1/devices, /api/v1/devices/**
             - id: user-service
               uri: lb://user-service
               predicates:
-                - Path=/api/v1/users/**
+                - Path=/api/v1/users, /api/v1/users/**
             - id: notification-service
               uri: lb://notification-service
               predicates:
-                - Path=/api/v1/notifications/**
+                - Path=/api/v1/notifications, /api/v1/notifications/**
             - id: media-service
               uri: lb://media-service
               predicates:
-                - Path=/api/v1/media/**
+                - Path=/api/v1/media, /api/v1/media/**
             - id: feed-service
               uri: lb://feed-service
               predicates:
-                - Path=/api/v1/feeds/**
+                - Path=/api/v1/feeds, /api/v1/feeds/**
             - id: post-service
               uri: lb://post-service
               predicates:
-                - Path=/api/v1/posts/**
+                - Path=/api/v1/posts, /api/v1/posts/**, /api/v1/stories, /api/v1/stories/**
             - id: chat-service
               uri: lb://chat-service
               predicates:
-                - Path=/api/v1/chat/**
+                - Path=/api/v1/chat, /api/v1/chat/**
             - id: call-service
               uri: lb://call-service
               predicates:
-                - Path=/api/v1/calls/**, /api/v1/call/**
+                - Path=/api/v1/calls, /api/v1/calls/**, /api/v1/call, /api/v1/call/**
 
 eureka:
   client:

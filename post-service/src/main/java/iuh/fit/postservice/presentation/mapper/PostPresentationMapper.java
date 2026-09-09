@@ -40,5 +40,17 @@ public interface PostPresentationMapper {
     PostResponse toResponse(GetPostDetailResult result);
     PostResponse toResponse(SharePostResult result);
 
-    PagedResponse<PostResponse> toPagedResponse(PagedResponse<GetPostDetailResult> result);
+    default PagedResponse<PostResponse> toPagedResponse(PagedResponse<GetPostDetailResult> result) {
+        if (result == null) return null;
+        List<PostResponse> list = result.getContent() == null ? java.util.Collections.emptyList() :
+                result.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<PostResponse>builder()
+                .content(list)
+                .page(result.getPage())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .last(result.isLast())
+                .build();
+    }
 }
