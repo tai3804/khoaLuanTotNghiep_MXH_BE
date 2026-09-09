@@ -16,9 +16,14 @@ import iuh.fit.userservice.application.features.user_connection.commands.unfollo
 import iuh.fit.userservice.application.features.user_connection.commands.unfriend_user.UnfriendUserCommandHandler;
 import iuh.fit.userservice.application.features.user_connection.queries.get_connections.GetConnectionsQueryHandler;
 import iuh.fit.userservice.application.features.user_connection.queries.get_connections.UserConnectionResult;
+import iuh.fit.userservice.domain.entities.UserConnection;
+import iuh.fit.userservice.domain.enums.ConnectionStatus;
+import iuh.fit.userservice.domain.enums.ConnectionType;
+import iuh.fit.userservice.domain.repository.UserConnectionRepository;
 import iuh.fit.userservice.presentation.constants.ApiConstants;
 import iuh.fit.userservice.presentation.constants.MessageConstants;
 import iuh.fit.userservice.presentation.dto.response.UserConnectionResponse;
+import iuh.fit.userservice.presentation.dto.response.UserConnectionStatusResponse;
 import iuh.fit.userservice.presentation.mapper.UserConnectionPresentationMapper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +31,7 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -42,8 +48,56 @@ public class UserConnectionController {
     UnfollowUserCommandHandler unfollowUserCommandHandler;
     UnfriendUserCommandHandler unfriendUserCommandHandler;
     GetConnectionsQueryHandler getConnectionsQueryHandler;
+    UserConnectionRepository userConnectionRepository;
     UserConnectionPresentationMapper userConnectionPresentationMapper;
     JwtUtil jwtUtil;
+
+    @GetMapping("/status/{targetId}")
+    @Operation(summary = "Get connection status with target user", description = "Retrieves friendship and follow status between current user and target user", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<UserConnectionStatusResponse>> getConnectionStatus(@PathVariable UUID targetId) {
+        UUID currentUserId = getCurrentUserId();
+        List<UserConnection> connections = userConnectionRepository.findAllConnectionsBetween(currentUserId, targetId);
+
+        boolean isFriend = false;
+        boolean isFollowing = false;
+        boolean isFollowedBy = false;
+        boolean hasPendingSent = false;
+        boolean hasPendingReceived = false;
+        UUID pendingRequestId = null;
+
+        for (UserConnection c : connections) {
+            if (c.getType() == ConnectionType.FRIEND) {
+                if (c.getStatus() == ConnectionStatus.ACCEPTED) {
+                    isFriend = true;
+                } else if (c.getStatus() == ConnectionStatus.PENDING) {
+                    if (c.getRequesterId().equals(currentUserId)) {
+                        hasPendingSent = true;
+                        pendingRequestId = c.getId();
+                    } else {
+                        hasPendingReceived = true;
+                        pendingRequestId = c.getId();
+                    }
+                }
+            } else if (c.getType() == ConnectionType.FOLLOW && c.getStatus() == ConnectionStatus.ACCEPTED) {
+                if (c.getRequesterId().equals(currentUserId)) {
+                    isFollowing = true;
+                } else {
+                    isFollowedBy = true;
+                }
+            }
+        }
+
+        UserConnectionStatusResponse response = UserConnectionStatusResponse.builder()
+                .isFriend(isFriend)
+                .isFollowing(isFollowing)
+                .isFollowedBy(isFollowedBy)
+                .hasPendingSent(hasPendingSent)
+                .hasPendingReceived(hasPendingReceived)
+                .pendingRequestId(pendingRequestId)
+                .build();
+
+        return ResponseEntity.ok(ApiResponse.success(response, "Connection status retrieved successfully"));
+    }
 
     @PostMapping("/friend-requests/{targetId}")
     @Operation(summary = "Send friend request", description = "Sends a friend request to a user and automatically follows them", security = @SecurityRequirement(name = "bearerAuth"))
@@ -100,6 +154,15 @@ public class UserConnectionController {
             @RequestParam(defaultValue = "20") int size) {
         UUID userId = getCurrentUserId();
         return getPagedConnectionsResponse(userId, "FRIENDS", page, size);
+    }
+
+    @GetMapping("/friends/user/{targetUserId}")
+    @Operation(summary = "Get friends list of a user", description = "Retrieves the list of accepted friends for a specific user ID", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<PagedResponse<UserConnectionResponse>>> getUserFriends(
+            @PathVariable UUID targetUserId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return getPagedConnectionsResponse(targetUserId, "FRIENDS", page, size);
     }
 
     @GetMapping("/followers")

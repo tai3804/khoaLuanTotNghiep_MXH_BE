@@ -14,7 +14,10 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import iuh.fit.userservice.domain.entities.UserProfile;
+
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -27,34 +30,42 @@ public class FollowUserCommandHandler {
 
     @Transactional
     public void handle(FollowUserCommand command) {
-        if (command.getFollowerId().equals(command.getTargetId())) {
+        UUID targetUserId = command.getTargetId();
+        Optional<UserProfile> targetProfileOpt = userProfileRepository.findByUserId(targetUserId);
+        if (targetProfileOpt.isEmpty()) {
+            targetProfileOpt = userProfileRepository.findById(targetUserId);
+            if (targetProfileOpt.isPresent()) {
+                targetUserId = targetProfileOpt.get().getUserId();
+            } else {
+                throw new BusinessException(UserServiceErrorCode.USER_PROFILE_NOT_FOUND);
+            }
+        }
+
+        if (command.getFollowerId().equals(targetUserId)) {
             throw new BusinessException(UserServiceErrorCode.CANNOT_CONNECT_SELF);
         }
 
-        if (!userProfileRepository.existsById(command.getTargetId())) {
-            throw new BusinessException(UserServiceErrorCode.USER_PROFILE_NOT_FOUND);
-        }
-
         // Save or update FOLLOW connection from A to B
-        userConnectionRepository.findByRequesterIdAndTargetIdAndType(command.getFollowerId(), command.getTargetId(), ConnectionType.FOLLOW)
+        UUID finalTargetUserId = targetUserId;
+        userConnectionRepository.findByRequesterIdAndTargetIdAndType(command.getFollowerId(), finalTargetUserId, ConnectionType.FOLLOW)
                 .ifPresentOrElse(
                         follow -> {
                             follow.setStatus(ConnectionStatus.ACCEPTED);
                             userConnectionRepository.save(follow);
                         },
                         () -> userConnectionRepository.save(userConnectionApplicationMapper.toEntity(
-                                command.getFollowerId(), command.getTargetId(), ConnectionType.FOLLOW, ConnectionStatus.ACCEPTED
+                                command.getFollowerId(), finalTargetUserId, ConnectionType.FOLLOW, ConnectionStatus.ACCEPTED
                         ))
                 );
 
         // Rule: Check if target user B is ALREADY following A -> Mutual follow means they automatically become FRIENDS!
         boolean targetFollowsFollower = userConnectionRepository.existsByRequesterIdAndTargetIdAndTypeAndStatus(
-                command.getTargetId(), command.getFollowerId(), ConnectionType.FOLLOW, ConnectionStatus.ACCEPTED
+                finalTargetUserId, command.getFollowerId(), ConnectionType.FOLLOW, ConnectionStatus.ACCEPTED
         );
 
         if (targetFollowsFollower) {
             Optional<UserConnection> existingFriendship = userConnectionRepository.findConnectionBetween(
-                    command.getFollowerId(), command.getTargetId(), ConnectionType.FRIEND
+                    command.getFollowerId(), finalTargetUserId, ConnectionType.FRIEND
             );
 
             if (existingFriendship.isPresent()) {
@@ -63,7 +74,7 @@ public class FollowUserCommandHandler {
                 userConnectionRepository.save(conn);
             } else {
                 userConnectionRepository.save(userConnectionApplicationMapper.toEntity(
-                        command.getFollowerId(), command.getTargetId(), ConnectionType.FRIEND, ConnectionStatus.ACCEPTED
+                        command.getFollowerId(), finalTargetUserId, ConnectionType.FRIEND, ConnectionStatus.ACCEPTED
                 ));
             }
         }

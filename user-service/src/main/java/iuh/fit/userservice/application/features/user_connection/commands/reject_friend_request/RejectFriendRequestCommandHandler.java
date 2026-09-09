@@ -23,7 +23,8 @@ public class RejectFriendRequestCommandHandler {
     public void handle(RejectFriendRequestCommand command) {
         UserConnection friendConn = userConnectionRepository.findConnectionBetween(
                 command.getRequesterId(), command.getUserId(), ConnectionType.FRIEND
-        ).orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
+        ).or(() -> userConnectionRepository.findById(command.getRequesterId()))
+        .orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
 
         friendConn.setStatus(ConnectionStatus.REJECTED);
         userConnectionRepository.save(friendConn);

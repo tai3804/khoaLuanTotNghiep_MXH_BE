@@ -14,7 +14,10 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import iuh.fit.userservice.domain.entities.UserProfile;
+
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -27,29 +30,37 @@ public class SendFriendRequestCommandHandler {
 
     @Transactional
     public void handle(SendFriendRequestCommand command) {
-        if (command.getRequesterId().equals(command.getTargetId())) {
+        UUID targetUserId = command.getTargetId();
+        Optional<UserProfile> targetProfileOpt = userProfileRepository.findByUserId(targetUserId);
+        if (targetProfileOpt.isEmpty()) {
+            targetProfileOpt = userProfileRepository.findById(targetUserId);
+            if (targetProfileOpt.isPresent()) {
+                targetUserId = targetProfileOpt.get().getUserId();
+            } else {
+                throw new BusinessException(UserServiceErrorCode.USER_PROFILE_NOT_FOUND);
+            }
+        }
+
+        if (command.getRequesterId().equals(targetUserId)) {
             throw new BusinessException(UserServiceErrorCode.CANNOT_CONNECT_SELF);
         }
 
-        if (!userProfileRepository.existsById(command.getTargetId())) {
-            throw new BusinessException(UserServiceErrorCode.USER_PROFILE_NOT_FOUND);
-        }
-
         // Rule 1: Sending friend request automatically FOLLOWS the target user
-        userConnectionRepository.findByRequesterIdAndTargetIdAndType(command.getRequesterId(), command.getTargetId(), ConnectionType.FOLLOW)
+        UUID finalTargetUserId = targetUserId;
+        userConnectionRepository.findByRequesterIdAndTargetIdAndType(command.getRequesterId(), finalTargetUserId, ConnectionType.FOLLOW)
                 .ifPresentOrElse(
                         follow -> {
                             follow.setStatus(ConnectionStatus.ACCEPTED);
                             userConnectionRepository.save(follow);
                         },
                         () -> userConnectionRepository.save(userConnectionApplicationMapper.toEntity(
-                                command.getRequesterId(), command.getTargetId(), ConnectionType.FOLLOW, ConnectionStatus.ACCEPTED
+                                command.getRequesterId(), finalTargetUserId, ConnectionType.FOLLOW, ConnectionStatus.ACCEPTED
                         ))
                 );
 
         // Check existing friend connection between A and B
         Optional<UserConnection> existingFriendship = userConnectionRepository.findConnectionBetween(
-                command.getRequesterId(), command.getTargetId(), ConnectionType.FRIEND
+                command.getRequesterId(), finalTargetUserId, ConnectionType.FRIEND
         );
 
         if (existingFriendship.isPresent()) {
@@ -61,7 +72,7 @@ public class SendFriendRequestCommandHandler {
 
         // Rule 2: Check if B is ALREADY following A -> Mutual follow means they automatically become FRIENDS!
         boolean targetFollowsRequester = userConnectionRepository.existsByRequesterIdAndTargetIdAndTypeAndStatus(
-                command.getTargetId(), command.getRequesterId(), ConnectionType.FOLLOW, ConnectionStatus.ACCEPTED
+                finalTargetUserId, command.getRequesterId(), ConnectionType.FOLLOW, ConnectionStatus.ACCEPTED
         );
 
         ConnectionStatus initialStatus = targetFollowsRequester ? ConnectionStatus.ACCEPTED : ConnectionStatus.PENDING;
@@ -69,12 +80,12 @@ public class SendFriendRequestCommandHandler {
         if (existingFriendship.isPresent()) {
             UserConnection conn = existingFriendship.get();
             conn.setRequesterId(command.getRequesterId());
-            conn.setTargetId(command.getTargetId());
+            conn.setTargetId(finalTargetUserId);
             conn.setStatus(initialStatus);
             userConnectionRepository.save(conn);
         } else {
             userConnectionRepository.save(userConnectionApplicationMapper.toEntity(
-                    command.getRequesterId(), command.getTargetId(), ConnectionType.FRIEND, initialStatus
+                    command.getRequesterId(), finalTargetUserId, ConnectionType.FRIEND, initialStatus
             ));
         }
     }
