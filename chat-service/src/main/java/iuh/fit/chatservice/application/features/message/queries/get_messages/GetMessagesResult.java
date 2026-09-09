@@ -4,7 +4,9 @@ import iuh.fit.chatservice.domain.enums.MessageType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -20,7 +22,14 @@ public class GetMessagesResult {
     String content;
     String mediaUrl;
     UUID replyToMessageId;
+    String replyToContent;
+    UUID replyToSenderId;
     boolean edited;
     boolean deleted;
+    boolean pinned;
+    Instant pinnedAt;
+    UUID pinnedById;
+    Map<String, Long> reactionsCount;
+    String currentUserReaction;
     LocalDateTime createdAt;
 }

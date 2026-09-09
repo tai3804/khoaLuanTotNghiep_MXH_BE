@@ -11,6 +11,7 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public enum PostServiceErrorCode implements BaseError {
 
+    UNAUTHORIZED(40101, "Unauthorized access", 401),
     POST_NOT_FOUND(40401, "Post not found", 404),
     COMMENT_NOT_FOUND(40402, "Comment not found", 404),
     UNAUTHORIZED_ACTION(40301, "You are not authorized to perform this action", 403),

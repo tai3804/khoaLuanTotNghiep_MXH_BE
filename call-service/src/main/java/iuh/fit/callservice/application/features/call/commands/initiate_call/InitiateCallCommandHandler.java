@@ -14,6 +14,10 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import iuh.fit.callservice.presentation.dto.response.WebRtcSignalResponse;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +32,7 @@ public class InitiateCallCommandHandler {
     CallSessionRepository callSessionRepository;
     CallParticipantRepository callParticipantRepository;
     CallFeatureMapper callFeatureMapper;
+    SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public InitiateCallResult handle(InitiateCallCommand command) {
@@ -59,7 +64,7 @@ public class InitiateCallCommandHandler {
                 .build();
         participantsToSave.add(hostParticipant);
 
-        // Add Target Participants
+        // Add Target Participants & Notify via WebSocket STOMP
         if (command.getTargetUserIds() != null) {
             for (UUID targetId : command.getTargetUserIds()) {
                 if (targetId.equals(command.getCurrentUserId())) {
@@ -72,6 +77,24 @@ public class InitiateCallCommandHandler {
                         .status(ParticipantStatus.RINGING)
                         .build();
                 participantsToSave.add(participant);
+
+                // Real-time Push: INCOMING_CALL signal to target user queue
+                WebRtcSignalResponse incomingSignal = WebRtcSignalResponse.builder()
+                        .callSessionId(session.getId())
+                        .senderId(command.getCurrentUserId())
+                        .targetUserId(targetId)
+                        .signalType(WebRtcSignalType.INCOMING_CALL)
+                        .mediaType(session.getMediaType())
+                        .timestamp(Instant.now())
+                        .build();
+
+                try {
+                    messagingTemplate.convertAndSendToUser(
+                            targetId.toString(),
+                            "/queue/call-signal",
+                            incomingSignal
+                    );
+                } catch (Exception ignored) {}
             }
         }
 

@@ -18,11 +18,15 @@ public interface CommentFeatureMapper {
 
     CreateCommentResult toCreateResult(Comment comment);
 
-    @Mapping(target = "content", source = "content")
-    @Mapping(target = "page", source = "page.number")
-    @Mapping(target = "size", source = "page.size")
-    @Mapping(target = "totalElements", source = "page.totalElements")
-    @Mapping(target = "totalPages", source = "page.totalPages")
-    @Mapping(target = "last", source = "page.last")
-    PagedResponse<CreateCommentResult> toPagedResponse(Page<Comment> page, List<CreateCommentResult> content);
+    default PagedResponse<CreateCommentResult> toPagedResponse(Page<Comment> page, List<CreateCommentResult> content) {
+        if (page == null) return null;
+        return PagedResponse.<CreateCommentResult>builder()
+                .content(content)
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
 }

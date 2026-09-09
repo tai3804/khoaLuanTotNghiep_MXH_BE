@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.commonframework.application.exception.BusinessException;
+import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.application.features.user_connection.commands.accept_friend_request.AcceptFriendRequestCommandHandler;
@@ -16,18 +17,26 @@ import iuh.fit.userservice.application.features.user_connection.commands.unfollo
 import iuh.fit.userservice.application.features.user_connection.commands.unfriend_user.UnfriendUserCommandHandler;
 import iuh.fit.userservice.application.features.user_connection.queries.get_connections.GetConnectionsQueryHandler;
 import iuh.fit.userservice.application.features.user_connection.queries.get_connections.UserConnectionResult;
+import iuh.fit.userservice.application.features.user_connection.queries.get_mutual_friends.GetMutualFriendsHandler;
+import iuh.fit.userservice.application.features.user_connection.queries.get_mutual_friends.GetMutualFriendsQuery;
+import iuh.fit.userservice.application.features.user_connection.queries.get_suggestions.FriendSuggestionResult;
+import iuh.fit.userservice.application.features.user_connection.queries.get_suggestions.GetFriendSuggestionsHandler;
+import iuh.fit.userservice.application.features.user_connection.queries.get_suggestions.GetFriendSuggestionsQuery;
 import iuh.fit.userservice.domain.entities.UserConnection;
 import iuh.fit.userservice.domain.enums.ConnectionStatus;
 import iuh.fit.userservice.domain.enums.ConnectionType;
 import iuh.fit.userservice.domain.repository.UserConnectionRepository;
 import iuh.fit.userservice.presentation.constants.ApiConstants;
 import iuh.fit.userservice.presentation.constants.MessageConstants;
+import iuh.fit.userservice.presentation.dto.response.FriendSuggestionResponse;
 import iuh.fit.userservice.presentation.dto.response.UserConnectionResponse;
 import iuh.fit.userservice.presentation.dto.response.UserConnectionStatusResponse;
 import iuh.fit.userservice.presentation.mapper.UserConnectionPresentationMapper;
+import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,7 +47,7 @@ import java.util.UUID;
 @RequestMapping(ApiConstants.USER_API + "/connections")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Tag(name = "User Connections", description = "APIs for follow, friend requests, and user connections management")
+@Tag(name = "User Connections", description = "APIs for follow, friend requests, mutual friends, suggestions, and user connections management")
 public class UserConnectionController {
 
     SendFriendRequestCommandHandler sendFriendRequestCommandHandler;
@@ -48,7 +57,10 @@ public class UserConnectionController {
     UnfollowUserCommandHandler unfollowUserCommandHandler;
     UnfriendUserCommandHandler unfriendUserCommandHandler;
     GetConnectionsQueryHandler getConnectionsQueryHandler;
+    GetMutualFriendsHandler getMutualFriendsHandler;
+    GetFriendSuggestionsHandler getFriendSuggestionsHandler;
     UserConnectionRepository userConnectionRepository;
+    iuh.fit.userservice.domain.repository.UserBlockRepository userBlockRepository;
     UserConnectionPresentationMapper userConnectionPresentationMapper;
     JwtUtil jwtUtil;
 
@@ -87,12 +99,17 @@ public class UserConnectionController {
             }
         }
 
+        boolean isBlockedByMe = userBlockRepository.existsByBlockerIdAndBlockedId(currentUserId, targetId);
+        boolean isBlockedByTarget = userBlockRepository.existsByBlockerIdAndBlockedId(targetId, currentUserId);
+
         UserConnectionStatusResponse response = UserConnectionStatusResponse.builder()
                 .isFriend(isFriend)
                 .isFollowing(isFollowing)
                 .isFollowedBy(isFollowedBy)
                 .hasPendingSent(hasPendingSent)
                 .hasPendingReceived(hasPendingReceived)
+                .isBlockedByMe(isBlockedByMe)
+                .isBlockedByTarget(isBlockedByTarget)
                 .pendingRequestId(pendingRequestId)
                 .build();
 
@@ -163,6 +180,36 @@ public class UserConnectionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return getPagedConnectionsResponse(targetUserId, "FRIENDS", page, size);
+    }
+
+    @GetMapping("/mutual-friends/{targetId}")
+    @Operation(summary = "Get mutual friends list", description = "Retrieves paginated list of mutual friends between current user and target user", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<List<UserConnectionResponse>>> getMutualFriends(
+            @PathVariable UUID targetId,
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+        UUID currentUserId = getCurrentUserId();
+        GetMutualFriendsQuery query = GetMutualFriendsQuery.builder()
+                .currentUserId(currentUserId)
+                .targetUserId(targetId)
+                .filter(filter)
+                .build();
+        PagedResponse<UserConnectionResult> result = getMutualFriendsHandler.handle(query);
+        PagedResponse<UserConnectionResponse> pagedResponse = userConnectionPresentationMapper.toPagedResponse(result);
+        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "Mutual friends retrieved successfully"));
+    }
+
+    @GetMapping("/suggestions")
+    @Operation(summary = "Get friend suggestions", description = "Retrieves paginated list of suggested friends (people you may know) based on mutual friend counts", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<List<FriendSuggestionResponse>>> getFriendSuggestions(
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+        UUID currentUserId = getCurrentUserId();
+        GetFriendSuggestionsQuery query = GetFriendSuggestionsQuery.builder()
+                .currentUserId(currentUserId)
+                .filter(filter)
+                .build();
+        PagedResponse<FriendSuggestionResult> result = getFriendSuggestionsHandler.handle(query);
+        PagedResponse<FriendSuggestionResponse> pagedResponse = userConnectionPresentationMapper.toPagedSuggestionResponse(result);
+        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "Friend suggestions retrieved successfully"));
     }
 
     @GetMapping("/followers")

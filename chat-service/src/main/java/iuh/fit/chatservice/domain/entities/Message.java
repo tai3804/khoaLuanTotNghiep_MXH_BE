@@ -8,6 +8,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -51,4 +52,14 @@ public class Message extends BaseEntity {
     @Column(name = "is_deleted", nullable = false)
     @Builder.Default
     boolean deleted = false;
+
+    @Column(name = "is_pinned", nullable = false)
+    @Builder.Default
+    boolean pinned = false;
+
+    @Column(name = "pinned_at")
+    Instant pinnedAt;
+
+    @Column(name = "pinned_by_id")
+    UUID pinnedById;
 }

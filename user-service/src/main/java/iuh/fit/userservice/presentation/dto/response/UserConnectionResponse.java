@@ -19,5 +19,10 @@ public class UserConnectionResponse {
     UUID targetId;
     ConnectionType type;
     ConnectionStatus status;
-    LocalDateTime createdAt;
+    UUID userId;
+    String username;
+    String fullName;
+    String avatarUrl;
+    boolean isOnline;
+    LocalDateTime lastActiveAt;
 }

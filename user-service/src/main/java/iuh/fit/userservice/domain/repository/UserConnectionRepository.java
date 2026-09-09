@@ -43,4 +43,10 @@ public interface UserConnectionRepository extends JpaRepository<UserConnection, 
 
     @Query(UserConnectionQueryConstants.FIND_PENDING_FRIEND_REQUESTS)
     Page<UserConnection> findPendingFriendRequestsForUser(@Param("userId") UUID userId, Pageable pageable);
+
+    @Query("SELECT c FROM UserConnection c WHERE (c.requesterId = :userId OR c.targetId = :userId) AND c.type = 'FRIEND' AND c.status = 'ACCEPTED'")
+    List<UserConnection> findAllAcceptedFriendships(@Param("userId") UUID userId);
+
+    @Query("SELECT c FROM UserConnection c WHERE (c.requesterId IN :userIds OR c.targetId IN :userIds) AND c.type = 'FRIEND' AND c.status = 'ACCEPTED'")
+    List<UserConnection> findAllAcceptedFriendshipsForUserIds(@Param("userIds") java.util.Collection<UUID> userIds);
 }

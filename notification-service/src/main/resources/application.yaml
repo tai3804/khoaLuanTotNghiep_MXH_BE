@@ -6,6 +6,18 @@ spring:
     name: notification-service
   config:
     import: classpath:application-common.yaml
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/notification_db}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
   kafka:
     bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
     producer:
@@ -16,6 +28,10 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: "*"
+
+fcm:
+  credentials-file: ${FCM_CREDENTIALS_FILE:classpath:firebase-service-account.json}
+  enabled: ${FCM_ENABLED:true}
 
 brevo:
   api:
@@ -31,3 +47,4 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
   instance:
     prefer-ip-address: true
+

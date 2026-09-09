@@ -59,7 +59,19 @@ public interface ChatPresentationMapper {
 
     List<ConversationResponse> toConversationResponseList(List<GetUserConversationsResult> results);
 
-    PagedResponse<ConversationResponse> toPagedConversationResponse(PagedResponse<GetUserConversationsResult> pagedResult);
+    default PagedResponse<ConversationResponse> toPagedConversationResponse(PagedResponse<GetUserConversationsResult> pagedResult) {
+        if (pagedResult == null) return null;
+        List<ConversationResponse> content = pagedResult.getContent() == null ? java.util.Collections.emptyList() :
+                pagedResult.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<ConversationResponse>builder()
+                .content(content)
+                .page(pagedResult.getPage())
+                .size(pagedResult.getSize())
+                .totalElements(pagedResult.getTotalElements())
+                .totalPages(pagedResult.getTotalPages())
+                .last(pagedResult.isLast())
+                .build();
+    }
 
     ConversationDetailResponse toResponse(GetConversationDetailResult result);
 
@@ -69,5 +81,17 @@ public interface ChatPresentationMapper {
 
     List<MessageResponse> toMessageResponseList(List<GetMessagesResult> results);
 
-    PagedResponse<MessageResponse> toPagedMessageResponse(PagedResponse<GetMessagesResult> pagedResult);
+    default PagedResponse<MessageResponse> toPagedMessageResponse(PagedResponse<GetMessagesResult> pagedResult) {
+        if (pagedResult == null) return null;
+        List<MessageResponse> content = pagedResult.getContent() == null ? java.util.Collections.emptyList() :
+                pagedResult.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<MessageResponse>builder()
+                .content(content)
+                .page(pagedResult.getPage())
+                .size(pagedResult.getSize())
+                .totalElements(pagedResult.getTotalElements())
+                .totalPages(pagedResult.getTotalPages())
+                .last(pagedResult.isLast())
+                .build();
+    }
 }

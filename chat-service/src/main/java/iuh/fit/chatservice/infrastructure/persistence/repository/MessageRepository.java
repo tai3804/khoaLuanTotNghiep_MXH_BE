@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,7 +17,28 @@ public interface MessageRepository extends BaseJpaRepository<Message, UUID> {
 
     Page<Message> findByConversationIdAndDeletedFalseOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
 
+    Page<Message> findByConversationIdAndDeletedFalseAndIdNotInOrderByCreatedAtDesc(UUID conversationId, List<UUID> excludedIds, Pageable pageable);
+
+    List<Message> findByConversationIdAndPinnedTrueAndDeletedFalseOrderByPinnedAtDesc(UUID conversationId);
+
+    List<Message> findAllByIdIn(List<UUID> ids);
+
     Optional<Message> findTopByConversationIdAndDeletedFalseOrderByCreatedAtDesc(UUID conversationId);
+
+    @Query("""
+        SELECT m FROM Message m
+        WHERE m.conversationId = :conversationId
+          AND m.deleted = false
+          AND LOWER(m.content) LIKE LOWER(CONCAT('%', :keyword, '%'))
+          AND (COALESCE(:excludedIds) IS NULL OR m.id NOT IN :excludedIds)
+        ORDER BY m.createdAt DESC
+    """)
+    Page<Message> searchMessagesInConversation(
+            @Param("conversationId") UUID conversationId,
+            @Param("keyword") String keyword,
+            @Param("excludedIds") List<UUID> excludedIds,
+            Pageable pageable
+    );
 
     @Query("""
         SELECT COUNT(m) FROM Message m
@@ -26,3 +48,4 @@ public interface MessageRepository extends BaseJpaRepository<Message, UUID> {
     """)
     long countUnreadMessages(@Param("conversationId") UUID conversationId, @Param("lastReadId") UUID lastReadId);
 }
+

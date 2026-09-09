@@ -19,5 +19,17 @@ public interface FeedPresentationMapper {
 
     List<FeedItemResponse> toResponseList(List<GetUserFeedResult> results);
 
-    PagedResponse<FeedItemResponse> toPagedResponse(PagedResponse<GetUserFeedResult> pagedResult);
+    default PagedResponse<FeedItemResponse> toPagedResponse(PagedResponse<GetUserFeedResult> pagedResult) {
+        if (pagedResult == null) return null;
+        java.util.List<FeedItemResponse> content = pagedResult.getContent() == null ? java.util.Collections.emptyList() :
+                pagedResult.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<FeedItemResponse>builder()
+                .content(content)
+                .page(pagedResult.getPage())
+                .size(pagedResult.getSize())
+                .totalElements(pagedResult.getTotalElements())
+                .totalPages(pagedResult.getTotalPages())
+                .last(pagedResult.isLast())
+                .build();
+    }
 }

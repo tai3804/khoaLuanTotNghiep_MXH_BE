@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.FieldDefaults;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -33,6 +34,8 @@ public class UserProfileResponse {
     Long followerCount;
     Long followingCount;
     Long friendCount;
+    Boolean isOnline;
+    Instant lastActiveAt;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
 }

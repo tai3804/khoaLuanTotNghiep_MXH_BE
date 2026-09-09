@@ -1,5 +1,6 @@
 package iuh.fit.userservice.application.mapper;
 
+import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.userservice.application.features.user_profile.commands.update_user_profile.UpdateUserProfileCommand;
 import iuh.fit.userservice.application.features.user_profile.commands.update_user_profile.UpdateUserProfileResult;
 import iuh.fit.userservice.application.features.user_profile.queries.get_user_profile.GetUserProfileResult;
@@ -9,6 +10,10 @@ import org.mapstruct.Mapper;
 import org.mapstruct.MappingTarget;
 import org.mapstruct.NullValuePropertyMappingStrategy;
 import org.mapstruct.ReportingPolicy;
+import org.springframework.data.domain.Page;
+
+import java.util.Collections;
+import java.util.List;
 
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface UserProfileApplicationMapper {
@@ -19,4 +24,18 @@ public interface UserProfileApplicationMapper {
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void updateEntityFromCommand(UpdateUserProfileCommand command, @MappingTarget UserProfile userProfile);
+
+    default PagedResponse<GetUserProfileResult> toPagedResult(Page<UserProfile> page) {
+        if (page == null) return null;
+        List<GetUserProfileResult> content = page.getContent() == null ? Collections.emptyList() :
+                page.getContent().stream().map(this::toQueryResult).toList();
+        return PagedResponse.<GetUserProfileResult>builder()
+                .content(content)
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
 }

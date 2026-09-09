@@ -37,11 +37,15 @@ public interface PostFeatureMapper {
 
     SharePostResult toShareResult(Post post);
 
-    @Mapping(target = "content", source = "content")
-    @Mapping(target = "page", source = "page.number")
-    @Mapping(target = "size", source = "page.size")
-    @Mapping(target = "totalElements", source = "page.totalElements")
-    @Mapping(target = "totalPages", source = "page.totalPages")
-    @Mapping(target = "last", source = "page.last")
-    PagedResponse<GetPostDetailResult> toPagedResponse(Page<Post> page, List<GetPostDetailResult> content);
+    default PagedResponse<GetPostDetailResult> toPagedResponse(Page<Post> page, List<GetPostDetailResult> content) {
+        if (page == null) return null;
+        return PagedResponse.<GetPostDetailResult>builder()
+                .content(content)
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
 }

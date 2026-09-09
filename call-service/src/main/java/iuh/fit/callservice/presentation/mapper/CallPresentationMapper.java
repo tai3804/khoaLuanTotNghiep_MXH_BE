@@ -14,7 +14,10 @@ import iuh.fit.callservice.presentation.dto.request.InitiateCallRequest;
 import iuh.fit.callservice.presentation.dto.request.ToggleMediaRequest;
 import iuh.fit.callservice.presentation.dto.response.CallHistoryResponse;
 import iuh.fit.callservice.presentation.dto.response.CallSessionResponse;
+import iuh.fit.callservice.presentation.dto.request.WebRtcSignalRequest;
+import iuh.fit.callservice.presentation.dto.response.WebRtcSignalResponse;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 
 import java.util.List;
@@ -43,5 +46,28 @@ public interface CallPresentationMapper {
 
     List<CallHistoryResponse> toHistoryResponseList(List<GetCallHistoryResult> results);
 
-    PagedResponse<CallHistoryResponse> toPagedHistoryResponse(PagedResponse<GetCallHistoryResult> pagedResult);
+    @Mapping(target = "callSessionId", source = "callSessionId")
+    @Mapping(target = "senderId", source = "senderId")
+    @Mapping(target = "targetUserId", source = "targetUserId")
+    @Mapping(target = "signalType", source = "request.signalType")
+    @Mapping(target = "sdp", source = "request.sdp")
+    @Mapping(target = "candidate", source = "request.candidate")
+    @Mapping(target = "audioMuted", source = "request.audioMuted")
+    @Mapping(target = "videoMuted", source = "request.videoMuted")
+    @Mapping(target = "timestamp", expression = "java(java.time.Instant.now())")
+    WebRtcSignalResponse toSignalResponse(WebRtcSignalRequest request, UUID callSessionId, UUID senderId, UUID targetUserId);
+
+    default PagedResponse<CallHistoryResponse> toPagedHistoryResponse(PagedResponse<GetCallHistoryResult> pagedResult) {
+        if (pagedResult == null) return null;
+        List<CallHistoryResponse> content = pagedResult.getContent() == null ? java.util.Collections.emptyList() :
+                pagedResult.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<CallHistoryResponse>builder()
+                .content(content)
+                .page(pagedResult.getPage())
+                .size(pagedResult.getSize())
+                .totalElements(pagedResult.getTotalElements())
+                .totalPages(pagedResult.getTotalPages())
+                .last(pagedResult.isLast())
+                .build();
+    }
 }
