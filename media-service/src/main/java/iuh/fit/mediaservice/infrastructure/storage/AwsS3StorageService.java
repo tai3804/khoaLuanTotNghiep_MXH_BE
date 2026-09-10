@@ -109,9 +109,17 @@ public class AwsS3StorageService {
             return fileUrlOrKey;
         }
         if (fileUrlOrKey.startsWith("http://") || fileUrlOrKey.startsWith("https://")) {
-            int lastSlashIndex = fileUrlOrKey.lastIndexOf(".com/");
-            if (lastSlashIndex != -1) {
-                return fileUrlOrKey.substring(lastSlashIndex + 5);
+            try {
+                java.net.URI uri = new java.net.URI(fileUrlOrKey);
+                String path = uri.getPath();
+                if (path != null && path.startsWith("/")) {
+                    return path.substring(1);
+                }
+            } catch (Exception e) {
+                int lastSlashIndex = fileUrlOrKey.lastIndexOf(".com/");
+                if (lastSlashIndex != -1) {
+                    return fileUrlOrKey.substring(lastSlashIndex + 5);
+                }
             }
         }
         return fileUrlOrKey;

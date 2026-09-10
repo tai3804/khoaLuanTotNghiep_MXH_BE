@@ -1,7 +1,9 @@
 package iuh.fit.mediaservice.presentation.controller.v1;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.mediaservice.application.features.media.commands.delete_media.DeleteMediaCommand;
@@ -32,6 +34,13 @@ import java.util.List;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Tag(name = "Media Management", description = "APIs for uploading and managing media files (images & videos) on AWS S3")
+@SecurityScheme(
+        name = "bearerAuth",
+        type = SecuritySchemeType.HTTP,
+        scheme = "bearer",
+        bearerFormat = "JWT"
+)
+@SecurityRequirement(name = "bearerAuth")
 public class MediaController {
 
     UploadMediaCommandHandler uploadMediaCommandHandler;
