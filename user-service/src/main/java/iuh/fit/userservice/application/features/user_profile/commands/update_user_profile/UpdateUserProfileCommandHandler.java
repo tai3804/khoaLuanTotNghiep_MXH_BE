@@ -30,13 +30,13 @@ public class UpdateUserProfileCommandHandler {
                 .orElseThrow(() -> new BusinessException(UserServiceErrorCode.USER_PROFILE_NOT_FOUND));
 
         String oldAvatar = userProfile.getAvatarUrl();
-        String oldCover = userProfile.getCoverImageUrl();
+        String oldCover = userProfile.getCoverUrl();
 
         userProfileApplicationMapper.updateEntityFromCommand(command, userProfile);
         UserProfile savedProfile = userProfileRepository.save(userProfile);
 
         String newAvatar = savedProfile.getAvatarUrl();
-        String newCover = savedProfile.getCoverImageUrl();
+        String newCover = savedProfile.getCoverUrl();
 
         if ((newAvatar != null && !newAvatar.equals(oldAvatar)) || (newCover != null && !newCover.equals(oldCover))) {
             try {
