@@ -61,6 +61,14 @@ public interface NotificationPresentationMapper {
                 .last(pagedResult.isLast())
                 .build();
     }
+
+    iuh.fit.notificationservice.presentation.dto.response.NotificationSettingResponse toResponse(
+            iuh.fit.notificationservice.domain.entities.NotificationSetting entity);
+
+    @Mapping(target = "userId", source = "userId")
+    iuh.fit.notificationservice.application.features.notification_setting.commands.update_settings.UpdateNotificationSettingsCommand toUpdateCommand(
+            iuh.fit.notificationservice.presentation.dto.request.NotificationSettingRequest request, UUID userId);
 }
+
 
 

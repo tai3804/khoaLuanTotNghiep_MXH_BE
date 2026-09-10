@@ -14,8 +14,12 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -27,14 +31,16 @@ public class CreateCommentCommandHandler {
     CommentRepository commentRepository;
     MediaClient mediaClient;
     CommentFeatureMapper commentFeatureMapper;
+    KafkaTemplate<String, Object> kafkaTemplate;
 
     @Transactional
     public CreateCommentResult handle(CreateCommentCommand command) {
         Post post = postRepository.findByIdAndDeletedFalse(command.getPostId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 
+        Comment parent = null;
         if (command.getParentCommentId() != null) {
-            Comment parent = commentRepository.findByIdAndDeletedFalse(command.getParentCommentId())
+            parent = commentRepository.findByIdAndDeletedFalse(command.getParentCommentId())
                     .orElseThrow(() -> new BusinessException(PostServiceErrorCode.COMMENT_NOT_FOUND));
             parent.setReplyCount(parent.getReplyCount() + 1);
             commentRepository.save(parent);
@@ -63,6 +69,50 @@ public class CreateCommentCommandHandler {
         post.setCommentCount(post.getCommentCount() + 1);
         postRepository.save(post);
 
+        // Publish notification event to Kafka (UC-NO01)
+        try {
+            String snippet = command.getContent();
+            if (snippet != null && snippet.length() > 60) {
+                snippet = snippet.substring(0, 60) + "...";
+            }
+            String contentText = snippet != null ? snippet : "đã bình luận hình ảnh";
+
+            // If replying to someone else's comment
+            if (parent != null && parent.getAuthorId() != null && !parent.getAuthorId().equals(command.getAuthorId())) {
+                Map<String, Object> replyEvent = new HashMap<>();
+                replyEvent.put("recipientId", parent.getAuthorId().toString());
+                replyEvent.put("actorId", command.getAuthorId().toString());
+                replyEvent.put("type", "REPLY_COMMENT");
+                replyEvent.put("title", "Phản hồi bình luận");
+                replyEvent.put("content", "Một người dùng đã trả lời bình luận của bạn: \"" + contentText + "\"");
+                replyEvent.put("targetId", post.getId().toString());
+                replyEvent.put("targetUrl", "/posts/" + post.getId());
+                replyEvent.put("avatarUrl", null);
+
+                kafkaTemplate.send("notification.in-app.send", replyEvent);
+                log.info("Published REPLY_COMMENT notification to parent author: {}", parent.getAuthorId());
+            }
+            // Else if commenting on someone else's post
+            else if (post.getAuthorId() != null && !post.getAuthorId().equals(command.getAuthorId())) {
+                Map<String, Object> notifEvent = new HashMap<>();
+                notifEvent.put("recipientId", post.getAuthorId().toString());
+                notifEvent.put("actorId", command.getAuthorId().toString());
+                notifEvent.put("type", "COMMENT_POST");
+                notifEvent.put("title", "Bình luận mới");
+                notifEvent.put("content", "Một người dùng đã bình luận về bài viết của bạn: \"" + contentText + "\"");
+                notifEvent.put("targetId", post.getId().toString());
+                notifEvent.put("targetUrl", "/posts/" + post.getId());
+                notifEvent.put("avatarUrl", null);
+
+                kafkaTemplate.send("notification.in-app.send", notifEvent);
+                log.info("Published COMMENT_POST notification to post author: {}", post.getAuthorId());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to publish comment notification event: {}", e.getMessage());
+        }
+
         return commentFeatureMapper.toCreateResult(savedComment);
     }
 }
+
+

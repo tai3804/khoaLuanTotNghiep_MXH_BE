@@ -41,6 +41,11 @@ spring:
               uri: lb://notification-service
               predicates:
                 - Path=/api/v1/notifications, /api/v1/notifications/**
+            - id: notification-service-ws
+              uri: lb://notification-service
+              predicates:
+                - Path=/ws-notifications, /ws-notifications/**
+
             - id: media-service
               uri: lb://media-service
               predicates:

@@ -8,3 +8,4 @@ SELECT 'CREATE DATABASE feed_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE
 SELECT 'CREATE DATABASE moderation_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'moderation_db')\gexec
 SELECT 'CREATE DATABASE admin_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'admin_db')\gexec
 SELECT 'CREATE DATABASE ai_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'ai_db')\gexec
+SELECT 'CREATE DATABASE notification_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'notification_db')\gexec

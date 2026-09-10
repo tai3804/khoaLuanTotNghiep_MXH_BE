@@ -42,6 +42,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- WebSocket for Realtime Notification Delivery -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+
         <!-- Common Framework -->
         <dependency>
             <groupId>iuh.fit</groupId>

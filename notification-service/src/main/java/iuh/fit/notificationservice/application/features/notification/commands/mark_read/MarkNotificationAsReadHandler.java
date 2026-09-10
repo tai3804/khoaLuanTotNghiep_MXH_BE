@@ -8,10 +8,12 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -20,6 +22,7 @@ import java.time.Instant;
 public class MarkNotificationAsReadHandler {
 
     NotificationRepository notificationRepository;
+    SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public Notification handle(MarkNotificationAsReadCommand command) {
@@ -32,8 +35,17 @@ public class MarkNotificationAsReadHandler {
             notification.setReadAt(Instant.now());
             notification = notificationRepository.save(notification);
             log.info("Marked notification {} as read for user {}", notification.getId(), command.getRecipientId());
+
+            try {
+                long unreadCount = notificationRepository.countByRecipientIdAndIsReadFalse(command.getRecipientId());
+                messagingTemplate.convertAndSend("/topic/notifications.count." + command.getRecipientId(), (Object) Map.of("unreadCount", unreadCount));
+
+            } catch (Exception e) {
+                log.warn("Failed to push unread count via WebSocket: {}", e.getMessage());
+            }
         }
 
         return notification;
     }
 }
+

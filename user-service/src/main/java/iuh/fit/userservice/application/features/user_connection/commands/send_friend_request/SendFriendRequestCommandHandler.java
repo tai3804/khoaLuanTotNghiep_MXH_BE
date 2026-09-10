@@ -11,14 +11,19 @@ import iuh.fit.userservice.domain.repository.UserProfileRepository;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import iuh.fit.userservice.domain.entities.UserProfile;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -27,6 +32,8 @@ public class SendFriendRequestCommandHandler {
     UserConnectionRepository userConnectionRepository;
     UserProfileRepository userProfileRepository;
     UserConnectionApplicationMapper userConnectionApplicationMapper;
+    KafkaTemplate<String, Object> kafkaTemplate;
+
 
     @Transactional
     public void handle(SendFriendRequestCommand command) {
@@ -88,5 +95,34 @@ public class SendFriendRequestCommandHandler {
                     command.getRequesterId(), finalTargetUserId, ConnectionType.FRIEND, initialStatus
             ));
         }
+
+        // Publish in-app notification event to Kafka (UC-NO01)
+        try {
+            String requesterName = "Người dùng";
+            String requesterAvatar = null;
+            Optional<UserProfile> requesterProfile = userProfileRepository.findByUserId(command.getRequesterId());
+            if (requesterProfile.isPresent()) {
+                UserProfile p = requesterProfile.get();
+                requesterName = ((p.getLastName() != null ? p.getLastName() : "") + " " + (p.getFirstName() != null ? p.getFirstName() : "")).trim();
+                if (requesterName.isBlank()) requesterName = "Một người dùng";
+                requesterAvatar = p.getAvatarUrl();
+            }
+
+            Map<String, Object> notifEvent = new HashMap<>();
+            notifEvent.put("recipientId", finalTargetUserId.toString());
+            notifEvent.put("actorId", command.getRequesterId().toString());
+            notifEvent.put("type", "FRIEND_REQUEST");
+            notifEvent.put("title", "Lời mời kết bạn");
+            notifEvent.put("content", requesterName + " đã gửi cho bạn một lời mời kết bạn.");
+            notifEvent.put("targetId", command.getRequesterId().toString());
+            notifEvent.put("targetUrl", "/profile/" + command.getRequesterId());
+            notifEvent.put("avatarUrl", requesterAvatar);
+
+            kafkaTemplate.send("notification.in-app.send", notifEvent);
+            log.info("Published FRIEND_REQUEST notification event to Kafka for target: {}", finalTargetUserId);
+        } catch (Exception e) {
+            log.warn("Failed to publish FRIEND_REQUEST notification event: {}", e.getMessage());
+        }
     }
 }
+

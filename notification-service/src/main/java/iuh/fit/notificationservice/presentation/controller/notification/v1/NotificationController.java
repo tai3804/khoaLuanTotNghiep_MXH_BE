@@ -53,8 +53,11 @@ public class NotificationController {
     MarkAllNotificationsAsReadHandler markAllNotificationsAsReadHandler;
     GetNotificationsHandler getNotificationsHandler;
     GetUnreadNotificationCountHandler getUnreadNotificationCountHandler;
+    iuh.fit.notificationservice.application.features.notification_setting.queries.get_settings.GetNotificationSettingsHandler getNotificationSettingsHandler;
+    iuh.fit.notificationservice.application.features.notification_setting.commands.update_settings.UpdateNotificationSettingsHandler updateNotificationSettingsHandler;
     NotificationPresentationMapper mapper;
     JwtUtil jwtUtil;
+
 
     @GetMapping
     @Operation(summary = "Get user notifications", description = "Retrieves paginated list of in-app notifications for the authenticated user")
@@ -122,12 +125,38 @@ public class NotificationController {
         return ResponseEntity.ok(ApiResponse.success(mapper.toResponse(notification), "Notification created successfully"));
     }
 
+    @GetMapping("/settings")
+    @Operation(summary = "Get notification settings", description = "Retrieves current user's notification preferences (UC-NO05)")
+    public ResponseEntity<ApiResponse<iuh.fit.notificationservice.presentation.dto.response.NotificationSettingResponse>> getSettings() {
+        UUID currentUserId = getCurrentUserId();
+        iuh.fit.notificationservice.application.features.notification_setting.queries.get_settings.GetNotificationSettingsQuery query =
+                iuh.fit.notificationservice.application.features.notification_setting.queries.get_settings.GetNotificationSettingsQuery.builder()
+                        .userId(currentUserId)
+                        .build();
+
+        iuh.fit.notificationservice.domain.entities.NotificationSetting setting = getNotificationSettingsHandler.handle(query);
+        return ResponseEntity.ok(ApiResponse.success(mapper.toResponse(setting), "Notification settings retrieved successfully"));
+    }
+
+    @PutMapping("/settings")
+    @Operation(summary = "Update notification settings", description = "Updates toggle settings for each notification category (UC-NO05)")
+    public ResponseEntity<ApiResponse<iuh.fit.notificationservice.presentation.dto.response.NotificationSettingResponse>> updateSettings(
+            @RequestBody iuh.fit.notificationservice.presentation.dto.request.NotificationSettingRequest request) {
+        UUID currentUserId = getCurrentUserId();
+        iuh.fit.notificationservice.application.features.notification_setting.commands.update_settings.UpdateNotificationSettingsCommand command =
+                mapper.toUpdateCommand(request, currentUserId);
+
+        iuh.fit.notificationservice.domain.entities.NotificationSetting updated = updateNotificationSettingsHandler.handle(command);
+        return ResponseEntity.ok(ApiResponse.success(mapper.toResponse(updated), "Notification settings updated successfully"));
+    }
+
     @PostMapping("/send-email")
     @Operation(summary = "Send email notification", description = "Sends email via SMTP/Brevo API")
     public ResponseEntity<ApiResponse<Void>> sendEmail(@Valid @RequestBody SendEmailRequest request) {
         sendEmailHandler.handle(mapper.toCommand(request));
         return ResponseEntity.ok(ApiResponse.success(null, "Email sent successfully"));
     }
+
 
     private UUID getCurrentUserId() {
         String userIdStr = jwtUtil.getCurrentUserId();

@@ -20,9 +20,7 @@ import java.util.*;
 public class FcmPushNotificationService {
 
     UserFcmTokenRepository tokenRepository;
-
-    @Autowired(required = false)
-    FirebaseMessaging firebaseMessaging;
+    Optional<FirebaseMessaging> firebaseMessaging;
 
     @Transactional
     public int sendPushNotification(UUID targetUserId, String title, String body, Map<String, String> dataPayload) {
@@ -32,7 +30,7 @@ public class FcmPushNotificationService {
             return 0;
         }
 
-        if (firebaseMessaging == null) {
+        if (firebaseMessaging.isEmpty()) {
             log.warn("FirebaseMessaging is not initialized. Skipping push notification to user {}: title='{}'", targetUserId, title);
             return 0;
         }
@@ -66,7 +64,7 @@ public class FcmPushNotificationService {
                         .build();
                 messageBuilder.setWebpushConfig(webpushConfig);
 
-                String response = firebaseMessaging.send(messageBuilder.build());
+                String response = firebaseMessaging.get().send(messageBuilder.build());
                 log.info("FCM push sent successfully to token {}: responseId={}", fcmToken.getFcmToken(), response);
                 successCount++;
             } catch (FirebaseMessagingException e) {

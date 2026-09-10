@@ -11,11 +11,16 @@ import iuh.fit.postservice.infrastructure.persistence.repository.ReactionReposit
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -24,6 +29,7 @@ public class ToggleReactionCommandHandler {
     PostRepository postRepository;
     ReactionRepository reactionRepository;
     ReactionFeatureMapper reactionFeatureMapper;
+    KafkaTemplate<String, Object> kafkaTemplate;
 
     @Transactional
     public ToggleReactionResult handle(ToggleReactionCommand command) {
@@ -56,6 +62,27 @@ public class ToggleReactionCommandHandler {
         postRepository.save(post);
         long totalReactions = reactionRepository.countByPostId(command.getPostId());
 
+        // Publish notification event to Kafka if not self-reacting (UC-NO01)
+        if (activeType != null && post.getAuthorId() != null && !post.getAuthorId().equals(command.getUserId())) {
+            try {
+                Map<String, Object> notifEvent = new HashMap<>();
+                notifEvent.put("recipientId", post.getAuthorId().toString());
+                notifEvent.put("actorId", command.getUserId().toString());
+                notifEvent.put("type", "LIKE_POST");
+                notifEvent.put("title", "Tương tác bài viết");
+                notifEvent.put("content", "Một người dùng đã bày tỏ cảm xúc về bài viết của bạn.");
+                notifEvent.put("targetId", post.getId().toString());
+                notifEvent.put("targetUrl", "/posts/" + post.getId());
+                notifEvent.put("avatarUrl", null);
+
+                kafkaTemplate.send("notification.in-app.send", notifEvent);
+                log.info("Published LIKE_POST notification event to Kafka for author: {}", post.getAuthorId());
+            } catch (Exception e) {
+                log.warn("Failed to publish LIKE_POST notification event: {}", e.getMessage());
+            }
+        }
+
         return reactionFeatureMapper.toToggleResult(command.getPostId(), command.getUserId(), activeType, totalReactions);
     }
 }
+

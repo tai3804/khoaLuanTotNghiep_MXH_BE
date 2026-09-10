@@ -28,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
@@ -83,14 +84,7 @@ public class MediaController {
                 .map(mediaPresentationMapper::toResponse)
                 .toList();
 
-        PagedResponse<MediaResponse> pagedResponse = PagedResponse.<MediaResponse>builder()
-                .content(responseList)
-                .pageNumber(mediaPage.getNumber())
-                .pageSize(mediaPage.getSize())
-                .totalElements(mediaPage.getTotalElements())
-                .totalPages(mediaPage.getTotalPages())
-                .isLast(mediaPage.isLast())
-                .build();
+        PagedResponse<MediaResponse> pagedResponse = PagedResponse.from(mediaPage, responseList);
 
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "User media gallery retrieved successfully"));
     }
