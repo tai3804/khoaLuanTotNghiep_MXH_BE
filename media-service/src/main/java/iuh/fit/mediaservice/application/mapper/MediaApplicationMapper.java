@@ -7,6 +7,9 @@ import org.mapstruct.Mapping;
 import org.mapstruct.MappingConstants;
 import org.mapstruct.ReportingPolicy;
 
+import iuh.fit.mediaservice.domain.entities.Media;
+import java.util.UUID;
+
 @Mapper(componentModel = MappingConstants.ComponentModel.SPRING, unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface MediaApplicationMapper {
 
@@ -17,4 +20,16 @@ public interface MediaApplicationMapper {
     @Mapping(target = "fileSize", source = "fileSize")
     @Mapping(target = "contentType", source = "contentType")
     UploadMediaResult toResult(String fileUrl, String fileKey, String fileName, MediaType mediaType, long fileSize, String contentType);
+
+    default Media toEntity(UUID userId, String fileKey, String fileUrl, String originalFilename, long fileSize, MediaType mediaType, String folder) {
+        return Media.builder()
+                .userId(userId)
+                .fileKey(fileKey)
+                .fileUrl(fileUrl)
+                .originalFilename(originalFilename)
+                .fileSize(fileSize)
+                .mediaType(mediaType)
+                .folder(folder)
+                .build();
+    }
 }

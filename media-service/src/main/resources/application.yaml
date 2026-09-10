@@ -20,9 +20,20 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
   servlet:
     multipart:
-      max-file-size: 100MB
-      max-request-size: 105MB
+      max-file-size: 150MB
+      max-request-size: 160MB
       enabled: true
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/media_db}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:root}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
 
 aws:
   s3:
@@ -31,6 +42,7 @@ aws:
     secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
     bucket-name: ${AWS_S3_BUCKET_NAME:social-network-media-bucket}
     custom-domain: ${AWS_S3_CUSTOM_DOMAIN:}
+    max-file-size-bytes: ${AWS_S3_MAX_FILE_SIZE_BYTES:104857600}
 
 eureka:
   client:
