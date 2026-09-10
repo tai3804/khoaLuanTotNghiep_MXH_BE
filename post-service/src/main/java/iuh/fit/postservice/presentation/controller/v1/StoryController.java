@@ -91,7 +91,7 @@ public class StoryController {
 
     @GetMapping("/{storyId}/viewers")
     @Operation(summary = "Get story viewers list", description = "Retrieves paginated list and count of users who viewed author's story")
-    public ResponseEntity<ApiResponse<PagedResponse<StoryViewerResponse>>> getStoryViewers(
+    public ResponseEntity<ApiResponse<List<StoryViewerResponse>>> getStoryViewers(
             @PathVariable UUID storyId,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         UUID currentUserId = getCurrentUserId();

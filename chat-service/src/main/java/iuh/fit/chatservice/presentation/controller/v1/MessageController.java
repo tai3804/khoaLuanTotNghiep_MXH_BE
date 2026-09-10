@@ -34,6 +34,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -72,7 +73,7 @@ public class MessageController {
 
     @GetMapping
     @Operation(summary = "Get conversation messages", description = "Retrieves paginated message history of a conversation in reverse chronological order")
-    public ResponseEntity<ApiResponse<PagedResponse<MessageResponse>>> getMessages(
+    public ResponseEntity<ApiResponse<List<MessageResponse>>> getMessages(
             @PathVariable UUID conversationId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -90,7 +91,7 @@ public class MessageController {
 
     @GetMapping("/search")
     @Operation(summary = "Search messages in conversation", description = "Searches messages in a conversation by content keyword")
-    public ResponseEntity<ApiResponse<PagedResponse<MessageResponse>>> searchMessages(
+    public ResponseEntity<ApiResponse<List<MessageResponse>>> searchMessages(
             @PathVariable UUID conversationId,
             @RequestParam(name = "q", defaultValue = "") String keyword,
             @RequestParam(defaultValue = "0") int page,

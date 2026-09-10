@@ -31,6 +31,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -72,7 +73,7 @@ public class SavedPostController {
 
     @GetMapping
     @Operation(summary = "Get saved posts", description = "Retrieves paginated list of posts saved by the authenticated user")
-    public ResponseEntity<ApiResponse<PagedResponse<PostResponse>>> getSavedPosts(
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getSavedPosts(
             @RequestParam(required = false) String collectionName,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         UUID currentUserId = getCurrentUserId();

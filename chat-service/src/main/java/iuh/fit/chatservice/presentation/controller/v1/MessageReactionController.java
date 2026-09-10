@@ -68,7 +68,7 @@ public class MessageReactionController {
 
         // Real-time broadcast
         messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/reactions",
-                java.util.Map.of(
+                (Object) java.util.Map.of(
                         "messageId", messageId,
                         "userId", currentUserId,
                         "emoji", request.getEmoji(),

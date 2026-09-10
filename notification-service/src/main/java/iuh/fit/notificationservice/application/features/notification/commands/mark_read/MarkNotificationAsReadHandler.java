@@ -1,7 +1,7 @@
 package iuh.fit.notificationservice.application.features.notification.commands.mark_read;
 
 import iuh.fit.commonframework.application.exception.BusinessException;
-import iuh.fit.commonframework.application.exception.CommonErrorCode;
+import iuh.fit.commonframework.application.exception.ErrorCode;
 import iuh.fit.notificationservice.domain.entities.Notification;
 import iuh.fit.notificationservice.domain.repositories.NotificationRepository;
 import lombok.AccessLevel;
@@ -25,7 +25,7 @@ public class MarkNotificationAsReadHandler {
     public Notification handle(MarkNotificationAsReadCommand command) {
         Notification notification = notificationRepository.findByIdAndRecipientId(
                 command.getNotificationId(), command.getRecipientId()
-        ).orElseThrow(() -> new BusinessException(CommonErrorCode.NOT_FOUND));
+        ).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
         if (!notification.isRead()) {
             notification.setRead(true);
