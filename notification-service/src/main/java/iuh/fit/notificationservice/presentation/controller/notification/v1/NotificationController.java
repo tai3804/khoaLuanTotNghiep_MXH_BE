@@ -6,7 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.commonframework.application.exception.BusinessException;
-import iuh.fit.commonframework.application.exception.CommonErrorCode;
+import iuh.fit.commonframework.application.exception.ErrorCode;
 import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.notificationservice.application.features.notification.commands.create_notification.CreateNotificationCommand;
@@ -36,6 +36,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -57,7 +58,7 @@ public class NotificationController {
 
     @GetMapping
     @Operation(summary = "Get user notifications", description = "Retrieves paginated list of in-app notifications for the authenticated user")
-    public ResponseEntity<ApiResponse<PagedResponse<NotificationResponse>>> getNotifications(
+    public ResponseEntity<ApiResponse<List<NotificationResponse>>> getNotifications(
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         UUID currentUserId = getCurrentUserId();
         GetNotificationsQuery query = GetNotificationsQuery.builder()
@@ -131,7 +132,7 @@ public class NotificationController {
     private UUID getCurrentUserId() {
         String userIdStr = jwtUtil.getCurrentUserId();
         if (userIdStr == null) {
-            throw new BusinessException(CommonErrorCode.UNAUTHORIZED);
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
         return UUID.fromString(userIdStr);
     }

@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.application.exception.BusinessException;
-import iuh.fit.commonframework.application.exception.CommonErrorCode;
+import iuh.fit.commonframework.application.exception.ErrorCode;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.notificationservice.application.features.fcm.commands.register_token.RegisterFcmTokenCommand;
 import iuh.fit.notificationservice.application.features.fcm.commands.register_token.RegisterFcmTokenHandler;
@@ -75,7 +75,7 @@ public class FcmTokenController {
     private UUID getCurrentUserId() {
         String userIdStr = jwtUtil.getCurrentUserId();
         if (userIdStr == null) {
-            throw new BusinessException(CommonErrorCode.UNAUTHORIZED);
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
         return UUID.fromString(userIdStr);
     }
