@@ -6,10 +6,13 @@ import lombok.Data;
 import lombok.experimental.FieldDefaults;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.UUID;
+
 @Data
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class UploadMediaCommand {
+    UUID userId;
     MultipartFile file;
     String folder;
 }

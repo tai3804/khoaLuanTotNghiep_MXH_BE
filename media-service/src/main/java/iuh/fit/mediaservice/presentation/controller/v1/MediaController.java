@@ -29,6 +29,16 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.ArrayList;
 import java.util.List;
 
+import iuh.fit.commonframework.application.dto.PagedResponse;
+import iuh.fit.commonframework.infrastructure.security.JwtUtil;
+import iuh.fit.mediaservice.domain.entities.Media;
+import iuh.fit.mediaservice.domain.repository.MediaRepository;
+import iuh.fit.mediaservice.infrastructure.storage.AwsS3StorageService;
+import iuh.fit.mediaservice.presentation.dto.response.PresignedUrlResponse;
+import iuh.fit.mediaservice.presentation.dto.response.UserStorageQuotaResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+
 @RestController
 @RequestMapping(ApiConstants.MEDIA_API)
 @RequiredArgsConstructor
@@ -43,9 +53,58 @@ import java.util.List;
 @SecurityRequirement(name = "bearerAuth")
 public class MediaController {
 
+    AwsS3StorageService awsS3StorageService;
+    MediaRepository mediaRepository;
     UploadMediaCommandHandler uploadMediaCommandHandler;
     DeleteMediaCommandHandler deleteMediaCommandHandler;
     MediaPresentationMapper mediaPresentationMapper;
+    JwtUtil jwtUtil;
+
+    @GetMapping("/quota")
+    @Operation(summary = "Get user storage quota", description = "Retrieves current authenticated user's storage quota details", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<UserStorageQuotaResponse>> getUserQuota() {
+        String userIdStr = jwtUtil.getCurrentUserId();
+        UUID userId = userIdStr != null ? UUID.fromString(userIdStr) : null;
+        long usedBytes = userId != null ? mediaRepository.sumFileSizeByUserId(userId) : 0;
+        long maxQuotaBytes = 1073741824L; // 1 GB Quota
+
+        UserStorageQuotaResponse response = mediaPresentationMapper.toQuotaResponse(userId, usedBytes, maxQuotaBytes);
+        return ResponseEntity.ok(ApiResponse.success(response, "Storage quota retrieved successfully"));
+    }
+
+    @GetMapping("/user/{userId}")
+    @Operation(summary = "Get user media gallery", description = "Retrieves paginated list of media files uploaded by user", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<List<MediaResponse>>> getUserMediaGallery(
+            @PathVariable UUID userId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Page<Media> mediaPage = mediaRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(page, size));
+        List<MediaResponse> responseList = mediaPage.getContent().stream()
+                .map(mediaPresentationMapper::toResponse)
+                .toList();
+
+        PagedResponse<MediaResponse> pagedResponse = PagedResponse.<MediaResponse>builder()
+                .content(responseList)
+                .pageNumber(mediaPage.getNumber())
+                .pageSize(mediaPage.getSize())
+                .totalElements(mediaPage.getTotalElements())
+                .totalPages(mediaPage.getTotalPages())
+                .isLast(mediaPage.isLast())
+                .build();
+
+        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "User media gallery retrieved successfully"));
+    }
+
+    @GetMapping("/presigned-url")
+    @Operation(summary = "Generate S3 Presigned Upload URL", description = "Generates a temporary presigned URL for direct browser/client upload to S3", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<PresignedUrlResponse>> getPresignedUrl(
+            @RequestParam(required = false, defaultValue = "uploads") String folder,
+            @RequestParam String fileName,
+            @RequestParam(required = false, defaultValue = "application/octet-stream") String contentType,
+            @RequestParam(required = false, defaultValue = "15") int durationMinutes) {
+        PresignedUrlResponse response = awsS3StorageService.generatePresignedUploadUrl(folder, fileName, contentType, durationMinutes);
+        return ResponseEntity.ok(ApiResponse.success(response, "Presigned URL generated successfully"));
+    }
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload single media file to S3", description = "Uploads an image or video file to AWS S3 bucket", security = @SecurityRequirement(name = "bearerAuth"))

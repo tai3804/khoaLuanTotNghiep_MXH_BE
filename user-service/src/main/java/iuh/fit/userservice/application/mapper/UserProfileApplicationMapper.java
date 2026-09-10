@@ -12,8 +12,11 @@ import org.mapstruct.NullValuePropertyMappingStrategy;
 import org.mapstruct.ReportingPolicy;
 import org.springframework.data.domain.Page;
 
+import iuh.fit.commonframework.event.UserAvatarUpdatedEvent;
+
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface UserProfileApplicationMapper {
@@ -24,6 +27,16 @@ public interface UserProfileApplicationMapper {
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void updateEntityFromCommand(UpdateUserProfileCommand command, @MappingTarget UserProfile userProfile);
+
+    default UserAvatarUpdatedEvent toAvatarUpdatedEvent(UUID userId, String oldAvatarUrl, String newAvatarUrl, String oldCoverUrl, String newCoverUrl) {
+        return UserAvatarUpdatedEvent.builder()
+                .userId(userId)
+                .oldAvatarUrl(oldAvatarUrl)
+                .newAvatarUrl(newAvatarUrl)
+                .oldCoverUrl(oldCoverUrl)
+                .newCoverUrl(newCoverUrl)
+                .build();
+    }
 
     default PagedResponse<GetUserProfileResult> toPagedResult(Page<UserProfile> page) {
         if (page == null) return null;

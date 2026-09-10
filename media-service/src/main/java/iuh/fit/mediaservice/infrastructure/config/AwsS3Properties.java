@@ -16,4 +16,5 @@ public class AwsS3Properties {
     String secretAccessKey;
     String bucketName;
     String customDomain;
+    long maxFileSizeBytes;
 }

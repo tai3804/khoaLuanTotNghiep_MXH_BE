@@ -16,7 +16,23 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import iuh.fit.mediaservice.presentation.dto.response.PresignedUrlResponse;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.Duration;
+import java.util.Iterator;
 import java.util.List;
 
 @Slf4j
@@ -26,12 +42,47 @@ import java.util.List;
 public class AwsS3StorageService {
 
     S3Client s3Client;
+    S3Presigner s3Presigner;
     AwsS3Properties awsS3Properties;
 
     // Disallowed executable files for security
     static List<String> DISALLOWED_EXTENSIONS = List.of(
             ".exe", ".bat", ".cmd", ".sh", ".msi", ".dll", ".so", ".vbs", ".js", ".jar"
     );
+
+    public PresignedUrlResponse generatePresignedUploadUrl(String folder, String fileName, String contentType, int durationMinutes) {
+        String cleanFileName = (fileName != null && !fileName.isBlank()) ? fileName : "file.bin";
+        String extension = getFileExtension(cleanFileName);
+        validateExtension(extension);
+
+        String fileKey = buildFileKey(folder, cleanFileName);
+        String mimeType = (contentType != null && !contentType.isBlank()) ? contentType : "application/octet-stream";
+        int validDuration = durationMinutes > 0 ? durationMinutes : 15;
+
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(awsS3Properties.getBucketName())
+                .key(fileKey)
+                .contentType(mimeType)
+                .build();
+
+        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofMinutes(validDuration))
+                .putObjectRequest(putObjectRequest)
+                .build();
+
+        PresignedPutObjectRequest presignedPutObjectRequest = s3Presigner.presignPutObject(presignRequest);
+        String presignedUrl = presignedPutObjectRequest.url().toString();
+        String fileUrl = buildFileUrl(fileKey);
+
+        log.info("Generated S3 Presigned Upload URL for key: {}", fileKey);
+
+        return PresignedUrlResponse.builder()
+                .presignedUrl(presignedUrl)
+                .fileKey(fileKey)
+                .fileUrl(fileUrl)
+                .expiresInMinutes(validDuration)
+                .build();
+    }
 
     public String uploadFile(MultipartFile file, String folder) {
         if (file == null || file.isEmpty()) {
@@ -47,6 +98,27 @@ public class AwsS3StorageService {
             contentType = "application/octet-stream";
         }
 
+        byte[] uploadData;
+        long uploadSize;
+
+        try {
+            if (contentType.toLowerCase().startsWith("image/") && !contentType.toLowerCase().contains("gif") && !contentType.toLowerCase().contains("svg")) {
+                uploadData = compressImageIfLarge(file);
+                uploadSize = uploadData.length;
+                contentType = "image/jpeg";
+            } else {
+                uploadData = file.getBytes();
+                uploadSize = file.getSize();
+            }
+        } catch (IOException e) {
+            log.error("Failed to read file input stream", e);
+            throw new BusinessException(MediaServiceErrorCode.FILE_UPLOAD_FAILED);
+        }
+
+        if (uploadSize > awsS3Properties.getMaxFileSizeBytes()) {
+            throw new BusinessException(MediaServiceErrorCode.FILE_TOO_LARGE);
+        }
+
         String fileKey = buildFileKey(folder, originalFilename);
 
         try {
@@ -56,18 +128,63 @@ public class AwsS3StorageService {
                     .contentType(contentType)
                     .build();
 
-            s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
+            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(uploadData));
 
-            log.info("Successfully uploaded file to S3. Key: {}", fileKey);
+            log.info("Successfully uploaded file to S3. Key: {}, Size: {} bytes", fileKey, uploadSize);
             return buildFileUrl(fileKey);
 
-        } catch (IOException e) {
-            log.error("Failed to read file input stream", e);
-            throw new BusinessException(MediaServiceErrorCode.FILE_UPLOAD_FAILED);
         } catch (Exception e) {
             log.error("Failed to upload file to S3: {}", e.getMessage(), e);
             throw new BusinessException(MediaServiceErrorCode.FILE_UPLOAD_FAILED);
         }
+    }
+
+    private byte[] compressImageIfLarge(MultipartFile file) throws IOException {
+        BufferedImage originalImage = ImageIO.read(file.getInputStream());
+        if (originalImage == null) {
+            return file.getBytes();
+        }
+
+        int width = originalImage.getWidth();
+        int height = originalImage.getHeight();
+        int maxDimension = 1920;
+
+        BufferedImage resizedImage = originalImage;
+        if (width > maxDimension || height > maxDimension) {
+            double scale = Math.min((double) maxDimension / width, (double) maxDimension / height);
+            int newWidth = (int) (width * scale);
+            int newHeight = (int) (height * scale);
+
+            resizedImage = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g2d = resizedImage.createGraphics();
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
+            g2d.dispose();
+        }
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpg");
+        if (!writers.hasNext()) {
+            ImageIO.write(resizedImage, "jpg", baos);
+            return baos.toByteArray();
+        }
+
+        ImageWriter writer = writers.next();
+        try (ImageOutputStream ios = ImageIO.createImageOutputStream(baos)) {
+            writer.setOutput(ios);
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(0.82f); // 82% quality compression
+            }
+            writer.write(null, new IIOImage(resizedImage, null, null), param);
+        } finally {
+            writer.dispose();
+        }
+
+        byte[] compressedBytes = baos.toByteArray();
+        log.info("Image auto-compressed from {} bytes to {} bytes", file.getSize(), compressedBytes.length);
+        return compressedBytes;
     }
 
     public void deleteFile(String fileKey) {
