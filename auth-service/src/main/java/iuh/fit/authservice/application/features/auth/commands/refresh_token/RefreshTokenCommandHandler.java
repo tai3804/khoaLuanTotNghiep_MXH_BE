@@ -72,7 +72,11 @@ public class RefreshTokenCommandHandler {
         if (command.getDeviceFingerprint() != null && !command.getDeviceFingerprint().isBlank()) {
             deviceRepository.findByUserIdAndDeviceFingerprint(userId, command.getDeviceFingerprint())
                     .ifPresent(device -> {
+                        if (device.getStatus() == iuh.fit.authservice.domain.enums.DeviceStatus.REVOKED) {
+                            throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+                        }
                         device.setRefreshTokenHash(jwtUtil.hashToken(newRefreshToken));
+                        device.setLastActiveAt(java.time.LocalDateTime.now());
                         deviceRepository.save(device);
                     });
         }
