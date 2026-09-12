@@ -23,6 +23,21 @@ public interface UserProfileApplicationMapper {
 
     GetUserProfileResult toQueryResult(UserProfile userProfile);
 
+    default UserProfile toDefaultEntity(UUID userId) {
+        return UserProfile.builder()
+                .userId(userId)
+                .firstName("Người")
+                .lastName("Dùng")
+                .bio("")
+                .avatarUrl("")
+                .coverUrl("")
+                .followerCount(0L)
+                .followingCount(0L)
+                .friendCount(0L)
+                .isOnline(false)
+                .build();
+    }
+
     UpdateUserProfileResult toUpdateResult(UserProfile userProfile);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)

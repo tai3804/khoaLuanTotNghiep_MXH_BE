@@ -140,51 +140,61 @@ public class AwsS3StorageService {
     }
 
     private byte[] compressImageIfLarge(MultipartFile file) throws IOException {
-        BufferedImage originalImage = ImageIO.read(file.getInputStream());
-        if (originalImage == null) {
-            return file.getBytes();
-        }
+        try {
+            BufferedImage originalImage = ImageIO.read(file.getInputStream());
+            if (originalImage == null) {
+                return file.getBytes();
+            }
 
-        int width = originalImage.getWidth();
-        int height = originalImage.getHeight();
-        int maxDimension = 1920;
+            int width = originalImage.getWidth();
+            int height = originalImage.getHeight();
+            int maxDimension = 1920;
 
-        BufferedImage resizedImage = originalImage;
-        if (width > maxDimension || height > maxDimension) {
-            double scale = Math.min((double) maxDimension / width, (double) maxDimension / height);
-            int newWidth = (int) (width * scale);
-            int newHeight = (int) (height * scale);
+            int newWidth = width;
+            int newHeight = height;
 
-            resizedImage = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
-            Graphics2D g2d = resizedImage.createGraphics();
+            if (width > maxDimension || height > maxDimension) {
+                double scale = Math.min((double) maxDimension / width, (double) maxDimension / height);
+                newWidth = (int) (width * scale);
+                newHeight = (int) (height * scale);
+            }
+
+            // Create a clean TYPE_INT_RGB image with white background to handle transparency/PNG/colorspace correctly
+            BufferedImage rgbImage = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g2d = rgbImage.createGraphics();
+            g2d.setColor(java.awt.Color.WHITE);
+            g2d.fillRect(0, 0, newWidth, newHeight);
             g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
             g2d.drawImage(originalImage, 0, 0, newWidth, newHeight, null);
             g2d.dispose();
-        }
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpg");
-        if (!writers.hasNext()) {
-            ImageIO.write(resizedImage, "jpg", baos);
-            return baos.toByteArray();
-        }
-
-        ImageWriter writer = writers.next();
-        try (ImageOutputStream ios = ImageIO.createImageOutputStream(baos)) {
-            writer.setOutput(ios);
-            ImageWriteParam param = writer.getDefaultWriteParam();
-            if (param.canWriteCompressed()) {
-                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                param.setCompressionQuality(0.82f); // 82% quality compression
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpg");
+            if (!writers.hasNext()) {
+                ImageIO.write(rgbImage, "jpg", baos);
+                return baos.toByteArray();
             }
-            writer.write(null, new IIOImage(resizedImage, null, null), param);
-        } finally {
-            writer.dispose();
-        }
 
-        byte[] compressedBytes = baos.toByteArray();
-        log.info("Image auto-compressed from {} bytes to {} bytes", file.getSize(), compressedBytes.length);
-        return compressedBytes;
+            ImageWriter writer = writers.next();
+            try (ImageOutputStream ios = ImageIO.createImageOutputStream(baos)) {
+                writer.setOutput(ios);
+                ImageWriteParam param = writer.getDefaultWriteParam();
+                if (param.canWriteCompressed()) {
+                    param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                    param.setCompressionQuality(0.82f); // 82% quality compression
+                }
+                writer.write(null, new IIOImage(rgbImage, null, null), param);
+            } finally {
+                writer.dispose();
+            }
+
+            byte[] compressedBytes = baos.toByteArray();
+            log.info("Image auto-compressed from {} bytes to {} bytes", file.getSize(), compressedBytes.length);
+            return compressedBytes;
+        } catch (Exception e) {
+            log.warn("Image compression failed ({}), falling back to raw file bytes", e.getMessage());
+            return file.getBytes();
+        }
     }
 
     public void deleteFile(String fileKey) {

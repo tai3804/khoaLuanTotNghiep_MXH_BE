@@ -14,6 +14,8 @@ import java.time.LocalDate;
 @Data
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RegisterUserRequest {
+    String registerSessionToken;
+
     @NotBlank(message = "{user.email.required}")
     @Email(message = "{user.email.invalid}")
     String email;

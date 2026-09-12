@@ -30,6 +30,20 @@ public class RegisterUserCommandHandler {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
+        if (command.getDateOfBirth() == null) {
+            throw new BusinessException(AuthErrorCode.DATE_OF_BIRTH_REQUIRED);
+        }
+
+        java.time.LocalDate now = java.time.LocalDate.now();
+        if (command.getDateOfBirth().isAfter(now)) {
+            throw new BusinessException(AuthErrorCode.INVALID_DATE_OF_BIRTH);
+        }
+
+        java.time.Period age = java.time.Period.between(command.getDateOfBirth(), now);
+        if (age.getYears() < 13) {
+            throw new BusinessException(AuthErrorCode.USER_UNDER_13);
+        }
+
         User newUser = registerUserMapper.toEntityFromCommand(command);
         newUser.setPassword(passwordEncoder.encode(command.getPassword()));
 

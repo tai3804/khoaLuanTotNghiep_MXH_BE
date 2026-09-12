@@ -19,8 +19,17 @@ import iuh.fit.authservice.presentation.dto.response.LoginUserResponse;
 import iuh.fit.authservice.presentation.dto.response.RefreshTokenResponse;
 import iuh.fit.authservice.presentation.dto.response.RegisterUserResponse;
 import iuh.fit.authservice.presentation.mapper.AuthPresentationMapper;
+import iuh.fit.authservice.domain.repository.UserRepository;
+import iuh.fit.authservice.presentation.dto.request.SendRegisterOtpRequest;
+import iuh.fit.authservice.presentation.dto.request.VerifyRegisterOtpRequest;
+import iuh.fit.authservice.application.exception.AuthErrorCode;
 import iuh.fit.commonframework.application.dto.ApiResponse;
+import iuh.fit.commonframework.application.exception.BusinessException;
+import iuh.fit.commonframework.infrastructure.cache.RedisCacheService;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
+import iuh.fit.commonframework.infrastructure.security.OtpUtil;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -36,11 +45,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
+import java.util.Map;
 import java.util.UUID;
 
 import iuh.fit.authservice.presentation.constants.ApiConstants;
 import iuh.fit.authservice.presentation.constants.MessageConstants;
 
+@Slf4j
 @RestController
 @RequestMapping(ApiConstants.AUTH_API)
 @RequiredArgsConstructor
@@ -53,11 +64,75 @@ public class AuthController {
     LogoutUserCommandHandler logoutUserCommandHandler;
     RefreshTokenCommandHandler refreshTokenCommandHandler;
     AuthPresentationMapper authPresentationMapper;
+    UserRepository userRepository;
+    RedisCacheService redisCacheService;
+    OtpUtil otpUtil;
+    KafkaTemplate<String, Object> kafkaTemplate;
     JwtUtil jwtUtil;
 
     @NonFinal
     @Value("${app.security.jwt.expiration.refresh-token}")
     long refreshTokenExpiration;
+
+    @PostMapping("/register/send-otp")
+    @Operation(summary = "Send registration OTP", description = "Checks if email exists and sends OTP for email verification")
+    public ResponseEntity<ApiResponse<Void>> sendRegisterOtp(@Valid @RequestBody SendRegisterOtpRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+        if (userRepository.existsByEmail(email)) {
+            throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
+        }
+
+        String otp = otpUtil.generateOtp();
+        String redisKey = "register_email_otp:" + email;
+
+        // TTL of 15 minutes (900 seconds) for OTP
+        try {
+            redisCacheService.set(redisKey, otp, java.time.Duration.ofMinutes(15));
+        } catch (Exception e) {
+            log.warn("Failed to set register_email_otp in Redis: {}", e.getMessage());
+        }
+        log.info("Generated Registration Email OTP for email {}: {}", email, otp);
+
+        try {
+            kafkaTemplate.send("notification.email.register-otp", Map.of(
+                    "email", email,
+                    "otp", otp,
+                    "firstName", "Bạn"
+            ));
+        } catch (Exception e) {
+            log.warn("Failed to publish registration OTP to Kafka: {}", e.getMessage());
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(null, "Mã OTP xác thực đã được gửi tới email của bạn"));
+    }
+
+    @PostMapping("/register/verify-otp")
+    @Operation(summary = "Verify registration OTP", description = "Verifies 6-digit OTP code sent to email and creates a registration session")
+    public ResponseEntity<ApiResponse<Map<String, String>>> verifyRegisterOtp(@Valid @RequestBody VerifyRegisterOtpRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+        String redisKey = "register_email_otp:" + email;
+
+        String storedOtp = null;
+        try {
+            storedOtp = redisCacheService.get(redisKey, String.class);
+        } catch (Exception e) {
+            log.error("Failed to read register OTP from Redis: {}", e.getMessage());
+        }
+
+        if (storedOtp == null || !storedOtp.equals(request.getOtpCode().trim())) {
+            throw new BusinessException(AuthErrorCode.INVALID_OTP);
+        }
+
+        String registerSessionToken = UUID.randomUUID().toString();
+        // TTL of 30 minutes (1800 seconds) for the registration session
+        try {
+            redisCacheService.set("register_session:" + registerSessionToken, email, java.time.Duration.ofMinutes(30));
+        } catch (Exception e) {
+            log.warn("Failed to set register_session in Redis: {}", e.getMessage());
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(Map.of("registerSessionToken", registerSessionToken), "Xác thực OTP email thành công"));
+    }
 
     @PostMapping("/register")
     @Operation(summary = "Register a new user", description = "Creates a new user account with email and password")
@@ -79,7 +154,7 @@ public class AuthController {
         LoginUserResult result = loginUserCommandHandler.handle(command);
         LoginUserResponse response = authPresentationMapper.toResponse(result);
 
-        if ("WEB".equalsIgnoreCase(clientType)) {
+        if ("WEB".equalsIgnoreCase(clientType) && response.getRefreshToken() != null) {
             ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
                     .httpOnly(true)
                     .secure(true)
