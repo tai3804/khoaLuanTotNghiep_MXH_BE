@@ -40,7 +40,7 @@ aws:
     region: ${AWS_REGION:ap-southeast-1}
     access-key-id: ${AWS_ACCESS_KEY_ID:}
     secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
-    bucket-name: ${AWS_S3_BUCKET_NAME:social-network-media-bucket}
+    bucket-name: ${AWS_S3_BUCKET_NAME:}
     custom-domain: ${AWS_S3_CUSTOM_DOMAIN:}
     max-file-size-bytes: ${AWS_S3_MAX_FILE_SIZE_BYTES:104857600}
 

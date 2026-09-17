@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  iuh.fit.commonframework.infrastructure.config.DotenvEnvironmentPostProcessor

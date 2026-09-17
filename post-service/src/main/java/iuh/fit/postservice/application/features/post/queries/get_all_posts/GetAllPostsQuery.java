@@ -12,4 +12,5 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class GetAllPostsQuery {
     BaseFilter filter;
+    String cursor;
 }

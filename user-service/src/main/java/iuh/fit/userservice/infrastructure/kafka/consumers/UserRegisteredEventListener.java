@@ -26,14 +26,30 @@ public class UserRegisteredEventListener {
     public void handleUserRegisteredEvent(UserRegisteredEvent event) {
         log.info("Received UserRegisteredEvent for userId: {}", event.getUserId());
 
-        if (userProfileRepository.existsByUserId(event.getUserId())) {
-            log.error("Profile already exists for userId: {}", event.getUserId());
-            throw new BusinessException(UserServiceErrorCode.PROFILE_ALREADY_EXISTS);
-        }
-
-        UserProfile newProfile = userProfileMapper.toEntity(event);
-
-        userProfileRepository.save(newProfile);
-        log.info("Successfully created UserProfile for userId: {}", event.getUserId());
+        userProfileRepository.findByUserId(event.getUserId())
+                .ifPresentOrElse(existingProfile -> {
+                    log.info("UserProfile already exists for userId: {}. Updating with registration event data.", event.getUserId());
+                    if (event.getFirstName() != null && !event.getFirstName().isBlank()) {
+                        existingProfile.setFirstName(event.getFirstName());
+                    }
+                    if (event.getLastName() != null && !event.getLastName().isBlank()) {
+                        existingProfile.setLastName(event.getLastName());
+                    }
+                    if (event.getMiddleName() != null) {
+                        existingProfile.setMiddleName(event.getMiddleName());
+                    }
+                    if (event.getDateOfBirth() != null) {
+                        existingProfile.setDateOfBirth(event.getDateOfBirth());
+                    }
+                    if (event.getGender() != null) {
+                        existingProfile.setGender(userProfileMapper.mapGender(event.getGender()));
+                    }
+                    userProfileRepository.save(existingProfile);
+                    log.info("Successfully merged and updated UserProfile for userId: {}", event.getUserId());
+                }, () -> {
+                    UserProfile newProfile = userProfileMapper.toEntity(event);
+                    userProfileRepository.save(newProfile);
+                    log.info("Successfully created UserProfile for userId: {}", event.getUserId());
+                });
     }
 }

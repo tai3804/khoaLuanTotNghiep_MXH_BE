@@ -47,4 +47,7 @@ public class Conversation extends BaseEntity {
 
     @Column(name = "last_message_at")
     LocalDateTime lastMessageAt;
+
+    @Column(name = "last_message_sender_id")
+    UUID lastMessageSenderId;
 }

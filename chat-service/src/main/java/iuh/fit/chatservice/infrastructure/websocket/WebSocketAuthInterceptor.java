@@ -46,6 +46,9 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(jwt, null, Collections.emptyList());
                     accessor.setUser(authentication);
+                    if (accessor.getSessionAttributes() != null) {
+                        accessor.getSessionAttributes().put("userId", jwt.getSubject());
+                    }
                     log.info("WebSocket connection authenticated for user: {}", jwt.getSubject());
                 } catch (Exception e) {
                     log.error("WebSocket JWT Authentication failed: {}", e.getMessage());
