@@ -4,12 +4,16 @@ import iuh.fit.postservice.domain.enums.PostPrivacy;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.util.UUID;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class SharePostRequest {
+    UUID originalPostId;
+    UUID sharedPostId;
     String caption;
     PostPrivacy privacy;
 }

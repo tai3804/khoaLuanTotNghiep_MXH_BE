@@ -108,9 +108,14 @@ public class PostController {
     }
 
     @GetMapping
-    @Operation(summary = "Get all posts", description = "Retrieves paginated list of posts using BaseFilter (keyword, filters map, page, size, sortBy, sortDirection)")
-    public ResponseEntity<ApiResponse<List<PostResponse>>> getAllPosts(@ParameterObject @Valid @ModelAttribute BaseFilter filter) {
-        GetAllPostsQuery query = GetAllPostsQuery.builder().filter(filter).build();
+    @Operation(summary = "Get all posts", description = "Retrieves paginated list of posts using BaseFilter (keyword, filters map, page, size, sortBy, sortDirection) and optional cursor timestamp")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getAllPosts(
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter,
+            @RequestParam(required = false) String cursor) {
+        GetAllPostsQuery query = GetAllPostsQuery.builder()
+                .filter(filter)
+                .cursor(cursor)
+                .build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(query);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
@@ -159,13 +164,17 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.success(null, MessageConstants.POST_DELETED_SUCCESSFULLY));
     }
 
-    @PostMapping("/{postId}/share")
+    @PostMapping(value = {"/{postId}/share", "/share"})
     @Operation(summary = "Share post", description = "Shares an existing post as a new post")
     public ResponseEntity<ApiResponse<PostResponse>> sharePost(
-            @PathVariable UUID postId,
+            @PathVariable(required = false) UUID postId,
             @Valid @RequestBody SharePostRequest request) {
         UUID currentUserId = getCurrentUserId();
-        SharePostCommand command = postPresentationMapper.toShareCommand(request, postId, currentUserId);
+        UUID targetPostId = postId != null ? postId : (request.getOriginalPostId() != null ? request.getOriginalPostId() : request.getSharedPostId());
+        if (targetPostId == null) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND);
+        }
+        SharePostCommand command = postPresentationMapper.toShareCommand(request, targetPostId, currentUserId);
         SharePostResult result = sharePostCommandHandler.handle(command);
         PostResponse response = postPresentationMapper.toResponse(result);
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.POST_SHARED_SUCCESSFULLY));

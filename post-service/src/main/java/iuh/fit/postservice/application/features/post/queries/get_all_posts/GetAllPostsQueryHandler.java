@@ -47,6 +47,21 @@ public class GetAllPostsQueryHandler {
                 predicates.add(cb.like(cb.lower(root.get("content")), searchPattern));
             }
 
+            // Cursor-based filter: if cursor is provided (ISO LocalDateTime string or epoch millis)
+            if (query.getCursor() != null && !query.getCursor().isBlank()) {
+                try {
+                    java.time.LocalDateTime cursorDateTime = java.time.LocalDateTime.parse(query.getCursor().trim());
+                    predicates.add(cb.lessThan(root.get("createdAt"), cursorDateTime));
+                } catch (Exception e) {
+                    try {
+                        long epochMillis = Long.parseLong(query.getCursor().trim());
+                        java.time.LocalDateTime cursorDateTime = java.time.Instant.ofEpochMilli(epochMillis)
+                                .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
+                        predicates.add(cb.lessThan(root.get("createdAt"), cursorDateTime));
+                    } catch (Exception ignored) {}
+                }
+            }
+
             if (filter.getFilters() != null) {
                 for (Map.Entry<String, Object> entry : filter.getFilters().entrySet()) {
                     if (entry.getKey() != null && entry.getValue() != null) {
@@ -59,7 +74,8 @@ public class GetAllPostsQueryHandler {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
 
-        int pageIndex = Math.max(0, filter.getPage() - 1);
+        boolean hasCursor = query.getCursor() != null && !query.getCursor().isBlank();
+        int pageIndex = hasCursor ? 0 : Math.max(0, filter.getPage() - 1);
         int pageSize = filter.getSize() > 0 ? Math.min(filter.getSize(), 100) : 10;
         String sortBy = (filter.getSortBy() != null && !filter.getSortBy().isBlank()) ? filter.getSortBy() : "createdAt";
         Sort.Direction direction = filter.getSortDirection() == SortDirection.DESC ? Sort.Direction.DESC : Sort.Direction.ASC;

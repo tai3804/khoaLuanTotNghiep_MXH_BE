@@ -20,7 +20,7 @@ public interface ConversationRepository extends BaseJpaRepository<Conversation, 
         WHERE c.type = :type
           AND cm1.userId = :userId1 AND cm1.status = 'ACTIVE'
           AND cm2.userId = :userId2 AND cm2.status = 'ACTIVE'
-        ORDER BY c.createdAt DESC
+        ORDER BY c.createdAt DESC, c.id ASC
     """)
     List<Conversation> findDirectConversationBetweenUsers(
             @Param("type") ConversationType type,

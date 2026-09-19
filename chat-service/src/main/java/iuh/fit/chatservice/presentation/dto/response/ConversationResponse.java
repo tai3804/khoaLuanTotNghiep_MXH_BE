@@ -19,6 +19,9 @@ public class ConversationResponse {
     String avatarUrl;
     String lastMessageContent;
     LocalDateTime lastMessageAt;
+    UUID lastMessageSenderId;
     long unreadCount;
     UUID otherParticipantId;
+    Boolean isOnline;
+    LocalDateTime otherLastActiveAt;
 }

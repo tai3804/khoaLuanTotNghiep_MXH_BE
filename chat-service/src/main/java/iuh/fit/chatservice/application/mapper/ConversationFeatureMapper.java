@@ -19,6 +19,7 @@ public interface ConversationFeatureMapper {
     @Mapping(target = "avatarUrl", source = "conversation.avatarUrl")
     @Mapping(target = "lastMessageContent", source = "conversation.lastMessageContent")
     @Mapping(target = "lastMessageAt", source = "conversation.lastMessageAt")
+    @Mapping(target = "lastMessageSenderId", source = "conversation.lastMessageSenderId")
     GetUserConversationsResult toUserConversationsResult(Conversation conversation);
 
     @Mapping(target = "conversationId", source = "conversation.id")

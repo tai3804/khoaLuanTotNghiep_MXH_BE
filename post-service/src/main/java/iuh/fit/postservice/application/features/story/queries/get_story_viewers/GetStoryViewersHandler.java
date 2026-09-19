@@ -35,7 +35,7 @@ public class GetStoryViewersHandler {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
 
-        int page = query.getFilter() != null ? query.getFilter().getPage() : 0;
+        int page = query.getFilter() != null ? Math.max(0, query.getFilter().getPage() - 1) : 0;
         int size = query.getFilter() != null ? query.getFilter().getSize() : 20;
         Pageable pageable = PageRequest.of(page, size);
 

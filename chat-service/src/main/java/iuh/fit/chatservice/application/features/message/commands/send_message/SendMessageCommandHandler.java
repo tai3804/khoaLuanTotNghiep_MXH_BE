@@ -59,6 +59,7 @@ public class SendMessageCommandHandler {
         // Update last message in conversation
         conversation.setLastMessageContent(command.getContent() != null ? command.getContent() : "[" + type.name() + "]");
         conversation.setLastMessageAt(LocalDateTime.now());
+        conversation.setLastMessageSenderId(command.getSenderId());
         conversationRepository.save(conversation);
 
         // Update lastReadMessageId for sender

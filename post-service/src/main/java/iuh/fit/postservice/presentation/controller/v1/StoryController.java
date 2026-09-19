@@ -40,7 +40,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping(ApiConstants.STORY_API)
+@RequestMapping({ApiConstants.STORY_API, ApiConstants.POST_API + "/stories"})
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Tag(name = "24h Story Management", description = "APIs for posting, viewing, and getting 24h stories and story viewers")
@@ -65,7 +65,7 @@ public class StoryController {
         return ResponseEntity.ok(ApiResponse.success(storyPresentationMapper.toResponse(result), "Story created successfully"));
     }
 
-    @GetMapping
+    @GetMapping({"", "/feed"})
     @Operation(summary = "Get active stories", description = "Retrieves all active 24h stories of current user and followed users")
     public ResponseEntity<ApiResponse<List<UserStoriesResponse>>> getActiveStories() {
         UUID currentUserId = getCurrentUserId();

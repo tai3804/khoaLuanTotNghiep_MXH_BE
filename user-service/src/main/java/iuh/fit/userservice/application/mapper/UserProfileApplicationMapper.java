@@ -24,10 +24,15 @@ public interface UserProfileApplicationMapper {
     GetUserProfileResult toQueryResult(UserProfile userProfile);
 
     default UserProfile toDefaultEntity(UUID userId) {
+        return toDefaultEntity(userId, "Người", "Dùng", null);
+    }
+
+    default UserProfile toDefaultEntity(UUID userId, String firstName, String lastName, String middleName) {
         return UserProfile.builder()
                 .userId(userId)
-                .firstName("Người")
-                .lastName("Dùng")
+                .firstName(firstName != null && !firstName.isBlank() ? firstName : "Người")
+                .lastName(lastName != null && !lastName.isBlank() ? lastName : "Dùng")
+                .middleName(middleName)
                 .bio("")
                 .avatarUrl("")
                 .coverUrl("")

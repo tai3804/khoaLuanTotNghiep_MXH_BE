@@ -31,6 +31,7 @@ public class GetUserConversationsQueryHandler {
     ConversationMemberRepository conversationMemberRepository;
     MessageRepository messageRepository;
     ConversationFeatureMapper conversationFeatureMapper;
+    iuh.fit.chatservice.application.service.UserPresenceService userPresenceService;
 
     @Transactional(readOnly = true)
     public PagedResponse<GetUserConversationsResult> handle(GetUserConversationsQuery query) {
@@ -53,7 +54,7 @@ public class GetUserConversationsQueryHandler {
             long unread = messageRepository.countUnreadMessages(conversation.getId(), member.getLastReadMessageId());
             result.setUnreadCount(unread);
 
-            // If DIRECT, find the other participant ID
+            // If DIRECT, find the other participant ID and fetch presence status
             if (conversation.getType() == ConversationType.DIRECT) {
                 List<ConversationMember> members = conversationMemberRepository.findByConversationIdAndStatus(
                         conversation.getId(), MemberStatus.ACTIVE
@@ -61,7 +62,15 @@ public class GetUserConversationsQueryHandler {
                 members.stream()
                         .filter(m -> !m.getUserId().equals(query.getCurrentUserId()))
                         .findFirst()
-                        .ifPresent(other -> result.setOtherParticipantId(other.getUserId()));
+                        .ifPresent(other -> {
+                            result.setOtherParticipantId(other.getUserId());
+                            iuh.fit.chatservice.presentation.dto.response.UserPresenceResponse presence =
+                                    userPresenceService.getPresence(other.getUserId());
+                            if (presence != null) {
+                                result.setIsOnline(presence.isOnline());
+                                result.setOtherLastActiveAt(presence.getLastActiveAt());
+                            }
+                        });
             }
 
             contentList.add(result);
