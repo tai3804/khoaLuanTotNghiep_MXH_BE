@@ -10,6 +10,7 @@ import java.time.LocalDate;
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RegisterUserCommand {
+    String registerSessionToken;
     String email;
     String password;
     String firstName;

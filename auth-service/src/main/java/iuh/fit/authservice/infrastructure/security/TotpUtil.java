@@ -1,5 +1,6 @@
 package iuh.fit.authservice.infrastructure.security;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Base32;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -10,6 +11,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 
+@Slf4j
 @Component
 public class TotpUtil {
 
@@ -44,6 +46,7 @@ public class TotpUtil {
 
     public boolean verifyCode(String secret, String codeStr) {
         if (secret == null || codeStr == null || codeStr.isBlank()) {
+            log.warn("TOTP Verification failed: secret or codeStr is null/blank");
             return false;
         }
 
@@ -51,24 +54,31 @@ public class TotpUtil {
         try {
             code = Integer.parseInt(codeStr.trim());
         } catch (NumberFormatException e) {
+            log.warn("TOTP Verification failed: code [{}] is not numeric", codeStr);
             return false;
         }
 
         long currentBucket = System.currentTimeMillis() / 1000 / timeStepSeconds;
 
-        // Window of -1, 0, +1 for clock drift compensation
-        for (int i = -1; i <= 1; i++) {
+        // Window of -2, -1, 0, +1, +2 for clock drift compensation (±60 seconds)
+        for (int i = -2; i <= 2; i++) {
             long hash = generateTotpCode(secret, currentBucket + i);
             if (hash == code) {
+                log.info("TOTP Verification succeeded for bucket offset {}", i);
                 return true;
             }
         }
+        log.warn("TOTP Verification failed for code [{}] against secret [{}]", codeStr, secret);
         return false;
     }
 
     private long generateTotpCode(String secret, long timeBucket) {
         try {
-            byte[] keyBytes = BASE32.decode(secret.toUpperCase());
+            String s = secret.toUpperCase().trim();
+            while (s.length() % 8 != 0) {
+                s += "=";
+            }
+            byte[] keyBytes = BASE32.decode(s);
             byte[] data = new byte[8];
             for (int i = 7; i >= 0; i--) {
                 data[i] = (byte) (timeBucket & 0xFF);
@@ -88,6 +98,7 @@ public class TotpUtil {
 
             return binary % (long) Math.pow(10, codeDigits);
         } catch (Exception e) {
+            log.error("Error generating TOTP code from secret: {}", e.getMessage(), e);
             return -1;
         }
     }

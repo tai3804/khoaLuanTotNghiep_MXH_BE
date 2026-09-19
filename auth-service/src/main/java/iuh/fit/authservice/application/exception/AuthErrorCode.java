@@ -20,7 +20,10 @@ public enum AuthErrorCode implements BaseError {
     REFRESH_TOKEN_EXPIRED(401, "Refresh token has expired", 401),
     UNAUTHORIZED(401, "Unauthorized access", 401),
     INVALID_OTP(400, "Invalid or expired OTP code", 400),
-    INVALID_MFA_TYPE(400, "Invalid MFA type. Must be TOTP or EMAIL", 400);
+    INVALID_MFA_TYPE(400, "Invalid MFA type. Must be TOTP or EMAIL", 400),
+    DATE_OF_BIRTH_REQUIRED(400, "Ngày sinh là bắt buộc", 400),
+    INVALID_DATE_OF_BIRTH(400, "Ngày sinh không hợp lệ", 400),
+    USER_UNDER_13(400, "Bạn phải từ đủ 13 tuổi trở lên mới được đăng ký tài khoản", 400);
 
     int code;
     String message;

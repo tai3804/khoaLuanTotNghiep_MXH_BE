@@ -23,8 +23,13 @@ import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.experimental.NonFinal;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.UUID;
 
@@ -40,6 +45,10 @@ public class MfaController {
     MfaVerifyCommandHandler mfaVerifyCommandHandler;
     MfaPresentationMapper mfaPresentationMapper;
     JwtUtil jwtUtil;
+
+    @NonFinal
+    @Value("${app.security.jwt.expiration.refresh-token}")
+    long refreshTokenExpiration;
 
     @PostMapping("/setup")
     @SecurityRequirement(name = "bearerAuth")
@@ -81,8 +90,24 @@ public class MfaController {
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<ApiResponse<LoginUserResponse>> verifyMfa(@Valid @RequestBody MfaVerifyRequest request) {
+    public ResponseEntity<ApiResponse<LoginUserResponse>> verifyMfa(
+            @Valid @RequestBody MfaVerifyRequest request,
+            @RequestHeader(value = "X-Client-Type", defaultValue = "WEB") String clientType,
+            HttpServletResponse httpResponse) {
         MfaVerifyResult result = mfaVerifyCommandHandler.handle(mfaPresentationMapper.toMfaVerifyCommand(request));
-        return ResponseEntity.ok(ApiResponse.success(mfaPresentationMapper.toLoginUserResponse(result)));
+        LoginUserResponse response = mfaPresentationMapper.toLoginUserResponse(result);
+
+        if ("WEB".equalsIgnoreCase(clientType) && response.getRefreshToken() != null) {
+            ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
+                    .httpOnly(true)
+                    .secure(true)
+                    .path("/")
+                    .maxAge(refreshTokenExpiration / 1000)
+                    .sameSite("Strict")
+                    .build();
+            httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 }
