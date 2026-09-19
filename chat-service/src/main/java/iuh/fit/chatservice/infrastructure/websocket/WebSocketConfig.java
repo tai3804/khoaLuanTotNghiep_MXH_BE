@@ -33,7 +33,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // Register WebSocket STOMP endpoint
         registry.addEndpoint("/ws-chat")
                 .setAllowedOriginPatterns("*")
-                .withSockJS();
+                .withSockJS()
+                .setSuppressCors(true);
 
         registry.addEndpoint("/ws-chat")
                 .setAllowedOriginPatterns("*");

@@ -24,13 +24,11 @@ spring:
             allowCredentials: true
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
-      server:
-        webflux:
-          discovery:
-            locator:
-              enabled: true
-              lower-case-service-id: true
-          routes:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
             - id: auth-service
               uri: lb://auth-service
               predicates:
@@ -38,7 +36,7 @@ spring:
             - id: user-service
               uri: lb://user-service
               predicates:
-                - Path=/api/v1/users, /api/v1/users/**
+                - Path=/api/v1/users,/api/v1/users/**,/api/v1/groups,/api/v1/groups/**
             - id: notification-service
               uri: lb://notification-service
               predicates:

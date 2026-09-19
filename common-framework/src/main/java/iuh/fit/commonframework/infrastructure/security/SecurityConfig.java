@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -39,6 +40,7 @@ public class SecurityConfig {
                         "/actuator/**",
                         "/api/v1/posts",
                         "/api/v1/posts/**",
+                        "/api/v1/media/files/**",
                         "/ws-chat",
                         "/ws-chat/**",
                         "/ws-notifications",
@@ -50,7 +52,6 @@ public class SecurityConfig {
         /**
          * Cấu hình SecurityFilterChain với JWT dùng chung cho toàn bộ hệ thống
          * microservices.
-         * CORS được quản lý tập trung tại API Gateway để tránh lỗi duplicate header.
          */
         @Bean
         @ConditionalOnMissingBean(SecurityFilterChain.class)

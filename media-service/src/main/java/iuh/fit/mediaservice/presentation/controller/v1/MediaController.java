@@ -40,6 +40,9 @@ import iuh.fit.mediaservice.presentation.dto.response.UserStorageQuotaResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
+import org.springframework.core.io.Resource;
+import jakarta.servlet.http.HttpServletRequest;
+
 @RestController
 @RequestMapping(ApiConstants.MEDIA_API)
 @RequiredArgsConstructor
@@ -60,6 +63,19 @@ public class MediaController {
     DeleteMediaCommandHandler deleteMediaCommandHandler;
     MediaPresentationMapper mediaPresentationMapper;
     JwtUtil jwtUtil;
+
+    @GetMapping("/files/**")
+    @Operation(summary = "Get or stream media file by key", description = "Streams a media file from S3 bucket via Java Spring Boot backend", security = {})
+    public ResponseEntity<Resource> getFile(HttpServletRequest request) {
+        String requestPath = request.getRequestURI();
+        String prefix = "/api/v1/media/files/";
+        String fileKey = "";
+        int index = requestPath.indexOf(prefix);
+        if (index != -1) {
+            fileKey = requestPath.substring(index + prefix.length());
+        }
+        return awsS3StorageService.streamFile(fileKey);
+    }
 
     @GetMapping("/quota")
     @Operation(summary = "Get user storage quota", description = "Retrieves current authenticated user's storage quota details", security = @SecurityRequirement(name = "bearerAuth"))
