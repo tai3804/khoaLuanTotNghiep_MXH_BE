@@ -24,4 +24,5 @@ public class GetCallHistoryResult {
     long durationInSeconds;
     ParticipantRole myRole;
     ParticipantStatus myStatus;
+    java.util.List<UUID> participantUserIds;
 }

@@ -43,10 +43,14 @@ public class WebSocketCallController {
         );
 
         if (targetUserId != null) {
-            // Send 1-1 P2P WebRTC signal directly to target user queue
+            // Send 1-1 P2P WebRTC signal directly to target user queue and fallback topic
             messagingTemplate.convertAndSendToUser(
                     targetUserId.toString(),
                     "/queue/call-signal",
+                    signalResponse
+            );
+            messagingTemplate.convertAndSend(
+                    "/topic/call-user." + targetUserId,
                     signalResponse
             );
             log.info("Sent WebRTC signal [{}] from {} to target user {}", signalRequest.getSignalType(), senderId, targetUserId);
@@ -76,6 +80,10 @@ public class WebSocketCallController {
         messagingTemplate.convertAndSendToUser(
                 targetUserId.toString(),
                 "/queue/call-signal",
+                signalResponse
+        );
+        messagingTemplate.convertAndSend(
+                "/topic/call-user." + targetUserId,
                 signalResponse
         );
     }

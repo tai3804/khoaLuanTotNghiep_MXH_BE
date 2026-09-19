@@ -23,7 +23,8 @@ spring:
             allowedHeaders: "*"
             allowCredentials: true
       default-filters:
-        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+        - DedupeResponseHeader=Access-Control-Allow-Origin, RETAIN_FIRST
+        - DedupeResponseHeader=Access-Control-Allow-Credentials, RETAIN_FIRST
       server:
         webflux:
           discovery:
@@ -72,6 +73,14 @@ spring:
               uri: lb://call-service
               predicates:
                 - Path=/api/v1/calls, /api/v1/calls/**, /api/v1/call, /api/v1/call/**
+            - id: call-service-ws
+              uri: lb://call-service
+              predicates:
+                - Path=/ws-call, /ws-call/**
+            - id: moderation-service
+              uri: lb://moderation-service
+              predicates:
+                - Path=/api/v1/moderation, /api/v1/moderation/**
 
 eureka:
   client:

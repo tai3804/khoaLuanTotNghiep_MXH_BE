@@ -41,7 +41,11 @@ $services = @(
     @{ Name = "feed-service"; Title = "FEED-SERVICE (8088)" },
     @{ Name = "notification-service"; Title = "NOTIFICATION-SERVICE (8083)" },
     @{ Name = "media-service"; Title = "MEDIA-SERVICE (8084)" },
-    @{ Name = "chat-service"; Title = "CHAT-SERVICE (8087)" }
+    @{ Name = "chat-service"; Title = "CHAT-SERVICE (8087)" },
+    @{ Name = "call-service"; Title = "CALL-SERVICE (8086)" },
+    @{ Name = "moderation-service"; Title = "MODERATION-SERVICE (8092)" },
+    @{ Name = "admin-service"; Title = "ADMIN-SERVICE (8090)" },
+    @{ Name = "ai-service"; Title = "AI-SERVICE (8091)" }
 )
 
 foreach ($s in $services) {

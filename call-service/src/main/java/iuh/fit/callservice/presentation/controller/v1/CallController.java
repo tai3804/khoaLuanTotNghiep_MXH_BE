@@ -55,6 +55,7 @@ public class CallController {
     InitiateCallCommandHandler initiateCallCommandHandler;
     JoinCallCommandHandler joinCallCommandHandler;
     LeaveCallCommandHandler leaveCallCommandHandler;
+    iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommandHandler rejectCallCommandHandler;
     EndCallCommandHandler endCallCommandHandler;
     ToggleMediaCommandHandler toggleMediaCommandHandler;
     GetActiveCallQueryHandler getActiveCallQueryHandler;
@@ -87,6 +88,16 @@ public class CallController {
         LeaveCallCommand command = callPresentationMapper.toLeaveCommand(callSessionId, currentUserId);
         leaveCallCommandHandler.handle(command);
         return ResponseEntity.ok(ApiResponse.success(null, "Left call session successfully"));
+    }
+
+    @PostMapping("/{callSessionId}/reject")
+    @Operation(summary = "Reject incoming call session", description = "Declines an incoming call invitation")
+    public ResponseEntity<ApiResponse<Void>> rejectCall(@PathVariable UUID callSessionId) {
+        UUID currentUserId = getCurrentUserId();
+        iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommand command =
+                callPresentationMapper.toRejectCommand(callSessionId, currentUserId);
+        rejectCallCommandHandler.handle(command);
+        return ResponseEntity.ok(ApiResponse.success(null, "Rejected call session successfully"));
     }
 
     @PostMapping("/{callSessionId}/end")

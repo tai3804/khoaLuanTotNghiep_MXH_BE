@@ -32,6 +32,8 @@ public interface CallPresentationMapper {
 
     LeaveCallCommand toLeaveCommand(UUID callSessionId, UUID currentUserId);
 
+    iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommand toRejectCommand(UUID callSessionId, UUID currentUserId);
+
     EndCallCommand toEndCommand(UUID callSessionId, UUID currentUserId);
 
     ToggleMediaCommand toToggleMediaCommand(ToggleMediaRequest request, UUID callSessionId, UUID currentUserId);

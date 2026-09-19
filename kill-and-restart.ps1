@@ -6,7 +6,7 @@ param(
     [switch]$Restart
 )
 
-$ports = @(8761, 8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8090, 8091)
+$ports = @(8761, 8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8090, 8091, 8092)
 
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "   DỪNG TẤT CẢ CÁC SPRING BOOT SERVICES   " -ForegroundColor Cyan

@@ -42,10 +42,14 @@ public class WebSocketCallAuthInterceptor implements ChannelInterceptor {
             if (token != null && !token.isBlank()) {
                 try {
                     Jwt jwt = jwtDecoder.decode(token);
+                    String userId = jwt.getSubject();
                     UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(jwt, null, Collections.emptyList());
+                            new UsernamePasswordAuthenticationToken(userId, jwt, Collections.emptyList());
                     accessor.setUser(authentication);
-                    log.info("WebSocket Call connection authenticated for user: {}", jwt.getSubject());
+                    if (accessor.getSessionAttributes() != null) {
+                        accessor.getSessionAttributes().put("userId", userId);
+                    }
+                    log.info("WebSocket Call connection authenticated for user: {}", userId);
                 } catch (Exception e) {
                     log.error("WebSocket Call JWT Authentication failed: {}", e.getMessage());
                 }

@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import iuh.fit.callservice.presentation.dto.response.WebRtcSignalResponse;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -36,10 +38,36 @@ public class InitiateCallCommandHandler {
 
     @Transactional
     public InitiateCallResult handle(InitiateCallCommand command) {
-        // Check if user is already in an active call
+        // An unanswered call must not lock the caller forever.  The browser can
+        // be closed or lose its connection before it sends the timeout/end API.
+        // Expire only old INITIATED sessions; genuinely connected calls remain
+        // protected by the normal active-call rule.
         Optional<CallSession> activeCallOpt = callSessionRepository.findActiveCallSessionByUserId(command.getCurrentUserId());
         if (activeCallOpt.isPresent()) {
-            throw new BusinessException(CallServiceErrorCode.USER_ALREADY_IN_CALL);
+            CallSession activeCall = activeCallOpt.get();
+            boolean unansweredAndExpired = activeCall.getStatus() == CallStatus.INITIATED
+                    && activeCall.getStartedAt() != null
+                    && activeCall.getStartedAt().isBefore(LocalDateTime.now().minusSeconds(40));
+
+            if (!unansweredAndExpired) {
+                throw new BusinessException(CallServiceErrorCode.USER_ALREADY_IN_CALL);
+            }
+
+            activeCall.setStatus(CallStatus.ENDED);
+            activeCall.setEndedAt(LocalDateTime.now());
+            activeCall.setDurationInSeconds(0);
+            callSessionRepository.save(activeCall);
+
+            List<CallParticipant> staleParticipants = callParticipantRepository.findByCallSessionId(activeCall.getId());
+            staleParticipants.stream()
+                    .filter(participant -> participant.getStatus() == ParticipantStatus.INVITED
+                            || participant.getStatus() == ParticipantStatus.RINGING
+                            || participant.getStatus() == ParticipantStatus.CONNECTED)
+                    .forEach(participant -> {
+                        participant.setStatus(ParticipantStatus.LEFT);
+                        participant.setLeftAt(LocalDateTime.now());
+                    });
+            callParticipantRepository.saveAll(staleParticipants);
         }
 
         CallSession session = CallSession.builder()
@@ -53,6 +81,7 @@ public class InitiateCallCommandHandler {
         session = callSessionRepository.save(session);
 
         List<CallParticipant> participantsToSave = new ArrayList<>();
+        List<WebRtcSignalResponse> incomingSignals = new ArrayList<>();
 
         // Add Host Participant
         CallParticipant hostParticipant = CallParticipant.builder()
@@ -88,22 +117,41 @@ public class InitiateCallCommandHandler {
                         .timestamp(Instant.now())
                         .build();
 
-                try {
-                    messagingTemplate.convertAndSendToUser(
-                            targetId.toString(),
-                            "/queue/call-signal",
-                            incomingSignal
-                    );
-                } catch (Exception ignored) {}
+                incomingSignals.add(incomingSignal);
             }
         }
 
         participantsToSave = callParticipantRepository.saveAll(participantsToSave);
+
+        // Deliver only after the session and participant rows are committed.
+        // Otherwise a fast receiver can press Answer before its invitation is
+        // visible to the join endpoint.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                incomingSignals.forEach(InitiateCallCommandHandler.this::notifyIncomingCall);
+            }
+        });
 
         List<InitiateCallResult.ParticipantResult> participantResults = participantsToSave.stream()
                 .map(callFeatureMapper::toInitiateParticipantResult)
                 .toList();
 
         return callFeatureMapper.toInitiateCallResult(session, participantResults);
+    }
+
+    private void notifyIncomingCall(WebRtcSignalResponse signal) {
+        try {
+            messagingTemplate.convertAndSendToUser(
+                    signal.getTargetUserId().toString(),
+                    "/queue/call-signal",
+                    signal
+            );
+            messagingTemplate.convertAndSend(
+                    "/topic/call-user." + signal.getTargetUserId(), signal);
+        } catch (Exception ignored) {
+            // The receiver may be offline; their client recovers a ringing call
+            // through GET /calls/active after reconnecting.
+        }
     }
 }
