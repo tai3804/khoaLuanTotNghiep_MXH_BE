@@ -15,11 +15,13 @@ import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -40,28 +42,51 @@ public class MfaVerifyCommandHandler {
             throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
         }
 
-        String userIdStr = redisCacheService.get("mfa_session:" + mfaToken, String.class);
-        if (userIdStr == null) {
-            throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+        String userIdStr = null;
+        try {
+            userIdStr = redisCacheService.get("mfa_session:" + mfaToken, String.class);
+        } catch (Exception e) {
+            log.error("Failed to read mfa_session from Redis: {}", e.getMessage());
+        }
+
+        if (userIdStr == null || userIdStr.isBlank()) {
+            throw new BusinessException(AuthErrorCode.INVALID_OTP);
         }
 
         UUID userId = UUID.fromString(userIdStr);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.USER_NOT_FOUND));
 
-        String mfaTypeStr = redisCacheService.get("mfa_session_type:" + mfaToken, String.class);
+        String mfaTypeStr = null;
+        try {
+            mfaTypeStr = redisCacheService.get("mfa_session_type:" + mfaToken, String.class);
+        } catch (Exception ignored) {}
         MfaType mfaType = mfaTypeStr != null ? MfaType.valueOf(mfaTypeStr) : user.getMfaType();
 
         if (MfaType.TOTP == mfaType) {
-            if (!totpUtil.verifyCode(user.getMfaSecret(), command.getOtpCode())) {
-                throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+            String secretKey = user.getMfaSecret();
+            if (secretKey == null || secretKey.isBlank()) {
+                try {
+                    secretKey = redisCacheService.get("mfa_setup_secret:" + user.getId(), String.class);
+                } catch (Exception ignored) {}
+            }
+            if (secretKey == null || secretKey.isBlank()) {
+                throw new BusinessException(AuthErrorCode.INVALID_OTP);
+            }
+            if (!totpUtil.verifyCode(secretKey, command.getOtpCode())) {
+                throw new BusinessException(AuthErrorCode.INVALID_OTP);
             }
         } else if (MfaType.EMAIL == mfaType) {
-            String storedOtp = redisCacheService.get("mfa_email_otp:" + mfaToken, String.class);
+            String storedOtp = null;
+            try {
+                storedOtp = redisCacheService.get("mfa_email_otp:" + mfaToken, String.class);
+            } catch (Exception ignored) {}
             if (storedOtp == null || !storedOtp.equals(command.getOtpCode())) {
-                throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+                throw new BusinessException(AuthErrorCode.INVALID_OTP);
             }
-            redisCacheService.delete("mfa_email_otp:" + mfaToken);
+            try {
+                redisCacheService.delete("mfa_email_otp:" + mfaToken);
+            } catch (Exception ignored) {}
         }
 
         // Evict temporary MFA session from Redis

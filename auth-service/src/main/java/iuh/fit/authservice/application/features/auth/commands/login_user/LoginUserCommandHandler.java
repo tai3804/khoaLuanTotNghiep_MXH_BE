@@ -74,8 +74,13 @@ public class LoginUserCommandHandler {
         String mfaToken = UUID.randomUUID().toString();
         MfaType mfaType = user.getMfaType() != null ? user.getMfaType() : MfaType.TOTP;
 
-        redisCacheService.set("mfa_session:" + mfaToken, user.getId().toString(), otpUtil.getDefaultTtl());
-        redisCacheService.set("mfa_session_type:" + mfaToken, mfaType.name(), otpUtil.getDefaultTtl());
+        try {
+            redisCacheService.set("mfa_session:" + mfaToken, user.getId().toString(), otpUtil.getDefaultTtl());
+            redisCacheService.set("mfa_session_type:" + mfaToken, mfaType.name(), otpUtil.getDefaultTtl());
+        } catch (Exception e) {
+            log.error("Redis Connection Error when processing MFA login: {}", e.getMessage());
+            throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+        }
 
         if (MfaType.EMAIL == mfaType) {
             String otp = otpUtil.generateOtp();

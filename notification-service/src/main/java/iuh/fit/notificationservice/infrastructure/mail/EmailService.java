@@ -70,4 +70,43 @@ public class EmailService {
             throw new RuntimeException("Failed to send email", e);
         }
     }
+
+    public void sendRegistrationOtpEmail(String toEmail, String otpCode) {
+        log.info("Sending registration OTP email to {} via Brevo", toEmail);
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", apiKey != null ? apiKey.trim() : "");
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+
+            Map<String, Object> body = Map.of(
+                    "sender", Map.of("name", senderName, "email", senderEmail),
+                    "to", List.of(Map.of("email", toEmail)),
+                    "subject", "Mã xác thực đăng ký tài khoản",
+                    "htmlContent",
+                    "<div style=\"font-family: Arial, sans-serif; padding: 20px;\">" +
+                    "<h2>Xác thực đăng ký tài khoản</h2>" +
+                    "<p>Mã OTP của bạn để đăng ký tài khoản là: <strong style=\"font-size: 24px; color: #4F46E5;\">" + otpCode + "</strong></p>" +
+                    "<p>Mã OTP này có hiệu lực trong <strong>15 phút</strong>.</p>" +
+                    "<p>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.</p>" +
+                    "</div>");
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(apiUrl, request, String.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("Registration OTP email successfully sent to {}", toEmail);
+            } else {
+                log.error("Failed to send registration OTP email to {}. Response: {}", toEmail, response.getBody());
+            }
+        } catch (HttpStatusCodeException e) {
+            log.error("Failed to send email to {} via Brevo [HTTP {}]: {}", toEmail, e.getStatusCode(),
+                    e.getResponseBodyAsString());
+            throw new RuntimeException("Brevo API error: " + e.getResponseBodyAsString(), e);
+        } catch (Exception e) {
+            log.error("Unexpected error sending email to {} via Brevo", toEmail, e);
+            throw new RuntimeException("Failed to send email", e);
+        }
+    }
 }
