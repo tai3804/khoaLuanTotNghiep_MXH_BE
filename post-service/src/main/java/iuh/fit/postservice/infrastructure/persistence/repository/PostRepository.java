@@ -12,6 +12,15 @@ import java.util.UUID;
 @Repository
 public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     Page<Post> findByAuthorIdAndDeletedFalse(UUID authorId, Pageable pageable);
+    Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedFalse(UUID authorId, Pageable pageable);
+    Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedTrue(UUID authorId, Pageable pageable);
     Page<Post> findByDeletedFalse(Pageable pageable);
     Optional<Post> findByIdAndDeletedFalse(UUID id);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Query("UPDATE Post p SET p.privacy = :privacy WHERE p.authorId = :authorId AND p.deleted = false")
+    int updatePrivacyByAuthorId(
+            @org.springframework.data.repository.query.Param("authorId") UUID authorId,
+            @org.springframework.data.repository.query.Param("privacy") iuh.fit.postservice.domain.enums.PostPrivacy privacy);
 }

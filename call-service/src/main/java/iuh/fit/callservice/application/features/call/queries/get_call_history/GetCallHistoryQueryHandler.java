@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -41,9 +42,15 @@ public class GetCallHistoryQueryHandler {
         for (CallParticipant participant : participantPage.getContent()) {
             Optional<CallSession> sessionOpt = callSessionRepository.findById(participant.getCallSessionId());
             if (sessionOpt.isPresent()) {
-                GetCallHistoryResult result = callFeatureMapper.toGetCallHistoryResult(sessionOpt.get(), participant);
+                CallSession session = sessionOpt.get();
+                GetCallHistoryResult result = callFeatureMapper.toGetCallHistoryResult(session, participant);
                 result.setMyRole(participant.getRole());
                 result.setMyStatus(participant.getStatus());
+                List<UUID> participantUserIds = callParticipantRepository.findByCallSessionId(session.getId())
+                        .stream()
+                        .map(CallParticipant::getUserId)
+                        .toList();
+                result.setParticipantUserIds(participantUserIds);
                 results.add(result);
             }
         }

@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
@@ -25,6 +26,7 @@ public class DeleteCommentCommandHandler {
     MediaClient mediaClient;
 
     @Transactional
+    @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
     public void handle(DeleteCommentCommand command) {
         Comment comment = commentRepository.findByIdAndDeletedFalse(command.getCommentId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.COMMENT_NOT_FOUND));

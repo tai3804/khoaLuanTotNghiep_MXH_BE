@@ -1,17 +1,16 @@
-package iuh.fit.postservice.application.features.post.queries.get_post_detail;
+package iuh.fit.callservice.application.features.call.commands.reject_call;
 
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 import java.util.UUID;
 
-@Getter
-@Setter
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class GetPostDetailQuery {
-    UUID postId;
-    UUID viewerId;
+public class RejectCallCommand {
+    UUID callSessionId;
+    UUID currentUserId;
 }

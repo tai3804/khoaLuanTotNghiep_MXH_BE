@@ -26,6 +26,7 @@ import iuh.fit.userservice.domain.entities.UserConnection;
 import iuh.fit.userservice.domain.enums.ConnectionStatus;
 import iuh.fit.userservice.domain.enums.ConnectionType;
 import iuh.fit.userservice.domain.repository.UserConnectionRepository;
+import iuh.fit.userservice.domain.repository.UserPrivacySettingRepository;
 import iuh.fit.userservice.presentation.constants.ApiConstants;
 import iuh.fit.userservice.presentation.constants.MessageConstants;
 import iuh.fit.userservice.presentation.dto.response.FriendSuggestionResponse;
@@ -60,6 +61,7 @@ public class UserConnectionController {
     GetMutualFriendsHandler getMutualFriendsHandler;
     GetFriendSuggestionsHandler getFriendSuggestionsHandler;
     UserConnectionRepository userConnectionRepository;
+    UserPrivacySettingRepository userPrivacySettingRepository;
     iuh.fit.userservice.domain.repository.UserBlockRepository userBlockRepository;
     UserConnectionPresentationMapper userConnectionPresentationMapper;
     JwtUtil jwtUtil;
@@ -179,6 +181,10 @@ public class UserConnectionController {
             @PathVariable UUID targetUserId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        UUID viewerId = getCurrentUserId();
+        if (!canViewFriendList(viewerId, targetUserId)) {
+            throw new BusinessException(UserServiceErrorCode.UNAUTHORIZED);
+        }
         return getPagedConnectionsResponse(targetUserId, "FRIENDS", page, size);
     }
 
@@ -256,5 +262,15 @@ public class UserConnectionController {
             throw new BusinessException(UserServiceErrorCode.UNAUTHORIZED);
         }
         return UUID.fromString(userIdStr);
+    }
+
+    private boolean canViewFriendList(UUID viewerId, UUID ownerId) {
+        if (viewerId.equals(ownerId)) return true;
+        String privacy = userPrivacySettingRepository.findByUserId(ownerId)
+                .map(setting -> setting.getFriendListPrivacy())
+                .orElse("PUBLIC");
+        if ("PUBLIC".equalsIgnoreCase(privacy)) return true;
+        return "FRIENDS".equalsIgnoreCase(privacy)
+                && userConnectionRepository.findAcceptedFriendship(viewerId, ownerId).isPresent();
     }
 }

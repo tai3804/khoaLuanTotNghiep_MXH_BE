@@ -71,7 +71,7 @@ public class CommentController {
             )
     )
     public ResponseEntity<ApiResponse<CommentResponse>> createComment(
-            @PathVariable UUID postId,
+            @PathVariable("postId") UUID postId,
             @Valid @ModelAttribute CreateCommentRequest request,
             @RequestPart(value = "file", required = false) MultipartFile file) {
         UUID currentUserId = getCurrentUserId();
@@ -86,8 +86,8 @@ public class CommentController {
     @DeleteMapping("/{commentId}")
     @Operation(summary = "Delete comment", description = "Deletes a comment and removes associated media file from S3")
     public ResponseEntity<ApiResponse<Void>> deleteComment(
-            @PathVariable UUID postId,
-            @PathVariable UUID commentId) {
+            @PathVariable("postId") UUID postId,
+            @PathVariable("commentId") UUID commentId) {
         UUID currentUserId = getCurrentUserId();
         DeleteCommentCommand command = DeleteCommentCommand.builder().commentId(commentId).userId(currentUserId).build();
         deleteCommentCommandHandler.handle(command);
@@ -97,10 +97,10 @@ public class CommentController {
     @GetMapping
     @Operation(summary = "Get post comments", description = "Retrieves paginated list of top-level comments or nested replies for a post")
     public ResponseEntity<ApiResponse<List<CommentResponse>>> getPostComments(
-            @PathVariable UUID postId,
-            @RequestParam(required = false) UUID parentCommentId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @PathVariable("postId") UUID postId,
+            @RequestParam(value = "parentCommentId", required = false) UUID parentCommentId,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size) {
         GetPostCommentsQuery query = GetPostCommentsQuery.builder()
                 .postId(postId)
                 .parentCommentId(parentCommentId)
@@ -115,7 +115,7 @@ public class CommentController {
     @GetMapping("/all")
     @Operation(summary = "Get all comments with BaseFilter", description = "Retrieves paginated list of comments using BaseFilter")
     public ResponseEntity<ApiResponse<List<CommentResponse>>> getAllComments(
-            @PathVariable UUID postId,
+            @PathVariable("postId") UUID postId,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         if (filter.getFilters() != null) {
             filter.getFilters().put("postId", postId);

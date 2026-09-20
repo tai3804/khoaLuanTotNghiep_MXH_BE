@@ -48,6 +48,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.MediaType;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -78,6 +79,8 @@ public class PostController {
     GetAllPostsQueryHandler getAllPostsQueryHandler;
     PostPresentationMapper postPresentationMapper;
     JwtUtil jwtUtil;
+    iuh.fit.postservice.infrastructure.persistence.repository.PostRepository postRepository;
+    CacheManager cacheManager;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(
@@ -111,10 +114,11 @@ public class PostController {
     @Operation(summary = "Get all posts", description = "Retrieves paginated list of posts using BaseFilter (keyword, filters map, page, size, sortBy, sortDirection) and optional cursor timestamp")
     public ResponseEntity<ApiResponse<List<PostResponse>>> getAllPosts(
             @ParameterObject @Valid @ModelAttribute BaseFilter filter,
-            @RequestParam(required = false) String cursor) {
+            @RequestParam(value = "cursor", required = false) String cursor) {
         GetAllPostsQuery query = GetAllPostsQuery.builder()
                 .filter(filter)
                 .cursor(cursor)
+                .viewerId(getCurrentUserId())
                 .build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(query);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
@@ -124,11 +128,11 @@ public class PostController {
     @GetMapping("/search")
     @Operation(summary = "Search posts by keyword", description = "Retrieves paginated list of posts matching the keyword query")
     public ResponseEntity<ApiResponse<List<PostResponse>>> searchPosts(
-            @RequestParam(required = false, defaultValue = "") String query,
+            @RequestParam(value = "query", required = false, defaultValue = "") String query,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         BaseFilter searchFilter = filter != null ? filter : new BaseFilter();
         searchFilter.setKeyword(query);
-        GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter).build();
+        GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter).viewerId(getCurrentUserId()).build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(searchQuery);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
@@ -136,8 +140,8 @@ public class PostController {
 
     @GetMapping("/{postId}")
     @Operation(summary = "Get post details", description = "Retrieves detail information of a specific post by ID")
-    public ResponseEntity<ApiResponse<PostResponse>> getPostById(@PathVariable UUID postId) {
-        GetPostDetailQuery query = GetPostDetailQuery.builder().postId(postId).build();
+    public ResponseEntity<ApiResponse<PostResponse>> getPostById(@PathVariable("postId") UUID postId) {
+        GetPostDetailQuery query = GetPostDetailQuery.builder().postId(postId).viewerId(getCurrentUserId()).build();
         GetPostDetailResult result = getPostDetailQueryHandler.handle(query);
         PostResponse response = postPresentationMapper.toResponse(result);
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.POST_RETRIEVED_SUCCESSFULLY));
@@ -146,7 +150,7 @@ public class PostController {
     @PutMapping("/{postId}")
     @Operation(summary = "Update post", description = "Updates content or privacy of an existing post")
     public ResponseEntity<ApiResponse<PostResponse>> updatePost(
-            @PathVariable UUID postId,
+            @PathVariable("postId") UUID postId,
             @Valid @RequestBody UpdatePostRequest request) {
         UUID currentUserId = getCurrentUserId();
         UpdatePostCommand command = postPresentationMapper.toUpdateCommand(request, postId, currentUserId);
@@ -155,9 +159,67 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.POST_UPDATED_SUCCESSFULLY));
     }
 
+    @PatchMapping("/{postId}/pin")
+    @Operation(summary = "Pin or unpin post", description = "Toggles or sets the pinned status of a post")
+    public ResponseEntity<ApiResponse<PostResponse>> togglePinPost(
+            @PathVariable("postId") UUID postId,
+            @RequestParam(value = "isPinned", required = false) Boolean isPinned) {
+        UUID currentUserId = getCurrentUserId();
+        UpdatePostCommand command = UpdatePostCommand.builder()
+                .postId(postId)
+                .userId(currentUserId)
+                .isPinned(isPinned != null ? isPinned : true)
+                .build();
+        UpdatePostResult result = updatePostCommandHandler.handle(command);
+        PostResponse response = postPresentationMapper.toResponse(result);
+        return ResponseEntity.ok(ApiResponse.success(response, "Post pin status updated successfully"));
+    }
+
+    @PatchMapping("/{postId}/archive")
+    @Operation(summary = "Archive or unarchive post", description = "Toggles or sets the archived status of a post")
+    public ResponseEntity<ApiResponse<PostResponse>> toggleArchivePost(
+            @PathVariable("postId") UUID postId,
+            @RequestParam(value = "isArchived", required = false) Boolean isArchived) {
+        UUID currentUserId = getCurrentUserId();
+        UpdatePostCommand command = UpdatePostCommand.builder()
+                .postId(postId)
+                .userId(currentUserId)
+                .isArchived(isArchived != null ? isArchived : true)
+                .build();
+        UpdatePostResult result = updatePostCommandHandler.handle(command);
+        PostResponse response = postPresentationMapper.toResponse(result);
+        return ResponseEntity.ok(ApiResponse.success(response, "Post archive status updated successfully"));
+    }
+
+    @PatchMapping("/{postId}/privacy")
+    @Operation(summary = "Update post privacy", description = "Updates audience/privacy level of a post")
+    public ResponseEntity<ApiResponse<PostResponse>> updatePostPrivacy(
+            @PathVariable("postId") UUID postId,
+            @RequestParam("privacy") PostPrivacy privacy) {
+        UUID currentUserId = getCurrentUserId();
+        UpdatePostCommand command = UpdatePostCommand.builder()
+                .postId(postId)
+                .userId(currentUserId)
+                .privacy(privacy)
+                .build();
+        UpdatePostResult result = updatePostCommandHandler.handle(command);
+        PostResponse response = postPresentationMapper.toResponse(result);
+        return ResponseEntity.ok(ApiResponse.success(response, "Post privacy updated successfully"));
+    }
+
+    @PatchMapping("/privacy/batch")
+    @Operation(summary = "Batch update privacy for author posts", description = "Updates audience/privacy level for all existing posts of current user")
+    public ResponseEntity<ApiResponse<Integer>> updateBatchPrivacy(
+            @RequestParam("privacy") PostPrivacy privacy) {
+        UUID currentUserId = getCurrentUserId();
+        int count = postRepository.updatePrivacyByAuthorId(currentUserId, privacy);
+        clearPostCaches();
+        return ResponseEntity.ok(ApiResponse.success(count, "Đã cập nhật đối tượng cho " + count + " bài viết thành công"));
+    }
+
     @DeleteMapping("/{postId}")
     @Operation(summary = "Delete post", description = "Deletes a post and cleans up associated media files")
-    public ResponseEntity<ApiResponse<Void>> deletePost(@PathVariable UUID postId) {
+    public ResponseEntity<ApiResponse<Void>> deletePost(@PathVariable("postId") UUID postId) {
         UUID currentUserId = getCurrentUserId();
         DeletePostCommand command = DeletePostCommand.builder().postId(postId).userId(currentUserId).build();
         deletePostCommandHandler.handle(command);
@@ -167,7 +229,7 @@ public class PostController {
     @PostMapping(value = {"/{postId}/share", "/share"})
     @Operation(summary = "Share post", description = "Shares an existing post as a new post")
     public ResponseEntity<ApiResponse<PostResponse>> sharePost(
-            @PathVariable(required = false) UUID postId,
+            @PathVariable(value = "postId", required = false) UUID postId,
             @Valid @RequestBody SharePostRequest request) {
         UUID currentUserId = getCurrentUserId();
         UUID targetPostId = postId != null ? postId : (request.getOriginalPostId() != null ? request.getOriginalPostId() : request.getSharedPostId());
@@ -183,10 +245,10 @@ public class PostController {
     @GetMapping("/user/{userId}")
     @Operation(summary = "Get user posts", description = "Retrieves paginated list of posts created by a specific user")
     public ResponseEntity<ApiResponse<List<PostResponse>>> getUserPosts(
-            @PathVariable UUID userId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        GetUserPostsQuery query = GetUserPostsQuery.builder().userId(userId).page(page).size(size).build();
+            @PathVariable("userId") UUID userId,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size) {
+        GetUserPostsQuery query = GetUserPostsQuery.builder().userId(userId).viewerId(getCurrentUserId()).page(page).size(size).build();
         PagedResponse<GetPostDetailResult> result = getUserPostsQueryHandler.handle(query);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.USER_POSTS_RETRIEVED_SUCCESSFULLY));
@@ -198,5 +260,12 @@ public class PostController {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
         return UUID.fromString(userIdStr);
+    }
+
+    private void clearPostCaches() {
+        for (String cacheName : List.of("post-feed-v2", "post-user-feed-v2", "post-detail-v2")) {
+            org.springframework.cache.Cache cache = cacheManager.getCache(cacheName);
+            if (cache != null) cache.clear();
+        }
     }
 }

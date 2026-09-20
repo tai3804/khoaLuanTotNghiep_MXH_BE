@@ -1,7 +1,5 @@
 package iuh.fit.callservice.application.features.call.queries.get_active_call;
 
-import iuh.fit.commonframework.application.exception.BusinessException;
-import iuh.fit.callservice.application.exception.CallServiceErrorCode;
 import iuh.fit.callservice.application.mapper.CallFeatureMapper;
 import iuh.fit.callservice.domain.entities.CallParticipant;
 import iuh.fit.callservice.domain.entities.CallSession;
@@ -26,8 +24,14 @@ public class GetActiveCallQueryHandler {
 
     @Transactional(readOnly = true)
     public GetActiveCallResult handle(GetActiveCallQuery query) {
-        CallSession session = callSessionRepository.findActiveCallSessionByUserId(query.getCurrentUserId())
-                .orElseThrow(() -> new BusinessException(CallServiceErrorCode.CALL_SESSION_NOT_FOUND));
+        CallSession session = callSessionRepository.findActiveCallSessionsByUserId(query.getCurrentUserId()).stream()
+                .findFirst()
+                .orElse(null);
+        // No active call is normal during application bootstrap. Returning
+        // null lets the client recover incoming calls without creating a 404.
+        if (session == null) {
+            return null;
+        }
 
         List<CallParticipant> participants = callParticipantRepository.findByCallSessionId(session.getId());
         List<GetActiveCallResult.ParticipantResult> participantResults = participants.stream()

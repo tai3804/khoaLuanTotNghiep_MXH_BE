@@ -6,6 +6,11 @@ spring:
     name: post-service
   config:
     import: classpath:application-common.yaml
+  cache:
+    redis:
+      # Viewer-specific feed data. Short TTL limits stale friendship visibility;
+      # writes explicitly evict these caches immediately.
+      time-to-live: 30s
   kafka:
     bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
     consumer:

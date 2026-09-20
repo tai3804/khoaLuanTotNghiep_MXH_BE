@@ -19,6 +19,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 import iuh.fit.callservice.presentation.mapper.CallPresentationMapper;
+import iuh.fit.callservice.domain.enums.ChannelType;
+import iuh.fit.callservice.domain.enums.WebRtcSignalType;
+import iuh.fit.callservice.infrastructure.persistence.repository.CallSessionRepository;
 
 @Slf4j
 @Controller
@@ -28,6 +31,7 @@ public class WebSocketCallController {
 
     SimpMessagingTemplate messagingTemplate;
     CallPresentationMapper callPresentationMapper;
+    CallSessionRepository callSessionRepository;
 
     @MessageMapping("/call.signal/{callSessionId}")
     public void handleWebRtcSignal(
@@ -42,11 +46,26 @@ public class WebSocketCallController {
                 signalRequest, callSessionId, senderId, targetUserId
         );
 
-        if (targetUserId != null) {
-            // Send 1-1 P2P WebRTC signal directly to target user queue
+        boolean groupAccept = signalRequest.getSignalType() == WebRtcSignalType.ACCEPT
+                && callSessionRepository.findById(callSessionId)
+                .map(session -> session.getChannelType() == ChannelType.GROUP)
+                .orElse(false);
+
+        // An ACCEPT in a group is visible to the whole call room. Existing
+        // participants then offer a peer connection to the member who just
+        // joined, producing a mesh rather than host-only audio/video.
+        if (groupAccept) {
+            messagingTemplate.convertAndSend("/topic/call/" + callSessionId, signalResponse);
+            log.info("Broadcast group ACCEPT from {} in call {}", senderId, callSessionId);
+        } else if (targetUserId != null) {
+            // Send 1-1 P2P WebRTC signal directly to target user queue and fallback topic
             messagingTemplate.convertAndSendToUser(
                     targetUserId.toString(),
                     "/queue/call-signal",
+                    signalResponse
+            );
+            messagingTemplate.convertAndSend(
+                    "/topic/call-user." + targetUserId,
                     signalResponse
             );
             log.info("Sent WebRTC signal [{}] from {} to target user {}", signalRequest.getSignalType(), senderId, targetUserId);
@@ -76,6 +95,10 @@ public class WebSocketCallController {
         messagingTemplate.convertAndSendToUser(
                 targetUserId.toString(),
                 "/queue/call-signal",
+                signalResponse
+        );
+        messagingTemplate.convertAndSend(
+                "/topic/call-user." + targetUserId,
                 signalResponse
         );
     }

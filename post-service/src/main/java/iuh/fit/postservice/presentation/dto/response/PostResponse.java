@@ -27,6 +27,8 @@ public class PostResponse {
     long commentCount;
     long shareCount;
     List<PostMediaResponse> mediaList;
+    boolean isPinned;
+    boolean isArchived;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
 }
