@@ -10,7 +10,7 @@
         <module name="api-gateway" />
         <module name="eureka-server" />
       </profile>
-      <profile name="Annotation profile for notification-service" enabled="true">
+      <profile name="Annotation profile for admin-service" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
@@ -27,9 +27,9 @@
         <module name="chat-service" />
         <module name="user-service" />
         <module name="call-service" />
+        <module name="admin-service" />
         <module name="notification-service" />
         <module name="ai-service" />
-        <module name="admin-service" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>

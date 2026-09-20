@@ -38,7 +38,7 @@ fcm:
 brevo:
   api:
     url: ${BREVO_API_URL:https://api.brevo.com/v3/smtp/email}
-    key: ${BREVO_API_KEY:temp}
+    key: ${BREVO_API_KEY:your_api_key_here}
   sender:
     email: ${BREVO_SENDER_EMAIL:tranthanhtai1928@gmail.com}
     name: ${BREVO_SENDER_NAME:System Notification}

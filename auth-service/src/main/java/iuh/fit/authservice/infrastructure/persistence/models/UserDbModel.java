@@ -25,7 +25,6 @@ import java.util.Set;
 public class UserDbModel extends BaseEntity {
 
     @NotBlank(message = "{user.email.required}")
-    @Email(message = "{user.email.invalid}")
     @Size(max = 100, message = "{user.email.size}")
     @Column(nullable = false, unique = true, length = 100)
     String email;

@@ -23,7 +23,8 @@ public enum AuthErrorCode implements BaseError {
     INVALID_MFA_TYPE(400, "Invalid MFA type. Must be TOTP or EMAIL", 400),
     DATE_OF_BIRTH_REQUIRED(400, "Ngày sinh là bắt buộc", 400),
     INVALID_DATE_OF_BIRTH(400, "Ngày sinh không hợp lệ", 400),
-    USER_UNDER_13(400, "Bạn phải từ đủ 13 tuổi trở lên mới được đăng ký tài khoản", 400);
+    USER_UNDER_13(400, "Bạn phải từ đủ 13 tuổi trở lên mới được đăng ký tài khoản", 400),
+    ACCOUNT_BANNED(403, "Tài khoản của bạn đã bị khóa.", 403);
 
     int code;
     String message;

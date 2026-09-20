@@ -29,7 +29,8 @@ public class WebSocketCallConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws-call")
                 .setAllowedOriginPatterns("*")
-                .withSockJS();
+                .withSockJS()
+                .setSupressCors(true);
 
         registry.addEndpoint("/ws-call")
                 .setAllowedOriginPatterns("*");

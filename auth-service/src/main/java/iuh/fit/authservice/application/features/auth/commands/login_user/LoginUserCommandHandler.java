@@ -3,6 +3,7 @@ package iuh.fit.authservice.application.features.auth.commands.login_user;
 import iuh.fit.authservice.domain.entities.Device;
 import iuh.fit.authservice.domain.entities.User;
 import iuh.fit.authservice.domain.enums.MfaType;
+import iuh.fit.authservice.domain.enums.UserStatus;
 import iuh.fit.authservice.domain.repository.DeviceRepository;
 import iuh.fit.authservice.domain.repository.UserRepository;
 import iuh.fit.authservice.infrastructure.security.TokenProvider;
@@ -49,6 +50,10 @@ public class LoginUserCommandHandler {
             throw new BusinessException(AuthErrorCode.INVALID_CREDENTIALS);
         }
 
+        if (UserStatus.BANNED.equals(user.getStatus())) {
+            throw new BusinessException(AuthErrorCode.ACCOUNT_BANNED);
+        }
+
         if (user.isMfaEnabled()) {
             return processMfaLogin(user);
         }
@@ -90,8 +95,7 @@ public class LoginUserCommandHandler {
                 kafkaTemplate.send("notification.email.password-reset", Map.of(
                         "email", user.getEmail(),
                         "otp", otp,
-                        "firstName", user.getFirstName() != null ? user.getFirstName() : ""
-                ));
+                        "firstName", user.getFirstName() != null ? user.getFirstName() : ""));
                 log.info("Sent MFA Email OTP to user {}: {}", user.getEmail(), otp);
             } catch (Exception e) {
                 log.warn("Failed to publish MFA OTP notification to Kafka: {}", e.getMessage());

@@ -11,11 +11,21 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import java.util.concurrent.TimeUnit;
 import iuh.fit.mediaservice.presentation.dto.response.PresignedUrlResponse;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
@@ -231,6 +241,50 @@ public class AwsS3StorageService {
         return MediaType.OTHER;
     }
 
+    public ResponseEntity<Resource> streamFile(String fileKey) {
+        if (fileKey == null || fileKey.isBlank()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(awsS3Properties.getBucketName())
+                    .key(fileKey)
+                    .build();
+
+            ResponseInputStream<GetObjectResponse> s3is = s3Client.getObject(getObjectRequest);
+            GetObjectResponse response = s3is.response();
+
+            InputStreamResource resource = new InputStreamResource(s3is);
+
+            HttpHeaders headers = new HttpHeaders();
+            String contentType = response.contentType();
+            if (contentType != null && !contentType.isBlank()) {
+                headers.setContentType(org.springframework.http.MediaType.parseMediaType(contentType));
+            } else {
+                headers.setContentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM);
+            }
+
+            if (response.contentLength() != null) {
+                headers.setContentLength(response.contentLength());
+            }
+
+            headers.setCacheControl(CacheControl.maxAge(30, TimeUnit.DAYS).cachePublic());
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, "inline");
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(resource);
+
+        } catch (NoSuchKeyException e) {
+            log.warn("File key not found in S3: {}", fileKey);
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            log.error("Error streaming file from S3 for key: {}", fileKey, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     public String extractFileKeyFromUrl(String fileUrlOrKey) {
         if (fileUrlOrKey == null || fileUrlOrKey.isBlank()) {
             return fileUrlOrKey;
@@ -240,9 +294,17 @@ public class AwsS3StorageService {
                 java.net.URI uri = new java.net.URI(fileUrlOrKey);
                 String path = uri.getPath();
                 if (path != null && path.startsWith("/")) {
-                    return path.substring(1);
+                    path = path.substring(1);
                 }
+                if (path != null && path.startsWith("api/v1/media/files/")) {
+                    return path.substring("api/v1/media/files/".length());
+                }
+                return path;
             } catch (Exception e) {
+                int filesIndex = fileUrlOrKey.lastIndexOf("/files/");
+                if (filesIndex != -1) {
+                    return fileUrlOrKey.substring(filesIndex + 7);
+                }
                 int lastSlashIndex = fileUrlOrKey.lastIndexOf(".com/");
                 if (lastSlashIndex != -1) {
                     return fileUrlOrKey.substring(lastSlashIndex + 5);
@@ -279,9 +341,6 @@ public class AwsS3StorageService {
             return String.format("%s/%s", baseUrl, fileKey);
         }
 
-        return String.format("https://%s.s3.%s.amazonaws.com/%s",
-                awsS3Properties.getBucketName(),
-                awsS3Properties.getRegion(),
-                fileKey);
+        return String.format("http://localhost:8080/api/v1/media/files/%s", fileKey);
     }
 }
