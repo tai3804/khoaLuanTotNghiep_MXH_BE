@@ -45,7 +45,7 @@ public class ReactionController {
     @PostMapping
     @Operation(summary = "Toggle reaction on post", description = "Toggles reaction (LIKE, LOVE, HAHA, WOW, SAD, ANGRY) on a post. Toggling same reaction will remove it.")
     public ResponseEntity<ApiResponse<ToggleReactionResult>> toggleReaction(
-            @PathVariable UUID postId,
+            @PathVariable("postId") UUID postId,
             @RequestBody(required = false) ToggleReactionRequest request) {
         UUID currentUserId = getCurrentUserId();
         ToggleReactionRequest safeRequest = (request != null && request.getType() != null)
@@ -60,9 +60,9 @@ public class ReactionController {
     @GetMapping
     @Operation(summary = "Get post reactions", description = "Retrieves paginated list of reactions for a post")
     public ResponseEntity<ApiResponse<List<ReactionResponse>>> getPostReactions(
-            @PathVariable UUID postId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @PathVariable("postId") UUID postId,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size) {
         GetPostReactionsQuery query = GetPostReactionsQuery.builder()
                 .postId(postId)
                 .page(page)

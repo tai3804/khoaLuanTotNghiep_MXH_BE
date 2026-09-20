@@ -13,4 +13,5 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class GetPostDetailQuery {
     UUID postId;
+    UUID viewerId;
 }

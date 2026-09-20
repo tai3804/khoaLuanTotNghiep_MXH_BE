@@ -79,20 +79,20 @@ public class StoryController {
 
     @PostMapping("/{storyId}/view")
     @Operation(summary = "Record story view", description = "Marks a story as viewed by current user")
-    public ResponseEntity<ApiResponse<Void>> viewStory(@PathVariable UUID storyId) {
+    public ResponseEntity<ApiResponse<Long>> viewStory(@PathVariable("storyId") UUID storyId) {
         UUID currentUserId = getCurrentUserId();
         ViewStoryCommand command = ViewStoryCommand.builder()
                 .storyId(storyId)
                 .viewerId(currentUserId)
                 .build();
-        viewStoryHandler.handle(command);
-        return ResponseEntity.ok(ApiResponse.success(null, "Story view recorded"));
+        long viewsCount = viewStoryHandler.handle(command);
+        return ResponseEntity.ok(ApiResponse.success(viewsCount, "Story view recorded"));
     }
 
     @GetMapping("/{storyId}/viewers")
     @Operation(summary = "Get story viewers list", description = "Retrieves paginated list and count of users who viewed author's story")
     public ResponseEntity<ApiResponse<List<StoryViewerResponse>>> getStoryViewers(
-            @PathVariable UUID storyId,
+            @PathVariable("storyId") UUID storyId,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         UUID currentUserId = getCurrentUserId();
         GetStoryViewersQuery query = GetStoryViewersQuery.builder()
@@ -107,7 +107,7 @@ public class StoryController {
 
     @DeleteMapping("/{storyId}")
     @Operation(summary = "Delete story", description = "Soft deletes a 24h story")
-    public ResponseEntity<ApiResponse<Void>> deleteStory(@PathVariable UUID storyId) {
+    public ResponseEntity<ApiResponse<Void>> deleteStory(@PathVariable("storyId") UUID storyId) {
         UUID currentUserId = getCurrentUserId();
         DeleteStoryCommand command = DeleteStoryCommand.builder()
                 .storyId(storyId)

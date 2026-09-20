@@ -3,6 +3,7 @@ package iuh.fit.postservice.application.features.post.queries.get_all_posts;
 import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -13,4 +14,5 @@ import lombok.experimental.FieldDefaults;
 public class GetAllPostsQuery {
     BaseFilter filter;
     String cursor;
+    UUID viewerId;
 }

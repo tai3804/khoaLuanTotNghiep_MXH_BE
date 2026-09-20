@@ -61,7 +61,7 @@ public class SavedPostController {
 
     @DeleteMapping("/{postId}")
     @Operation(summary = "Unsave post", description = "Removes a post from user's bookmark collection")
-    public ResponseEntity<ApiResponse<Void>> unsavePost(@PathVariable UUID postId) {
+    public ResponseEntity<ApiResponse<Void>> unsavePost(@PathVariable("postId") UUID postId) {
         UUID currentUserId = getCurrentUserId();
         UnsavePostCommand command = UnsavePostCommand.builder()
                 .userId(currentUserId)
@@ -74,7 +74,7 @@ public class SavedPostController {
     @GetMapping
     @Operation(summary = "Get saved posts", description = "Retrieves paginated list of posts saved by the authenticated user")
     public ResponseEntity<ApiResponse<List<PostResponse>>> getSavedPosts(
-            @RequestParam(required = false) String collectionName,
+            @RequestParam(value = "collectionName", required = false) String collectionName,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         UUID currentUserId = getCurrentUserId();
         GetSavedPostsQuery query = GetSavedPostsQuery.builder()

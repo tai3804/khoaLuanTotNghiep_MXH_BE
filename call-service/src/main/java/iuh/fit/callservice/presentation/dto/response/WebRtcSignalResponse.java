@@ -1,6 +1,7 @@
 package iuh.fit.callservice.presentation.dto.response;
 
 import iuh.fit.callservice.domain.enums.MediaType;
+import iuh.fit.callservice.domain.enums.ChannelType;
 import iuh.fit.callservice.domain.enums.WebRtcSignalType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -19,6 +20,7 @@ public class WebRtcSignalResponse {
     UUID targetUserId;
     WebRtcSignalType signalType;
     MediaType mediaType;
+    ChannelType channelType;
     Object sdp;
     Object candidate;
     Boolean audioMuted;

@@ -29,5 +29,7 @@ public class CreatePostResult {
     long commentCount;
     long shareCount;
     List<PostMedia> mediaList;
+    boolean isPinned;
+    boolean isArchived;
     LocalDateTime createdAt;
 }

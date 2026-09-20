@@ -13,6 +13,7 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class GetUserPostsQuery {
     UUID userId;
+    UUID viewerId;
     int page;
     int size;
 }

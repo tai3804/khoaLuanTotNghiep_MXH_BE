@@ -61,4 +61,12 @@ public class Post extends BaseEntity {
     @Column(name = "share_count", nullable = false)
     @Builder.Default
     long shareCount = 0;
+
+    @Column(name = "is_pinned", columnDefinition = "boolean default false")
+    @Builder.Default
+    boolean isPinned = false;
+
+    @Column(name = "is_archived", columnDefinition = "boolean default false")
+    @Builder.Default
+    boolean isArchived = false;
 }

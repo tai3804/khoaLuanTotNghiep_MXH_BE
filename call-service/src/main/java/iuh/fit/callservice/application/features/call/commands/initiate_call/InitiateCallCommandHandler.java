@@ -42,7 +42,8 @@ public class InitiateCallCommandHandler {
         // be closed or lose its connection before it sends the timeout/end API.
         // Expire only old INITIATED sessions; genuinely connected calls remain
         // protected by the normal active-call rule.
-        Optional<CallSession> activeCallOpt = callSessionRepository.findActiveCallSessionByUserId(command.getCurrentUserId());
+        Optional<CallSession> activeCallOpt = callSessionRepository.findActiveCallSessionsByUserId(command.getCurrentUserId())
+                .stream().findFirst();
         if (activeCallOpt.isPresent()) {
             CallSession activeCall = activeCallOpt.get();
             boolean unansweredAndExpired = activeCall.getStatus() == CallStatus.INITIATED
@@ -114,6 +115,7 @@ public class InitiateCallCommandHandler {
                         .targetUserId(targetId)
                         .signalType(WebRtcSignalType.INCOMING_CALL)
                         .mediaType(session.getMediaType())
+                        .channelType(session.getChannelType())
                         .timestamp(Instant.now())
                         .build();
 

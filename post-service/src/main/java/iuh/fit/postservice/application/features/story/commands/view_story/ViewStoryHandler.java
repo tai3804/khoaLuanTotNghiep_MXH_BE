@@ -23,7 +23,7 @@ public class ViewStoryHandler {
     StoryViewerRepository storyViewerRepository;
 
     @Transactional
-    public void handle(ViewStoryCommand command) {
+    public long handle(ViewStoryCommand command) {
         Story story = storyRepository.findByIdAndIsDeletedFalse(command.getStoryId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
@@ -32,8 +32,12 @@ public class ViewStoryHandler {
                     .storyId(story.getId())
                     .viewerId(command.getViewerId())
                     .build();
-            storyViewerRepository.save(viewer);
+            // Persist the view before returning so the owner can retrieve it
+            // immediately from the viewers endpoint.
+            storyViewerRepository.saveAndFlush(viewer);
             log.info("Recorded view for story {} by user {}", story.getId(), command.getViewerId());
         }
+
+        return storyViewerRepository.countByStoryId(story.getId());
     }
 }
