@@ -19,13 +19,13 @@ public class RouteLocatorConfig {
                         .uri("lb://post-service"))
                 .route("feed-service", r -> r.path("/api/v1/feeds/**")
                         .uri("lb://feed-service"))
-                .route("notification-service", r -> r.path("/api/v1/notifications/**")
+                .route("notification-service", r -> r.path("/api/v1/notifications/**", "/ws-notifications/**")
                         .uri("lb://notification-service"))
                 .route("media-service", r -> r.path("/api/v1/media/**")
                         .uri("lb://media-service"))
-                .route("chat-service", r -> r.path("/api/v1/chat/**")
+                .route("chat-service", r -> r.path("/api/v1/chat/**", "/ws-chat/**")
                         .uri("lb://chat-service"))
-                .route("call-service", r -> r.path("/api/v1/calls/**", "/api/v1/call/**")
+                .route("call-service", r -> r.path("/api/v1/calls/**", "/api/v1/call/**", "/ws-call/**")
                         .uri("lb://call-service"))
                 .build();
     }

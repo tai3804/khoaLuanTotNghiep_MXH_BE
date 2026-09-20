@@ -8,6 +8,7 @@ import iuh.fit.postservice.application.mapper.PostFeatureMapper;
 import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.domain.enums.MediaType;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -70,6 +71,19 @@ public class GetAllPostsQueryHandler {
             if (filter.getFilters() != null) {
                 for (Map.Entry<String, Object> entry : filter.getFilters().entrySet()) {
                     if (entry.getKey() != null && entry.getValue() != null) {
+                        if ("hasVideo".equals(entry.getKey()) && "true".equalsIgnoreCase(entry.getValue().toString())) {
+                            jakarta.persistence.criteria.Subquery<java.util.UUID> subquery = q.subquery(java.util.UUID.class);
+                            jakarta.persistence.criteria.Root<PostMedia> mediaRoot = subquery.from(PostMedia.class);
+                            subquery.select(mediaRoot.get("postId"))
+                                    .where(
+                                        cb.and(
+                                            cb.equal(mediaRoot.get("postId"), root.get("id")),
+                                            cb.equal(mediaRoot.get("mediaType"), MediaType.VIDEO)
+                                        )
+                                    );
+                            predicates.add(cb.exists(subquery));
+                            continue;
+                        }
                         try {
                             predicates.add(cb.equal(root.get(entry.getKey()), entry.getValue()));
                         } catch (IllegalArgumentException ignored) {}
