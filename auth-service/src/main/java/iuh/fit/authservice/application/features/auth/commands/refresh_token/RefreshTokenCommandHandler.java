@@ -57,9 +57,20 @@ public class RefreshTokenCommandHandler {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.USER_NOT_FOUND));
 
+        if (iuh.fit.authservice.domain.enums.UserStatus.BANNED.equals(user.getStatus())) {
+            throw new BusinessException(AuthErrorCode.UNAUTHORIZED);
+        }
+
         // Validate tokenVersion
-        Long jwtTokenVersionLong = jwt.getClaim("tokenVersion");
-        int jwtTokenVersion = jwtTokenVersionLong != null ? jwtTokenVersionLong.intValue() : 1;
+        Object jwtTokenVersionObj = jwt.getClaim("tokenVersion");
+        int jwtTokenVersion = 1;
+        if (jwtTokenVersionObj instanceof Number) {
+            jwtTokenVersion = ((Number) jwtTokenVersionObj).intValue();
+        } else if (jwtTokenVersionObj instanceof String) {
+            try {
+                jwtTokenVersion = Integer.parseInt((String) jwtTokenVersionObj);
+            } catch (NumberFormatException ignored) {}
+        }
         int currentTokenVersion = user.getTokenVersion() != null ? user.getTokenVersion() : 1;
 
         if (jwtTokenVersion != currentTokenVersion) {

@@ -11,8 +11,10 @@ spring:
           '[/**]':
             allowedOrigins:
               - "http://localhost:5173"
+              - "http://localhost:5174"
               - "http://localhost:3000"
               - "http://127.0.0.1:5173"
+              - "http://127.0.0.1:5174"
             allowedMethods:
               - GET
               - POST
@@ -29,47 +31,54 @@ spring:
           enabled: true
           lower-case-service-id: true
       routes:
-            - id: auth-service
-              uri: lb://auth-service
-              predicates:
-                - Path=/api/v1/auth, /api/v1/auth/**, /api/v1/devices, /api/v1/devices/**
-            - id: user-service
-              uri: lb://user-service
-              predicates:
-                - Path=/api/v1/users,/api/v1/users/**,/api/v1/groups,/api/v1/groups/**
-            - id: notification-service
-              uri: lb://notification-service
-              predicates:
-                - Path=/api/v1/notifications, /api/v1/notifications/**
-            - id: notification-service-ws
-              uri: lb://notification-service
-              predicates:
-                - Path=/ws-notifications, /ws-notifications/**
-
-            - id: media-service
-              uri: lb://media-service
-              predicates:
-                - Path=/api/v1/media, /api/v1/media/**
-            - id: feed-service
-              uri: lb://feed-service
-              predicates:
-                - Path=/api/v1/feeds, /api/v1/feeds/**
-            - id: post-service
-              uri: lb://post-service
-              predicates:
-                - Path=/api/v1/posts, /api/v1/posts/**, /api/v1/stories, /api/v1/stories/**
-            - id: chat-service
-              uri: lb://chat-service
-              predicates:
-                - Path=/api/v1/chat, /api/v1/chat/**
-            - id: chat-service-ws
-              uri: lb://chat-service
-              predicates:
-                - Path=/ws-chat, /ws-chat/**
-            - id: call-service
-              uri: lb://call-service
-              predicates:
-                - Path=/api/v1/calls, /api/v1/calls/**, /api/v1/call, /api/v1/call/**
+        - id: admin-service
+          uri: lb://admin-service
+          predicates:
+            - Path=/api/v1/admin/**
+        - id: moderation-service
+          uri: lb://moderation-service
+          predicates:
+            - Path=/api/v1/moderation/**
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/v1/auth/**,/api/v1/devices/**
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/users/**,/api/v1/groups/**
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+        - id: notification-service-ws
+          uri: lb://notification-service
+          predicates:
+            - Path=/ws-notifications/**
+        - id: media-service
+          uri: lb://media-service
+          predicates:
+            - Path=/api/v1/media/**
+        - id: feed-service
+          uri: lb://feed-service
+          predicates:
+            - Path=/api/v1/feeds/**
+        - id: post-service
+          uri: lb://post-service
+          predicates:
+            - Path=/api/v1/posts/**,/api/v1/stories/**
+        - id: chat-service
+          uri: lb://chat-service
+          predicates:
+            - Path=/api/v1/chat/**
+        - id: chat-service-ws
+          uri: lb://chat-service
+          predicates:
+            - Path=/ws-chat/**
+        - id: call-service
+          uri: lb://call-service
+          predicates:
+            - Path=/api/v1/calls/**,/api/v1/call/**
 
 eureka:
   client:
