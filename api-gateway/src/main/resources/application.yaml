@@ -75,6 +75,14 @@ spring:
           uri: lb://call-service
           predicates:
             - Path=/api/v1/calls/**,/api/v1/call/**
+        - id: call-service-ws
+          uri: lb://call-service
+          predicates:
+            - Path=/ws-call/**
+        - id: ai-service
+          uri: lb://ai-service
+          predicates:
+            - Path=/api/v1/ai/**
 
 eureka:
   client:

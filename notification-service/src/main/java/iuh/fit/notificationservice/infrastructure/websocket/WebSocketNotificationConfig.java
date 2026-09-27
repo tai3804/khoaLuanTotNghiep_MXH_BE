@@ -29,8 +29,7 @@ public class WebSocketNotificationConfig implements WebSocketMessageBrokerConfig
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws-notifications")
                 .setAllowedOriginPatterns("*")
-                .withSockJS()
-                .setSuppressCors(true);
+                .withSockJS();
 
         registry.addEndpoint("/ws-notifications")
                 .setAllowedOriginPatterns("*");
