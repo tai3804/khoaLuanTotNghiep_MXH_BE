@@ -103,6 +103,24 @@ public class WebSocketCallController {
         );
     }
 
+    @MessageMapping("/live.signal/{postId}")
+    public void handleLiveStreamSignal(
+            @DestinationVariable String postId,
+            @Payload WebRtcSignalRequest signalRequest,
+            Principal principal) {
+
+        UUID senderId = extractSenderId(principal);
+        UUID targetUserId = signalRequest.getTargetUserId();
+
+        WebRtcSignalResponse signalResponse = callPresentationMapper.toSignalResponse(
+                signalRequest, null, senderId, targetUserId
+        );
+
+        // Dedicated live stream topic - totally isolated from phone/video calls
+        messagingTemplate.convertAndSend("/topic/live/" + postId, signalResponse);
+        log.info("Broadcasted Live Stream WebRTC signal [{}] for post {}", signalRequest.getSignalType(), postId);
+    }
+
     private UUID extractSenderId(Principal principal) {
         if (principal == null) return null;
 
