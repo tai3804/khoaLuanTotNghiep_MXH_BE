@@ -20,10 +20,14 @@ public class PostVisibilityService {
     private final UserConnectionClient userConnectionClient;
 
     public boolean canView(Post post, UUID viewerId) {
-        if (viewerId == null || post == null) return false;
-        if (viewerId.equals(post.getAuthorId()) || post.getPrivacy() == PostPrivacy.PUBLIC) return true;
+        if (post == null) return false;
+        if (post.getPrivacy() == PostPrivacy.PUBLIC) return true;
+        if (viewerId == null) return false;
+        if (viewerId.equals(post.getAuthorId())) return true;
         if (post.getPrivacy() == PostPrivacy.PRIVATE) return false;
-        if (post.getPrivacy() == PostPrivacy.CUSTOM) return post.getAllowedUserIds() != null && post.getAllowedUserIds().contains(viewerId);
+        if (post.getPrivacy() == PostPrivacy.CUSTOM) {
+            return post.getAllowedUserIds() != null && post.getAllowedUserIds().contains(viewerId);
+        }
         if (post.getPrivacy() != PostPrivacy.FRIENDS) return false;
         try {
             ApiResponse<Map<String, Object>> response = userConnectionClient.getConnectionStatus(post.getAuthorId());
@@ -42,17 +46,18 @@ public class PostVisibilityService {
      */
     public Set<UUID> visiblePostIds(Collection<Post> posts, UUID viewerId) {
         Set<UUID> visible = new HashSet<>();
-        if (posts == null || viewerId == null) return visible;
+        if (posts == null) return visible;
 
-        boolean requiresFriendLookup = posts.stream().anyMatch(post ->
+        boolean requiresFriendLookup = viewerId != null && posts.stream().anyMatch(post ->
                 post != null && post.getPrivacy() == PostPrivacy.FRIENDS && !viewerId.equals(post.getAuthorId()));
         Set<UUID> friendIds = requiresFriendLookup ? loadFriendIds() : Set.of();
 
         for (Post post : posts) {
             if (post == null) continue;
-            if (viewerId.equals(post.getAuthorId()) || post.getPrivacy() == PostPrivacy.PUBLIC
-                    || (post.getPrivacy() == PostPrivacy.FRIENDS && friendIds.contains(post.getAuthorId()))
-                    || (post.getPrivacy() == PostPrivacy.CUSTOM && post.getAllowedUserIds() != null
+            if (post.getPrivacy() == PostPrivacy.PUBLIC
+                    || (viewerId != null && viewerId.equals(post.getAuthorId()))
+                    || (viewerId != null && post.getPrivacy() == PostPrivacy.FRIENDS && friendIds.contains(post.getAuthorId()))
+                    || (viewerId != null && post.getPrivacy() == PostPrivacy.CUSTOM && post.getAllowedUserIds() != null
                     && post.getAllowedUserIds().contains(viewerId))) {
                 visible.add(post.getId());
             }

@@ -4,6 +4,7 @@ import iuh.fit.postservice.domain.enums.PostPrivacy;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -16,4 +17,5 @@ public class CreatePostRequest {
     String content;
     PostPrivacy privacy;
     Set<UUID> allowedUserIds;
+    List<String> mediaUrls;
 }

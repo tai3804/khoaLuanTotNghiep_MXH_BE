@@ -1,5 +1,6 @@
 package iuh.fit.notificationservice.presentation.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import iuh.fit.notificationservice.domain.enums.NotificationType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -23,7 +24,13 @@ public class NotificationResponse {
     String targetId;
     String targetUrl;
     String avatarUrl;
+    @JsonProperty("isRead")
     boolean isRead;
     Instant readAt;
     Instant createdAt;
+
+    @JsonProperty("isRead")
+    public boolean isRead() {
+        return isRead;
+    }
 }

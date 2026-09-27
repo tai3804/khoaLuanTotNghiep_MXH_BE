@@ -50,25 +50,25 @@ public class InitiateCallCommandHandler {
                     && activeCall.getStartedAt() != null
                     && activeCall.getStartedAt().isBefore(LocalDateTime.now().minusSeconds(40));
 
-            if (!unansweredAndExpired) {
+            if (command.getChannelType() == ChannelType.GROUP || unansweredAndExpired || activeCall.getHostUserId().equals(command.getCurrentUserId())) {
+                activeCall.setStatus(CallStatus.ENDED);
+                activeCall.setEndedAt(LocalDateTime.now());
+                activeCall.setDurationInSeconds(0);
+                callSessionRepository.save(activeCall);
+
+                List<CallParticipant> staleParticipants = callParticipantRepository.findByCallSessionId(activeCall.getId());
+                staleParticipants.stream()
+                        .filter(participant -> participant.getStatus() == ParticipantStatus.INVITED
+                                || participant.getStatus() == ParticipantStatus.RINGING
+                                || participant.getStatus() == ParticipantStatus.CONNECTED)
+                        .forEach(participant -> {
+                            participant.setStatus(ParticipantStatus.LEFT);
+                            participant.setLeftAt(LocalDateTime.now());
+                        });
+                callParticipantRepository.saveAll(staleParticipants);
+            } else {
                 throw new BusinessException(CallServiceErrorCode.USER_ALREADY_IN_CALL);
             }
-
-            activeCall.setStatus(CallStatus.ENDED);
-            activeCall.setEndedAt(LocalDateTime.now());
-            activeCall.setDurationInSeconds(0);
-            callSessionRepository.save(activeCall);
-
-            List<CallParticipant> staleParticipants = callParticipantRepository.findByCallSessionId(activeCall.getId());
-            staleParticipants.stream()
-                    .filter(participant -> participant.getStatus() == ParticipantStatus.INVITED
-                            || participant.getStatus() == ParticipantStatus.RINGING
-                            || participant.getStatus() == ParticipantStatus.CONNECTED)
-                    .forEach(participant -> {
-                        participant.setStatus(ParticipantStatus.LEFT);
-                        participant.setLeftAt(LocalDateTime.now());
-                    });
-            callParticipantRepository.saveAll(staleParticipants);
         }
 
         CallSession session = CallSession.builder()

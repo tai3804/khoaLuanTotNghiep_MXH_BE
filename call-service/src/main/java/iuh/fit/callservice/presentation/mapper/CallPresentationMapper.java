@@ -10,6 +10,8 @@ import iuh.fit.callservice.application.features.call.commands.end_call.EndCallCo
 import iuh.fit.callservice.application.features.call.commands.toggle_media.ToggleMediaCommand;
 import iuh.fit.callservice.application.features.call.queries.get_active_call.GetActiveCallResult;
 import iuh.fit.callservice.application.features.call.queries.get_call_history.GetCallHistoryResult;
+import iuh.fit.callservice.domain.entities.CallParticipant;
+import iuh.fit.callservice.domain.entities.CallSession;
 import iuh.fit.callservice.presentation.dto.request.InitiateCallRequest;
 import iuh.fit.callservice.presentation.dto.request.ToggleMediaRequest;
 import iuh.fit.callservice.presentation.dto.response.CallHistoryResponse;
@@ -48,6 +50,30 @@ public interface CallPresentationMapper {
 
     List<CallHistoryResponse> toHistoryResponseList(List<GetCallHistoryResult> results);
 
+    default CallSessionResponse toResponse(CallSession session, List<CallParticipant> participants) {
+        if (session == null) return null;
+        List<CallSessionResponse.ParticipantResponse> participantResponses = participants == null ? java.util.Collections.emptyList() :
+                participants.stream().map(p -> CallSessionResponse.ParticipantResponse.builder()
+                        .userId(p.getUserId())
+                        .role(p.getRole())
+                        .status(p.getStatus())
+                        .audioMuted(p.isAudioMuted())
+                        .videoMuted(p.isVideoMuted())
+                        .build()
+                ).toList();
+
+        return CallSessionResponse.builder()
+                .callSessionId(session.getId())
+                .channelType(session.getChannelType())
+                .mediaType(session.getMediaType())
+                .conversationId(session.getConversationId())
+                .hostUserId(session.getHostUserId())
+                .status(session.getStatus())
+                .startedAt(session.getStartedAt())
+                .participants(participantResponses)
+                .build();
+    }
+
     @Mapping(target = "callSessionId", source = "callSessionId")
     @Mapping(target = "senderId", source = "senderId")
     @Mapping(target = "targetUserId", source = "targetUserId")
@@ -56,6 +82,8 @@ public interface CallPresentationMapper {
     @Mapping(target = "candidate", source = "request.candidate")
     @Mapping(target = "audioMuted", source = "request.audioMuted")
     @Mapping(target = "videoMuted", source = "request.videoMuted")
+    @Mapping(target = "viewerCount", source = "request.viewerCount")
+    @Mapping(target = "payload", source = "request.payload")
     @Mapping(target = "timestamp", expression = "java(java.time.Instant.now())")
     WebRtcSignalResponse toSignalResponse(WebRtcSignalRequest request, UUID callSessionId, UUID senderId, UUID targetUserId);
 

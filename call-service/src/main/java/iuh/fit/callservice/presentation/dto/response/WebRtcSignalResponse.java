@@ -25,5 +25,7 @@ public class WebRtcSignalResponse {
     Object candidate;
     Boolean audioMuted;
     Boolean videoMuted;
+    Integer viewerCount;
+    Object payload;
     Instant timestamp;
 }

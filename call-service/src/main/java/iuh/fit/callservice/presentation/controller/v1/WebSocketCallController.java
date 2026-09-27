@@ -23,6 +23,8 @@ import iuh.fit.callservice.domain.enums.ChannelType;
 import iuh.fit.callservice.domain.enums.WebRtcSignalType;
 import iuh.fit.callservice.infrastructure.persistence.repository.CallSessionRepository;
 
+import iuh.fit.callservice.infrastructure.persistence.repository.CallParticipantRepository;
+
 @Slf4j
 @Controller
 @RequiredArgsConstructor
@@ -32,6 +34,7 @@ public class WebSocketCallController {
     SimpMessagingTemplate messagingTemplate;
     CallPresentationMapper callPresentationMapper;
     CallSessionRepository callSessionRepository;
+    CallParticipantRepository callParticipantRepository;
 
     @MessageMapping("/call.signal/{callSessionId}")
     public void handleWebRtcSignal(
@@ -39,12 +42,33 @@ public class WebSocketCallController {
             @Payload WebRtcSignalRequest signalRequest,
             Principal principal) {
 
-        UUID senderId = extractSenderId(principal);
+        UUID senderId = extractSenderId(principal, signalRequest);
         UUID targetUserId = signalRequest.getTargetUserId();
 
         WebRtcSignalResponse signalResponse = callPresentationMapper.toSignalResponse(
                 signalRequest, callSessionId, senderId, targetUserId
         );
+
+        // When a call ends or a participant leaves, notify everyone in the room AND all participants
+        if (signalRequest.getSignalType() == WebRtcSignalType.END_CALL || signalRequest.getSignalType() == WebRtcSignalType.LEAVE) {
+            messagingTemplate.convertAndSend("/topic/call/" + callSessionId, signalResponse);
+            if (targetUserId != null) {
+                messagingTemplate.convertAndSendToUser(targetUserId.toString(), "/queue/call-signal", signalResponse);
+                messagingTemplate.convertAndSend("/topic/call-user." + targetUserId, signalResponse);
+            }
+            try {
+                callParticipantRepository.findByCallSessionId(callSessionId).forEach(p -> {
+                    if (senderId == null || !p.getUserId().equals(senderId)) {
+                        messagingTemplate.convertAndSendToUser(p.getUserId().toString(), "/queue/call-signal", signalResponse);
+                        messagingTemplate.convertAndSend("/topic/call-user." + p.getUserId(), signalResponse);
+                    }
+                });
+            } catch (Exception e) {
+                log.warn("Failed to notify participants on signal {}: {}", signalRequest.getSignalType(), e.getMessage());
+            }
+            log.info("Broadcasted WebRTC end/leave signal [{}] from {} to call session {}", signalRequest.getSignalType(), senderId, callSessionId);
+            return;
+        }
 
         boolean groupAccept = signalRequest.getSignalType() == WebRtcSignalType.ACCEPT
                 && callSessionRepository.findById(callSessionId)
@@ -85,7 +109,7 @@ public class WebSocketCallController {
             @Payload WebRtcSignalRequest signalRequest,
             Principal principal) {
 
-        UUID senderId = extractSenderId(principal);
+        UUID senderId = extractSenderId(principal, signalRequest);
         UUID callSessionId = signalRequest.getCallSessionId();
 
         WebRtcSignalResponse signalResponse = callPresentationMapper.toSignalResponse(
@@ -109,7 +133,7 @@ public class WebSocketCallController {
             @Payload WebRtcSignalRequest signalRequest,
             Principal principal) {
 
-        UUID senderId = extractSenderId(principal);
+        UUID senderId = extractSenderId(principal, signalRequest);
         UUID targetUserId = signalRequest.getTargetUserId();
 
         WebRtcSignalResponse signalResponse = callPresentationMapper.toSignalResponse(
@@ -121,23 +145,28 @@ public class WebSocketCallController {
         log.info("Broadcasted Live Stream WebRTC signal [{}] for post {}", signalRequest.getSignalType(), postId);
     }
 
-    private UUID extractSenderId(Principal principal) {
-        if (principal == null) return null;
-
-        if (principal instanceof org.springframework.security.authentication.AbstractAuthenticationToken token) {
-            if (token.getPrincipal() instanceof Jwt jwt) {
-                try {
-                    return UUID.fromString(jwt.getSubject());
-                } catch (Exception ignored) {}
+    private UUID extractSenderId(Principal principal, WebRtcSignalRequest signalRequest) {
+        if (principal != null) {
+            if (principal instanceof org.springframework.security.authentication.AbstractAuthenticationToken token) {
+                if (token.getPrincipal() instanceof Jwt jwt) {
+                    try {
+                        return UUID.fromString(jwt.getSubject());
+                    } catch (Exception ignored) {}
+                }
+                if (token.getCredentials() instanceof Jwt jwt) {
+                    try {
+                        return UUID.fromString(jwt.getSubject());
+                    } catch (Exception ignored) {}
+                }
             }
+            try {
+                return UUID.fromString(principal.getName());
+            } catch (Exception ignored) {}
         }
-
-        try {
-            return UUID.fromString(principal.getName());
-        } catch (Exception e) {
-            log.error("Could not parse UUID from principal: {}", principal.getName());
-            return null;
+        if (signalRequest != null && signalRequest.getSenderId() != null) {
+            return signalRequest.getSenderId();
         }
+        return null;
     }
 }
 

@@ -11,5 +11,8 @@ public enum WebRtcSignalType {
     LEAVE,
     END_CALL,
     TOGGLE_AUDIO,
-    TOGGLE_VIDEO
+    TOGGLE_VIDEO,
+    VIEWER_COUNT,
+    LIVE_COMMENT,
+    LIVE_REACTION
 }

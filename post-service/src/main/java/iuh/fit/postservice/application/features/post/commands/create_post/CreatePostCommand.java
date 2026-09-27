@@ -21,4 +21,5 @@ public class CreatePostCommand {
     PostPrivacy privacy;
     Set<UUID> allowedUserIds;
     List<MultipartFile> files;
+    List<String> mediaUrls;
 }

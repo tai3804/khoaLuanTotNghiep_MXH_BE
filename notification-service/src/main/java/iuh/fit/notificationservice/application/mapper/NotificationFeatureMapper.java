@@ -4,6 +4,7 @@ import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.notificationservice.application.features.notification.queries.get_notifications.NotificationResult;
 import iuh.fit.notificationservice.domain.entities.Notification;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 import org.springframework.data.domain.Page;
 
@@ -13,6 +14,7 @@ import java.util.List;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface NotificationFeatureMapper {
 
+    @Mapping(target = "isRead", expression = "java(entity.isRead())")
     NotificationResult toResult(Notification entity);
 
     List<NotificationResult> toResultList(List<Notification> entities);

@@ -20,4 +20,6 @@ public class WebRtcSignalRequest {
     Object candidate;
     Boolean audioMuted;
     Boolean videoMuted;
+    Integer viewerCount;
+    Object payload;
 }
