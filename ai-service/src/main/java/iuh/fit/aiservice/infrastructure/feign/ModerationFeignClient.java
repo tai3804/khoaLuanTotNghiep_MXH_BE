@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import java.util.UUID;
 import lombok.Data;
 
-@FeignClient(name = "admin-service", configuration = FeignClientConfig.class)
+@FeignClient(name = "admin-service", contextId = "moderationServiceClient", configuration = FeignClientConfig.class)
 public interface ModerationFeignClient {
 
     @PostMapping("/api/v1/moderation/reports/{reportId}/process")

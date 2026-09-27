@@ -2,13 +2,15 @@ server:
   port: 8091
 
 spring:
+  main:
+    allow-bean-definition-overriding: true
   application:
     name: ai-service
   config:
     import: classpath:application-common.yaml
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ai_db}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/admin_db}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:root}
   jpa:
@@ -17,6 +19,7 @@ spring:
     show-sql: false
     properties:
       hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false
 
   kafka:

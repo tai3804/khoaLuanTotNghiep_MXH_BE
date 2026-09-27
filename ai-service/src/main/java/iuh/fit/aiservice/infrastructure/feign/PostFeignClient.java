@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import java.util.UUID;
 
-@FeignClient(name = "post-service", configuration = FeignClientConfig.class)
+@FeignClient(name = "post-service", contextId = "postServiceClient", configuration = FeignClientConfig.class)
 public interface PostFeignClient {
 
     @GetMapping("/api/v1/posts/{id}")

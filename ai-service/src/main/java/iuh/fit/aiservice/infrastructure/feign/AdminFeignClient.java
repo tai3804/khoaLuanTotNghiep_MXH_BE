@@ -5,7 +5,7 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@FeignClient(name = "admin-service", configuration = FeignClientConfig.class)
+@FeignClient(name = "admin-service", contextId = "adminServiceClient", configuration = FeignClientConfig.class)
 public interface AdminFeignClient {
 
     @PostMapping("/api/v1/internal/admin/blacklist/learn")
