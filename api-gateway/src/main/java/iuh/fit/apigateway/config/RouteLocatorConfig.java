@@ -30,6 +30,8 @@ public class RouteLocatorConfig {
                                                 .uri("lb://chat-service"))
                                 .route("call-service", r -> r.path("/api/v1/calls/**", "/api/v1/call/**", "/ws-call/**")
                                                 .uri("lb://call-service"))
+                                .route("ai-service", r -> r.path("/api/v1/ai/**")
+                                                .uri("lb://ai-service"))
                                 .build();
         }
 }
