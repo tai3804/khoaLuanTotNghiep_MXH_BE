@@ -10,8 +10,10 @@ import lombok.experimental.FieldDefaults;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public enum AdminServiceErrorCode implements BaseError {
-    // TODO: Add service-specific error codes
-    RESOURCE_NOT_FOUND(404, "Resource not found", 404);
+    RESOURCE_NOT_FOUND(404, "Resource not found", 404),
+    REPORT_NOT_FOUND(404, "Report not found", 404),
+    REPORT_ALREADY_SUBMITTED(400, "You have already submitted a pending report for this item", 400),
+    UNAUTHORIZED(401, "Unauthorized access", 401);
 
     int code;
     String message;

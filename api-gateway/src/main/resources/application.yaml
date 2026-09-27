@@ -34,11 +34,7 @@ spring:
         - id: admin-service
           uri: lb://admin-service
           predicates:
-            - Path=/api/v1/admin/**
-        - id: moderation-service
-          uri: lb://moderation-service
-          predicates:
-            - Path=/api/v1/moderation/**
+            - Path=/api/v1/admin/**,/api/v1/moderation/**
         - id: auth-service
           uri: lb://auth-service
           predicates:

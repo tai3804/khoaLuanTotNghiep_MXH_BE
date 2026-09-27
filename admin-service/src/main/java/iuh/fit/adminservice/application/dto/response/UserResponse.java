@@ -21,10 +21,17 @@ public class UserResponse {
     private String coverUrl;
     private String bio;
     private String gender;
+    private String phoneNumber;
+    private String dateOfBirth;
+    private String location;
+    private String website;
+    private Boolean isOnline;
+    private String lastActiveAt;
     private String role;
     private String status; // ACTIVE, BANNED
     private Long followerCount;
     private Long followingCount;
     private Long friendCount;
     private String createdAt;
+    private String updatedAt;
 }

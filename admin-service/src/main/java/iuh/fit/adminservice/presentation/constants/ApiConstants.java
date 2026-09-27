@@ -11,4 +11,5 @@ public final class ApiConstants {
 
     // Service specific paths
     public static final String ADMIN_API = BASE_API_V1 + "/admin";
+    public static final String MODERATION_API = BASE_API_V1 + "/moderation";
 }

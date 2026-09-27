@@ -18,9 +18,8 @@ Tài liệu chi tiết về hệ thống Microservices Backend của dự án **
 | **`notification-service`** | `:8086` | Nhận Event qua Kafka & phát thông báo realtime (Push Notification / WebSocket) | Redis, Spring WebSocket, Kafka |
 | **`call-service`** | `:8087` | Khởi tạo & điều phối tín hiệu cuộc gọi thoại / video WebRTC (Signaling) | WebRTC Signaling, WebSocket |
 | **`feed-service`** | `:8088` | Tổng hợp Newsfeed cá nhân hóa dựa trên bạn bè & tương tác | Redis, Kafka |
-| **`moderation-service`**| `:8089` | Kiểm duyệt tự động nội dung bài viết / hình ảnh vi phạm | Kafka, Open AI / Rules |
-| **`admin-service`** | `:8090` | Quản trị viên hệ thống (Thống kê người dùng, khóa tài khoản, báo cáo) | MySQL, Spring Security |
-| **`ai-service`** | `:8091` | Dịch vụ AI gợi ý bạn bè, đề xuất nội dung bài viết phù hợp | Python / Spring AI Integration |
+| **`admin-service`** | `:8090` | Quản trị viên & Kiểm duyệt nội dung (Thống kê, khóa tài khoản, xử lý vi phạm/report) | PostgreSQL, Redis, Kafka, Spring Security |
+| **`ai-service`** | `:8091` | Dịch vụ AI gợi ý bạn bè, đề xuất nội dung bài viết, phân tích vi phạm | Python / Spring AI Integration |
 | **`common-framework`**| N/A | Thư viện mã nguồn chung chứa DTOs, Event Models (`PostDeletedEvent`, `UserRegisteredEvent`...), Core Exception Handling | Java Shared Library Maven |
 
 ---
@@ -35,6 +34,8 @@ Tất cả các lệnh gọi từ Frontend đều gửi đến Cổng API Gatewa
 - `/api/v1/media/**` ➔ `media-service` (`:8084`)
 - `/api/v1/chat/**` ➔ `chat-service` (`:8085`)
 - `/api/v1/notifications/**` ➔ `notification-service` (`:8086`)
+- `/api/v1/admin/**` ➔ `admin-service` (`:8090`)
+- `/api/v1/moderation/**` ➔ `admin-service` (`:8090`)
 - `/ws/**` ➔ WebSocket Endpoint cho Chat & Notification Realtime
 
 ---

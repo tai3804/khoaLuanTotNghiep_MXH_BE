@@ -12,7 +12,7 @@ import java.util.UUID;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 
-@FeignClient(name = "auth-service", configuration = FeignClientConfig.class)
+@FeignClient(name = "auth-service")
 public interface AuthFeignClient {
 
     @PostMapping("/api/v1/internal/users/info")
@@ -23,4 +23,16 @@ public interface AuthFeignClient {
     
     @PutMapping("/api/v1/internal/users/{userId}/unban")
     void unbanUser(@PathVariable("userId") UUID userId);
+
+    @PutMapping("/api/v1/internal/users/{userId}/role")
+    void updateUserRole(@PathVariable("userId") UUID userId, @RequestBody java.util.Map<String, String> body);
+
+    @PostMapping("/api/v1/internal/users/create")
+    UserInfoResponse createUserByAdmin(@RequestBody java.util.Map<String, Object> request);
+
+    @PutMapping("/api/v1/internal/users/{userId}/reset-password")
+    void resetPassword(@PathVariable("userId") UUID userId, @RequestBody java.util.Map<String, String> body);
+
+    @PutMapping("/api/v1/internal/users/{userId}/revoke-sessions")
+    void revokeSessions(@PathVariable("userId") UUID userId);
 }

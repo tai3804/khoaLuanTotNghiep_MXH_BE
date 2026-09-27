@@ -1,48 +1,64 @@
 package iuh.fit.adminservice.domain.entities;
 
+import iuh.fit.adminservice.domain.enums.ReportReason;
 import iuh.fit.adminservice.domain.enums.ReportStatus;
-import iuh.fit.adminservice.domain.enums.ReportType;
+import iuh.fit.adminservice.domain.enums.TargetType;
+import iuh.fit.commonframework.domain.entity.BaseEntity;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import lombok.experimental.FieldDefaults;
+import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
-@Table(name = "reports")
+@Table(name = "reports", indexes = {
+        @Index(name = "idx_report_target", columnList = "target_type, target_id"),
+        @Index(name = "idx_report_reporter", columnList = "reporter_id"),
+        @Index(name = "idx_report_status", columnList = "status")
+})
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class Report {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@SuperBuilder
+@FieldDefaults(level = AccessLevel.PRIVATE)
+public class Report extends BaseEntity {
 
-    @Column(nullable = false)
-    private String reporterId;
+    @NotNull(message = "Reporter ID is required")
+    @Column(name = "reporter_id", nullable = false)
+    UUID reporterId;
 
-    @Column(nullable = false)
-    private String targetId;
-
+    @NotNull(message = "Target type is required")
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ReportType targetType;
+    @Column(name = "target_type", nullable = false, length = 20)
+    TargetType targetType;
 
-    @Column(nullable = false)
-    private String reason;
+    @NotNull(message = "Target ID is required")
+    @Column(name = "target_id", nullable = false)
+    UUID targetId;
 
+    @NotNull(message = "Report reason is required")
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 30)
+    ReportReason reason;
+
+    @Size(max = 1000, message = "Description must not exceed 1000 characters")
+    @Column(columnDefinition = "TEXT")
+    String description;
+
+    @NotNull(message = "Report status is required")
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     @Builder.Default
-    private ReportStatus status = ReportStatus.PENDING;
+    ReportStatus status = ReportStatus.PENDING;
 
-    @CreationTimestamp
-    @Column(updatable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "resolved_at")
+    LocalDateTime resolvedAt;
 
-    @UpdateTimestamp
-    private LocalDateTime updatedAt;
+    @Column(name = "resolved_by")
+    UUID resolvedBy;
 }

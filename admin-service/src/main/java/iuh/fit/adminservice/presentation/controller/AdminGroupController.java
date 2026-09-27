@@ -1,5 +1,6 @@
 package iuh.fit.adminservice.presentation.controller;
 
+import iuh.fit.adminservice.application.service.AuditLogService;
 import iuh.fit.adminservice.infrastructure.feign.UserFeignClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,7 @@ import java.util.List;
 public class AdminGroupController {
 
     private final UserFeignClient userFeignClient;
+    private final AuditLogService auditLogService;
 
     @GetMapping
     public ResponseEntity<List<Object>> getAllGroups() {
@@ -26,6 +28,7 @@ public class AdminGroupController {
     @DeleteMapping("/{groupId}")
     public ResponseEntity<Void> deleteGroup(@PathVariable String groupId) {
         userFeignClient.deleteGroup(groupId);
+        auditLogService.log("DELETE_GROUP", "GROUP", groupId, "Giải tán hội nhóm vi phạm");
         return ResponseEntity.ok().build();
     }
 }

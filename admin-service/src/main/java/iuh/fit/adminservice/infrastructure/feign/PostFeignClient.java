@@ -7,9 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-import iuh.fit.adminservice.infrastructure.config.FeignClientConfig;
-
-@FeignClient(name = "post-service", configuration = FeignClientConfig.class)
+@FeignClient(name = "post-service")
 public interface PostFeignClient {
 
     /**
