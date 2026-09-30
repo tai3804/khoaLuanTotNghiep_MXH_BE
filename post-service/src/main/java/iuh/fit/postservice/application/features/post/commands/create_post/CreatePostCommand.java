@@ -20,5 +20,6 @@ public class CreatePostCommand {
     String content;
     PostPrivacy privacy;
     Set<UUID> allowedUserIds;
+    UUID groupId;
     List<MultipartFile> files;
 }

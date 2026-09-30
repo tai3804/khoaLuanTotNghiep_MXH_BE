@@ -16,4 +16,5 @@ public class CreatePostRequest {
     String content;
     PostPrivacy privacy;
     Set<UUID> allowedUserIds;
+    UUID groupId;
 }

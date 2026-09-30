@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import iuh.fit.callservice.presentation.dto.response.WebRtcSignalResponse;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -25,6 +26,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +38,7 @@ public class InitiateCallCommandHandler {
     CallParticipantRepository callParticipantRepository;
     CallFeatureMapper callFeatureMapper;
     SimpMessagingTemplate messagingTemplate;
+    KafkaTemplate<String, Object> kafkaTemplate;
 
     @Transactional
     public InitiateCallResult handle(InitiateCallCommand command) {
@@ -131,7 +135,10 @@ public class InitiateCallCommandHandler {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                incomingSignals.forEach(InitiateCallCommandHandler.this::notifyIncomingCall);
+                incomingSignals.forEach(signal -> {
+                    notifyIncomingCall(signal);
+                    publishCallNotification(signal, "CALL_INCOMING", "Cuộc gọi đến", "Bạn có một cuộc gọi đến");
+                });
             }
         });
 
@@ -154,6 +161,22 @@ public class InitiateCallCommandHandler {
         } catch (Exception ignored) {
             // The receiver may be offline; their client recovers a ringing call
             // through GET /calls/active after reconnecting.
+        }
+    }
+
+    private void publishCallNotification(WebRtcSignalResponse signal, String type, String title, String content) {
+        try {
+            Map<String, Object> event = new HashMap<>();
+            event.put("recipientId", signal.getTargetUserId().toString());
+            event.put("actorId", signal.getSenderId().toString());
+            event.put("type", type);
+            event.put("title", title);
+            event.put("content", content);
+            event.put("targetId", signal.getCallSessionId().toString());
+            event.put("targetUrl", "/calls");
+            kafkaTemplate.send("notification.in-app.send", event);
+        } catch (Exception ignored) {
+            // Calling remains available when the notification broker is offline.
         }
     }
 }

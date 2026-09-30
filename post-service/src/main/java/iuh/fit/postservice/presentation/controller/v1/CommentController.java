@@ -18,6 +18,8 @@ import iuh.fit.postservice.application.features.comment.commands.create_comment.
 import iuh.fit.postservice.application.features.comment.commands.create_comment.CreateCommentResult;
 import iuh.fit.postservice.application.features.comment.commands.delete_comment.DeleteCommentCommand;
 import iuh.fit.postservice.application.features.comment.commands.delete_comment.DeleteCommentCommandHandler;
+import iuh.fit.postservice.application.features.comment.commands.update_comment.UpdateCommentCommand;
+import iuh.fit.postservice.application.features.comment.commands.update_comment.UpdateCommentCommandHandler;
 import iuh.fit.postservice.application.features.comment.queries.get_all_comments.GetAllCommentsQuery;
 import iuh.fit.postservice.application.features.comment.queries.get_all_comments.GetAllCommentsQueryHandler;
 import iuh.fit.postservice.application.features.comment.queries.get_post_comments.GetPostCommentsQuery;
@@ -25,6 +27,7 @@ import iuh.fit.postservice.application.features.comment.queries.get_post_comment
 import iuh.fit.postservice.presentation.constants.ApiConstants;
 import iuh.fit.postservice.presentation.constants.MessageConstants;
 import iuh.fit.postservice.presentation.dto.request.CreateCommentRequest;
+import iuh.fit.postservice.presentation.dto.request.UpdateCommentRequest;
 import iuh.fit.postservice.presentation.dto.response.CommentResponse;
 import iuh.fit.postservice.presentation.mapper.CommentPresentationMapper;
 import jakarta.validation.Valid;
@@ -50,6 +53,7 @@ public class CommentController {
 
     CreateCommentCommandHandler createCommentCommandHandler;
     DeleteCommentCommandHandler deleteCommentCommandHandler;
+    UpdateCommentCommandHandler updateCommentCommandHandler;
     GetPostCommentsQueryHandler getPostCommentsQueryHandler;
     GetAllCommentsQueryHandler getAllCommentsQueryHandler;
     CommentPresentationMapper commentPresentationMapper;
@@ -92,6 +96,21 @@ public class CommentController {
         DeleteCommentCommand command = DeleteCommentCommand.builder().commentId(commentId).userId(currentUserId).build();
         deleteCommentCommandHandler.handle(command);
         return ResponseEntity.ok(ApiResponse.success(null, MessageConstants.COMMENT_DELETED_SUCCESSFULLY));
+    }
+
+    @PutMapping("/{commentId}")
+    @Operation(summary = "Update comment", description = "Updates the authenticated user's comment content")
+    public ResponseEntity<ApiResponse<CommentResponse>> updateComment(
+            @PathVariable("postId") UUID postId,
+            @PathVariable("commentId") UUID commentId,
+            @Valid @org.springframework.web.bind.annotation.RequestBody UpdateCommentRequest request) {
+        CreateCommentResult result = updateCommentCommandHandler.handle(UpdateCommentCommand.builder()
+                .postId(postId)
+                .commentId(commentId)
+                .userId(getCurrentUserId())
+                .content(request.getContent())
+                .build());
+        return ResponseEntity.ok(ApiResponse.success(commentPresentationMapper.toResponse(result), "Comment updated successfully"));
     }
 
     @GetMapping

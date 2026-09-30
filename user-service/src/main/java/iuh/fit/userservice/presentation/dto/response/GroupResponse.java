@@ -8,6 +8,8 @@ import lombok.experimental.FieldDefaults;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
+import iuh.fit.userservice.domain.enums.GroupMemberStatus;
 
 @Data
 @Builder
@@ -19,8 +21,16 @@ public class GroupResponse {
     String coverUrl;
     GroupPrivacy privacy;
     UUID creatorId;
+    UUID ownerId;
     long memberCount;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
+    boolean postApprovalRequired;
+    String rules;
+    boolean isMember;
+    boolean isAdmin;
+    boolean isModerator;
+    GroupMemberStatus joinStatus;
+    List<UUID> memberIds;
 }
 

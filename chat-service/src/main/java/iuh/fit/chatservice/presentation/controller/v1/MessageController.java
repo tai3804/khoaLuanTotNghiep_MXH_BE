@@ -35,7 +35,10 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import iuh.fit.chatservice.domain.enums.MemberStatus;
+import iuh.fit.chatservice.infrastructure.persistence.repository.ConversationMemberRepository;
 
 @RestController
 @RequestMapping(ApiConstants.CHAT_API + "/conversations/{conversationId}/messages")
@@ -54,6 +57,7 @@ public class MessageController {
     SimpMessagingTemplate messagingTemplate;
     ChatPresentationMapper chatPresentationMapper;
     JwtUtil jwtUtil;
+    ConversationMemberRepository conversationMemberRepository;
 
     @PostMapping
     @Operation(summary = "Send message via REST API", description = "Sends a message in a conversation via REST API (also broadcasts to WebSocket subscribers)")
@@ -161,7 +165,23 @@ public class MessageController {
         UUID currentUserId = getCurrentUserId();
         MarkAsReadCommand command = chatPresentationMapper.toMarkAsReadCommand(conversationId, messageId, currentUserId);
         markAsReadCommandHandler.handle(command);
+        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/receipts", (Object)
+                Map.of("type", "SEEN", "userId", currentUserId.toString(), "messageId", messageId == null ? "" : messageId.toString()));
         return ResponseEntity.ok(ApiResponse.success(null, "Marked as read successfully"));
+    }
+
+    @PostMapping("/delivered")
+    @Operation(summary = "Mark a message as delivered", description = "Publishes a delivery receipt when a member receives a message")
+    public ResponseEntity<ApiResponse<Void>> markAsDelivered(
+            @PathVariable UUID conversationId,
+            @RequestParam UUID messageId) {
+        UUID currentUserId = getCurrentUserId();
+        if (!conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(conversationId, currentUserId, MemberStatus.ACTIVE)) {
+            throw new BusinessException(ChatServiceErrorCode.NOT_A_CONVERSATION_MEMBER);
+        }
+        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/receipts", (Object)
+                Map.of("type", "DELIVERED", "userId", currentUserId.toString(), "messageId", messageId.toString()));
+        return ResponseEntity.ok(ApiResponse.success(null, "Delivery receipt sent"));
     }
 
     private UUID getCurrentUserId() {

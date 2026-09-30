@@ -20,6 +20,7 @@ import java.util.UUID;
 public class CreatePostResult {
     UUID id;
     UUID authorId;
+    UUID groupId;
     String content;
     PostPrivacy privacy;
     PostStatus status;

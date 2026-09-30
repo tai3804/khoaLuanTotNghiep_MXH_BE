@@ -71,6 +71,14 @@ public class SavedPostController {
         return ResponseEntity.ok(ApiResponse.success(null, "Post unsaved successfully"));
     }
 
+    @GetMapping("/{postId}/status")
+    @Operation(summary = "Check saved state", description = "Checks whether the authenticated user saved a post")
+    public ResponseEntity<ApiResponse<Boolean>> getSavedStatus(@PathVariable("postId") UUID postId) {
+        UUID currentUserId = getCurrentUserId();
+        boolean saved = getSavedPostsHandler.isSaved(currentUserId, postId);
+        return ResponseEntity.ok(ApiResponse.success(saved, "Saved status retrieved successfully"));
+    }
+
     @GetMapping
     @Operation(summary = "Get saved posts", description = "Retrieves paginated list of posts saved by the authenticated user")
     public ResponseEntity<ApiResponse<List<PostResponse>>> getSavedPosts(

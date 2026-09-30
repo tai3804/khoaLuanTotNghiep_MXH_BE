@@ -92,10 +92,16 @@ public class CallController {
 
     @PostMapping("/{callSessionId}/reject")
     @Operation(summary = "Reject incoming call session", description = "Declines an incoming call invitation")
-    public ResponseEntity<ApiResponse<Void>> rejectCall(@PathVariable UUID callSessionId) {
+    public ResponseEntity<ApiResponse<Void>> rejectCall(
+            @PathVariable UUID callSessionId,
+            @RequestParam(defaultValue = "false") boolean missed) {
         UUID currentUserId = getCurrentUserId();
         iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommand command =
-                callPresentationMapper.toRejectCommand(callSessionId, currentUserId);
+                iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommand.builder()
+                        .callSessionId(callSessionId)
+                        .currentUserId(currentUserId)
+                        .missed(missed)
+                        .build();
         rejectCallCommandHandler.handle(command);
         return ResponseEntity.ok(ApiResponse.success(null, "Rejected call session successfully"));
     }

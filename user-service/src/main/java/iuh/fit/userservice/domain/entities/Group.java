@@ -41,5 +41,12 @@ public class Group extends BaseEntity {
     @Builder.Default
     @Column(name = "member_count", nullable = false)
     long memberCount = 1;
+
+    @Builder.Default
+    @Column(name = "post_approval_required", nullable = false)
+    boolean postApprovalRequired = false;
+
+    @Column(name = "rules", length = 3000)
+    String rules;
 }
 

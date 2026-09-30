@@ -40,7 +40,7 @@ public class GetAllPostsQueryHandler {
     PostVisibilityService postVisibilityService;
 
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "post-feed-v2", key = "#query.viewerId + ':' + #query.cursor + ':' + #query.filter.page + ':' + #query.filter.size + ':' + #query.filter.keyword + ':' + #query.filter.sortBy + ':' + #query.filter.sortDirection")
+    @Cacheable(cacheNames = "post-feed-v2", key = "#query.viewerId + ':' + #query.cursor + ':' + #query.filter.page + ':' + #query.filter.size + ':' + #query.filter.keyword + ':' + #query.filter.sortBy + ':' + #query.filter.sortDirection + ':' + #query.filter.filters")
     public PagedResponse<GetPostDetailResult> handle(GetAllPostsQuery query) {
         BaseFilter filter = query.getFilter() != null ? query.getFilter() : new BaseFilter();
 
@@ -106,7 +106,8 @@ public class GetAllPostsQueryHandler {
 
         Page<Post> postsPage = postRepository.findAll(spec, pageable);
 
-        Set<java.util.UUID> visiblePostIds = postVisibilityService.visiblePostIds(postsPage.getContent(), query.getViewerId());
+        boolean mainFeed = filter.getFilters() == null || !Boolean.TRUE.equals(filter.getFilters().get("_groupFeed"));
+        Set<java.util.UUID> visiblePostIds = postVisibilityService.visiblePostIds(postsPage.getContent(), query.getViewerId(), mainFeed);
         List<GetPostDetailResult> content = postsPage.getContent().stream()
                 .filter(post -> visiblePostIds.contains(post.getId())).map(post -> {
             List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());

@@ -29,8 +29,11 @@ public interface ConversationMemberRepository extends BaseJpaRepository<Conversa
 
     @Query("""
         SELECT cm FROM ConversationMember cm
+        JOIN Conversation c ON c.id = cm.conversationId
         WHERE cm.userId = :userId AND cm.status = :status
-        ORDER BY cm.createdAt DESC
+        ORDER BY CASE WHEN c.lastMessageAt IS NULL THEN 1 ELSE 0 END ASC,
+                 c.lastMessageAt DESC,
+                 c.createdAt DESC
     """)
     Page<ConversationMember> findByUserIdAndStatus(@Param("userId") UUID userId, @Param("status") MemberStatus status, Pageable pageable);
 

@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Repository
@@ -23,4 +24,12 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     int updatePrivacyByAuthorId(
             @org.springframework.data.repository.query.Param("authorId") UUID authorId,
             @org.springframework.data.repository.query.Param("privacy") iuh.fit.postservice.domain.enums.PostPrivacy privacy);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Query(value = "UPDATE posts SET created_at = :createdAt WHERE id = :postId AND author_id = :authorId AND is_deleted = false", nativeQuery = true)
+    int updateCreatedAtByIdAndAuthorId(
+            @org.springframework.data.repository.query.Param("postId") UUID postId,
+            @org.springframework.data.repository.query.Param("authorId") UUID authorId,
+            @org.springframework.data.repository.query.Param("createdAt") LocalDateTime createdAt);
 }

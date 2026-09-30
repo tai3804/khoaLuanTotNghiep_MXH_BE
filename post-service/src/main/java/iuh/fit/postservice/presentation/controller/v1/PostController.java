@@ -40,6 +40,7 @@ import iuh.fit.postservice.presentation.constants.MessageConstants;
 import iuh.fit.postservice.presentation.dto.request.CreatePostRequest;
 import iuh.fit.postservice.presentation.dto.request.SharePostRequest;
 import iuh.fit.postservice.presentation.dto.request.UpdatePostRequest;
+import iuh.fit.postservice.presentation.dto.request.UpdatePostDateRequest;
 import iuh.fit.postservice.presentation.dto.response.PostResponse;
 import iuh.fit.postservice.presentation.mapper.PostPresentationMapper;
 import jakarta.validation.Valid;
@@ -55,6 +56,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.HashMap;
 
 @RestController
 @RequestMapping(ApiConstants.POST_API)
@@ -93,6 +95,7 @@ public class PostController {
                                     @SchemaProperty(name = "content", schema = @Schema(type = "string")),
                                     @SchemaProperty(name = "privacy", schema = @Schema(implementation = PostPrivacy.class)),
                                     @SchemaProperty(name = "allowedUserIds", schema = @Schema(type = "array", implementation = UUID.class)),
+                                    @SchemaProperty(name = "groupId", schema = @Schema(type = "string", format = "uuid")),
                                     @SchemaProperty(name = "files", array = @ArraySchema(schema = @Schema(type = "string", format = "binary")))
                             }
                     )
@@ -138,6 +141,20 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
     }
 
+    @GetMapping("/group/{groupId}")
+    @Operation(summary = "Get group posts", description = "Retrieves only posts belonging to the specified community group")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getGroupPosts(
+            @PathVariable UUID groupId,
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+        BaseFilter groupFilter = filter != null ? filter : new BaseFilter();
+        if (groupFilter.getFilters() == null) groupFilter.setFilters(new HashMap<>());
+        groupFilter.getFilters().put("groupId", groupId);
+        groupFilter.getFilters().put("_groupFeed", true);
+        GetAllPostsQuery query = GetAllPostsQuery.builder().filter(groupFilter).viewerId(getCurrentUserId()).build();
+        PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(query);
+        return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(result), MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+    }
+
     @GetMapping("/{postId}")
     @Operation(summary = "Get post details", description = "Retrieves detail information of a specific post by ID")
     public ResponseEntity<ApiResponse<PostResponse>> getPostById(@PathVariable("postId") UUID postId) {
@@ -151,7 +168,7 @@ public class PostController {
     @Operation(summary = "Update post", description = "Updates content or privacy of an existing post")
     public ResponseEntity<ApiResponse<PostResponse>> updatePost(
             @PathVariable("postId") UUID postId,
-            @Valid @RequestBody UpdatePostRequest request) {
+            @Valid @org.springframework.web.bind.annotation.RequestBody UpdatePostRequest request) {
         UUID currentUserId = getCurrentUserId();
         UpdatePostCommand command = postPresentationMapper.toUpdateCommand(request, postId, currentUserId);
         UpdatePostResult result = updatePostCommandHandler.handle(command);
@@ -207,6 +224,21 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.success(response, "Post privacy updated successfully"));
     }
 
+    @PatchMapping("/{postId}/date")
+    @Operation(summary = "Update post date", description = "Updates the display date of the authenticated user's post")
+    public ResponseEntity<ApiResponse<PostResponse>> updatePostDate(
+            @PathVariable("postId") UUID postId,
+            @Valid @org.springframework.web.bind.annotation.RequestBody UpdatePostDateRequest request) {
+        UUID currentUserId = getCurrentUserId();
+        int updated = postRepository.updateCreatedAtByIdAndAuthorId(postId, currentUserId, request.getCreatedAt());
+        if (updated == 0) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+        }
+        clearPostCaches();
+        GetPostDetailResult result = getPostDetailQueryHandler.handle(GetPostDetailQuery.builder().postId(postId).viewerId(currentUserId).build());
+        return ResponseEntity.ok(ApiResponse.success(postPresentationMapper.toResponse(result), "Post date updated successfully"));
+    }
+
     @PatchMapping("/privacy/batch")
     @Operation(summary = "Batch update privacy for author posts", description = "Updates audience/privacy level for all existing posts of current user")
     public ResponseEntity<ApiResponse<Integer>> updateBatchPrivacy(
@@ -230,7 +262,7 @@ public class PostController {
     @Operation(summary = "Share post", description = "Shares an existing post as a new post")
     public ResponseEntity<ApiResponse<PostResponse>> sharePost(
             @PathVariable(value = "postId", required = false) UUID postId,
-            @Valid @RequestBody SharePostRequest request) {
+            @Valid @org.springframework.web.bind.annotation.RequestBody SharePostRequest request) {
         UUID currentUserId = getCurrentUserId();
         UUID targetPostId = postId != null ? postId : (request.getOriginalPostId() != null ? request.getOriginalPostId() : request.getSharedPostId());
         if (targetPostId == null) {

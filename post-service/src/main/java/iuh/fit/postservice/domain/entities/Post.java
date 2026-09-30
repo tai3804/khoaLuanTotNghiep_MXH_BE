@@ -28,6 +28,9 @@ public class Post extends BaseEntity {
     @Column(name = "author_id", nullable = false)
     UUID authorId;
 
+    @Column(name = "group_id")
+    UUID groupId;
+
     @Column(columnDefinition = "TEXT")
     String content;
 

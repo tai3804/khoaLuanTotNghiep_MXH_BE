@@ -18,6 +18,7 @@ import java.util.UUID;
 public class PostResponse {
     UUID id;
     UUID authorId;
+    UUID groupId;
     String content;
     PostPrivacy privacy;
     PostStatus status;

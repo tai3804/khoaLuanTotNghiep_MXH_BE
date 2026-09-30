@@ -9,9 +9,10 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface GroupMapper {
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "coverUrl", ignore = true)
     @Mapping(target = "creatorId", ignore = true)
     @Mapping(target = "memberCount", ignore = true)
+    @Mapping(target = "postApprovalRequired", ignore = true)
+    @Mapping(target = "rules", ignore = true)
     @Mapping(target = "deleted", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)

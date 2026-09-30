@@ -7,6 +7,9 @@ import lombok.AccessLevel;
 import lombok.Data;
 import lombok.experimental.FieldDefaults;
 
+import java.util.Set;
+import java.util.UUID;
+
 @Data
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CreateGroupRequest {
@@ -15,8 +18,14 @@ public class CreateGroupRequest {
     String name;
     
     String description;
+
+    String coverUrl;
     
     @NotNull(message = "Quyá»n riĂªng tÆ° khĂ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng")
     GroupPrivacy privacy;
+
+    Boolean postApprovalRequired;
+    String rules;
+    Set<UUID> initialMemberIds;
 }
 

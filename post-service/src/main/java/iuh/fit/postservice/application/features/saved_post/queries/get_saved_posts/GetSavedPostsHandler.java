@@ -34,6 +34,10 @@ public class GetSavedPostsHandler {
     PostMediaRepository postMediaRepository;
     PostFeatureMapper postFeatureMapper;
 
+    public boolean isSaved(UUID userId, UUID postId) {
+        return savedPostRepository.existsByUserIdAndPostId(userId, postId);
+    }
+
     @Transactional(readOnly = true)
     public PagedResponse<GetPostDetailResult> handle(GetSavedPostsQuery query) {
         int page = query.getFilter() != null ? Math.max(0, query.getFilter().getPage() - 1) : 0;

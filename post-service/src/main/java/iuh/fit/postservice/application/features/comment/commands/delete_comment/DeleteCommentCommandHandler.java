@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -35,8 +37,15 @@ public class DeleteCommentCommandHandler {
             throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
 
-        comment.setDeleted(true);
-        commentRepository.save(comment);
+        // A root comment owns its replies in the UI. Soft-delete them as well so
+        // they cannot remain visible through a direct replies request.
+        List<Comment> commentsToDelete = new java.util.ArrayList<>();
+        commentsToDelete.add(comment);
+        if (comment.getParentCommentId() == null) {
+            commentsToDelete.addAll(commentRepository.findByParentCommentIdAndDeletedFalse(comment.getId(), org.springframework.data.domain.Pageable.unpaged()).getContent());
+        }
+        commentsToDelete.forEach(item -> item.setDeleted(true));
+        commentRepository.saveAll(commentsToDelete);
 
         if (comment.getMediaKey() != null && !comment.getMediaKey().isBlank()) {
             try {
@@ -48,7 +57,7 @@ public class DeleteCommentCommandHandler {
 
         // Decrement comment count on post
         postRepository.findByIdAndDeletedFalse(comment.getPostId()).ifPresent(post -> {
-            post.setCommentCount(Math.max(0, post.getCommentCount() - 1));
+            post.setCommentCount(Math.max(0, post.getCommentCount() - commentsToDelete.size()));
             postRepository.save(post);
         });
     }

@@ -13,4 +13,5 @@ import java.util.UUID;
 public class RejectCallCommand {
     UUID callSessionId;
     UUID currentUserId;
+    boolean missed;
 }

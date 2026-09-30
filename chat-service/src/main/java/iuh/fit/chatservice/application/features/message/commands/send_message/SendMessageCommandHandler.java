@@ -15,9 +15,12 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +31,7 @@ public class SendMessageCommandHandler {
     ConversationMemberRepository conversationMemberRepository;
     MessageRepository messageRepository;
     MessageFeatureMapper messageFeatureMapper;
+    KafkaTemplate<String, Object> kafkaTemplate;
 
     @Transactional
     public SendMessageResult handle(SendMessageCommand command) {
@@ -72,6 +76,32 @@ public class SendMessageCommandHandler {
                     });
         }
 
+        // UC-NO02/NO06: notify every other active participant.  The
+        // notification service applies each recipient's message preference and
+        // then persists and pushes the event over its WebSocket topic.
+        final Message savedMessageForNotification = message;
+        conversationMemberRepository.findByConversationIdAndStatus(command.getConversationId(), MemberStatus.ACTIVE)
+                .stream()
+                .filter(member -> !member.getUserId().equals(command.getSenderId()))
+                .forEach(member -> publishNewMessageNotification(member, conversation, savedMessageForNotification));
+
         return messageFeatureMapper.toSendMessageResult(message);
+    }
+
+    private void publishNewMessageNotification(ConversationMember recipient, Conversation conversation, Message message) {
+        try {
+            Map<String, Object> event = new HashMap<>();
+            event.put("recipientId", recipient.getUserId().toString());
+            event.put("actorId", message.getSenderId() == null ? null : message.getSenderId().toString());
+            event.put("type", "NEW_MESSAGE");
+            event.put("title", "Tin nhắn mới");
+            event.put("content", message.getContent() == null || message.getContent().isBlank()
+                    ? "Bạn nhận được một tin nhắn mới" : message.getContent());
+            event.put("targetId", conversation.getId().toString());
+            event.put("targetUrl", "/chat?conversationId=" + conversation.getId());
+            kafkaTemplate.send("notification.in-app.send", event);
+        } catch (Exception ignored) {
+            // A notification failure must never prevent a message from being sent.
+        }
     }
 }
