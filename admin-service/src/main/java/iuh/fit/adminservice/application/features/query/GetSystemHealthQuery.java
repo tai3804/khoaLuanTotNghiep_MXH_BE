@@ -20,13 +20,15 @@ public class GetSystemHealthQuery {
         SERVICES.put("Eureka Discovery Server", 8761);
         SERVICES.put("API Gateway", 8080);
         SERVICES.put("Auth Service", 8081);
-        SERVICES.put("User Service", 8082);
-        SERVICES.put("Post Service", 8083);
+        SERVICES.put("Post Service", 8082);
+        SERVICES.put("Notification Service", 8083);
         SERVICES.put("Media Service", 8084);
-        SERVICES.put("Chat Service", 8085);
-        SERVICES.put("Notification Service", 8086);
-        SERVICES.put("Moderation Service", 8089);
+        SERVICES.put("User Service", 8085);
+        SERVICES.put("Call Service", 8086);
+        SERVICES.put("Chat Service", 8087);
+        SERVICES.put("Feed Service", 8088);
         SERVICES.put("Admin Service", 8090);
+        SERVICES.put("AI Service", 8091);
     }
 
     public List<ServiceHealthResponse> execute() {

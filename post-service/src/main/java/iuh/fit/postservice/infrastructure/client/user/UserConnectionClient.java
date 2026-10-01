@@ -15,10 +15,10 @@ import java.util.List;
 @FeignClient(name = "user-service", configuration = UserConnectionFeignConfig.class)
 public interface UserConnectionClient {
     @GetMapping("/api/v1/users/connections/status/{targetId}")
-    ApiResponse<Map<String, Object>> getConnectionStatus(@PathVariable UUID targetId);
+    ApiResponse<Map<String, Object>> getConnectionStatus(@PathVariable("targetId") UUID targetId);
 
     @GetMapping("/api/v1/users/connections/friends")
-    ApiResponse<Map<String, Object>> getFriends(@RequestParam int page, @RequestParam int size);
+    ApiResponse<Map<String, Object>> getFriends(@RequestParam("page") int page, @RequestParam("size") int size);
 
     @PostMapping("/api/v1/groups/feed-visibility")
     ApiResponse<List<GroupFeedVisibility>> getGroupFeedVisibility(@RequestBody List<UUID> groupIds);

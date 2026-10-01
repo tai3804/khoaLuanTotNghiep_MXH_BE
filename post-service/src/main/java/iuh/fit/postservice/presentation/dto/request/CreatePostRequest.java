@@ -5,6 +5,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -17,4 +18,5 @@ public class CreatePostRequest {
     PostPrivacy privacy;
     Set<UUID> allowedUserIds;
     UUID groupId;
+    List<String> mediaUrls;
 }

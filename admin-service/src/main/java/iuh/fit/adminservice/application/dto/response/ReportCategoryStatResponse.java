@@ -13,4 +13,5 @@ public class ReportCategoryStatResponse {
     private String category;
     private long count;
     private double percentage;
+    private String color;
 }

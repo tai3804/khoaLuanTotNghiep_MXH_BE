@@ -21,13 +21,19 @@ public class AuditLog {
     @Column(nullable = false)
     private String adminId;
 
+    private String adminUsername;
+
     @Column(nullable = false)
     private String action; // e.g., "BAN_USER", "DELETE_POST", "ADD_BLACKLIST"
+
+    private String targetType; // USER, POST, GROUP, BLACKLIST, SYSTEM
 
     @Column(nullable = false)
     private String targetId; // The ID of the affected resource
 
     private String details; // Extra JSON or string info
+
+    private String ipAddress;
 
     @CreationTimestamp
     @Column(updatable = false)

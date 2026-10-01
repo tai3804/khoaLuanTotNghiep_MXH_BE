@@ -44,8 +44,10 @@ public interface NotificationPresentationMapper {
     @Mapping(target = "actorId", source = "actorId")
     CreateNotificationCommand toCreateCommand(CreateNotificationRequest request, UUID actorId);
 
+    @Mapping(target = "isRead", expression = "java(entity.isRead())")
     NotificationResponse toResponse(Notification entity);
 
+    @Mapping(target = "isRead", expression = "java(result.isRead())")
     NotificationResponse toResponse(NotificationResult result);
 
     default PagedResponse<NotificationResponse> toPagedResponse(PagedResponse<NotificationResult> pagedResult) {

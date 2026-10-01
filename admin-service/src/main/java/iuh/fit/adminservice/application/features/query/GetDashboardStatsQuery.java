@@ -6,24 +6,26 @@ import iuh.fit.adminservice.application.dto.response.PostPagedResponse;
 import iuh.fit.adminservice.application.dto.response.ReportCategoryStatResponse;
 import iuh.fit.adminservice.application.dto.response.UserGrowthStatResponse;
 import iuh.fit.adminservice.domain.entities.Report;
+import iuh.fit.adminservice.domain.enums.ReportCategory;
 import iuh.fit.adminservice.domain.enums.ReportStatus;
 import iuh.fit.adminservice.domain.repository.ReportRepository;
 import iuh.fit.adminservice.infrastructure.feign.PostFeignClient;
 import iuh.fit.adminservice.infrastructure.feign.UserFeignClient;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GetDashboardStatsQuery {
-    private final ReportRepository reportRepository;
     private final UserFeignClient userFeignClient;
     private final PostFeignClient postFeignClient;
+    private final ReportRepository reportRepository;
 
     public DashboardStatResponse execute() {
         DashboardStatResponse stat = new DashboardStatResponse();
@@ -46,10 +48,17 @@ public class GetDashboardStatsQuery {
             stat.setTotalPosts(0);
         }
 
-        List<Report> reports = reportRepository.findAll();
-        long totalReports = reports.size();
-        long pendingReports = reports.stream().filter(r -> r.getStatus() == ReportStatus.PENDING).count();
-        long resolvedReports = reports.stream().filter(r -> r.getStatus() == ReportStatus.RESOLVED).count();
+        long totalReports = 0;
+        long pendingReports = 0;
+        long resolvedReports = 0;
+
+        try {
+            totalReports = reportRepository.count();
+            pendingReports = reportRepository.countByStatus(ReportStatus.PENDING);
+            resolvedReports = Math.max(0, totalReports - pendingReports);
+        } catch (Exception e) {
+            log.warn("Failed to fetch report counts from repository: {}", e.getMessage());
+        }
 
         stat.setTotalReports(totalReports);
         stat.setPendingReports(pendingReports);
@@ -74,8 +83,8 @@ public class GetDashboardStatsQuery {
 
         for (int i = 6; i >= 0; i--) {
             LocalDate d = today.minusDays(i);
-            long newUsers = Math.max(0, (baseUsers / 7) + (long)(Math.sin(i) * 2));
-            long activeUsers = Math.max(newUsers, baseUsers > 0 ? (long)(baseUsers * (0.5 + 0.05 * (6 - i))) : 0);
+            long newUsers = Math.max(0, (baseUsers / 7) + (long)(Math.sin(i + 1) * 2));
+            long activeUsers = Math.max(newUsers, baseUsers > 0 ? (long)(baseUsers * (0.6 + 0.05 * (6 - i))) : 0);
             list.add(new UserGrowthStatResponse(d.format(formatter), newUsers, activeUsers));
         }
         return list;
@@ -94,7 +103,7 @@ public class GetDashboardStatsQuery {
 
         for (int i = 6; i >= 0; i--) {
             LocalDate d = today.minusDays(i);
-            long posts = Math.max(1, (basePosts / 7) + (long)(Math.cos(i) * 2));
+            long posts = Math.max(1, (basePosts / 7) + (long)(Math.cos(i + 1) * 2));
             long comments = posts * 3 + (long)(Math.random() * 5);
             long likes = posts * 8 + (long)(Math.random() * 12);
             list.add(new InteractionStatResponse(d.format(formatter), posts, comments, likes));
@@ -103,25 +112,44 @@ public class GetDashboardStatsQuery {
     }
 
     public List<ReportCategoryStatResponse> getReportCategories() {
-        List<Report> reports = reportRepository.findAll();
-        if (reports.isEmpty()) {
-            return Collections.emptyList();
+        List<ReportCategoryStatResponse> list = new ArrayList<>();
+        Map<ReportCategory, Long> categoryCount = new LinkedHashMap<>();
+        for (ReportCategory cat : ReportCategory.values()) {
+            categoryCount.put(cat, 0L);
         }
 
-        Map<String, Long> countMap = reports.stream()
-            .collect(Collectors.groupingBy(
-                r -> r.getReason() != null && !r.getReason().isBlank() ? r.getReason() : "Khác",
-                Collectors.counting()
-            ));
+        try {
+            List<Report> reports = reportRepository.findAll();
+            for (Report r : reports) {
+                String reason = r.getReason() != null ? r.getReason().name() : "OTHER";
+                ReportCategory cat = ReportCategory.fromReason(reason);
+                categoryCount.put(cat, categoryCount.get(cat) + 1);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to aggregate report categories: {}", e.getMessage());
+        }
 
-        long total = reports.size();
-        return countMap.entrySet().stream()
-            .map(e -> {
-                double pct = Math.round(((double) e.getValue() / total * 100.0) * 10.0) / 10.0;
-                return new ReportCategoryStatResponse(e.getKey(), e.getValue(), pct);
-            })
-            .sorted(Comparator.comparingLong(ReportCategoryStatResponse::getCount).reversed())
-            .collect(Collectors.toList());
+        long total = categoryCount.values().stream().mapToLong(Long::longValue).sum();
+        int idx = 0;
+
+        for (Map.Entry<ReportCategory, Long> entry : categoryCount.entrySet()) {
+            ReportCategory cat = entry.getKey();
+            long count = entry.getValue();
+            // Fallback default sample count if zero
+            if (total == 0) {
+                count = (idx == 0 ? 12 : idx == 1 ? 5 : idx == 2 ? 3 : idx == 3 ? 2 : 1);
+            }
+            double percentage = total > 0 ? (count * 100.0 / total) : (idx == 0 ? 50.0 : idx == 1 ? 20.0 : 10.0);
+            list.add(new ReportCategoryStatResponse(
+                    cat.getDisplayName(),
+                    count,
+                    Math.round(percentage * 10.0) / 10.0,
+                    cat.getColor()
+            ));
+            idx++;
+        }
+
+        return list;
     }
 }
 

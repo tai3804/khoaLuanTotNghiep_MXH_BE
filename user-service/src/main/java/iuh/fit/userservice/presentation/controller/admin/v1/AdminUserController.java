@@ -48,12 +48,18 @@ public class AdminUserController {
             map.put("coverUrl", p.getCoverUrl());
             map.put("bio", p.getBio());
             map.put("gender", p.getGender() != null ? p.getGender().name() : "OTHER");
+            map.put("dateOfBirth", p.getDateOfBirth() != null ? p.getDateOfBirth().toString() : null);
+            map.put("location", p.getLocation());
+            map.put("website", p.getWebsite());
+            map.put("isOnline", p.getIsOnline() != null ? p.getIsOnline() : false);
+            map.put("lastActiveAt", p.getLastActiveAt() != null ? p.getLastActiveAt().toString() : null);
             map.put("status", "ACTIVE");
             map.put("role", "USER");
             map.put("followerCount", p.getFollowerCount() != null ? p.getFollowerCount() : 0);
             map.put("followingCount", p.getFollowingCount() != null ? p.getFollowingCount() : 0);
             map.put("friendCount", p.getFriendCount() != null ? p.getFriendCount() : 0);
             map.put("createdAt", p.getCreatedAt() != null ? p.getCreatedAt().toString() : new Date().toInstant().toString());
+            map.put("updatedAt", p.getUpdatedAt() != null ? p.getUpdatedAt().toString() : null);
             return map;
         }).toList();
 

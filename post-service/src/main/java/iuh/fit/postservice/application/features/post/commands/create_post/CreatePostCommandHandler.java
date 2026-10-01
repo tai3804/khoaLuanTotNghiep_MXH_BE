@@ -25,6 +25,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 
+import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.domain.enums.MediaType;
+import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -32,6 +36,7 @@ import java.util.UUID;
 public class CreatePostCommandHandler {
 
     PostRepository postRepository;
+    PostMediaRepository postMediaRepository;
     PostFeatureMapper postFeatureMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
     UserConnectionClient userConnectionClient;
@@ -41,8 +46,9 @@ public class CreatePostCommandHandler {
     public CreatePostResult handle(CreatePostCommand command) {
         boolean hasContent = command.getContent() != null && !command.getContent().isBlank();
         boolean hasFiles = command.getFiles() != null && !command.getFiles().isEmpty();
+        boolean hasMediaUrls = command.getMediaUrls() != null && !command.getMediaUrls().isEmpty();
 
-        if (!hasContent && !hasFiles) {
+        if (!hasContent && !hasFiles && !hasMediaUrls) {
             throw new BusinessException(PostServiceErrorCode.INVALID_POST_CONTENT);
         }
 
@@ -82,10 +88,34 @@ public class CreatePostCommandHandler {
         }
 
         Post savedPost = postRepository.save(post);
+        List<PostMedia> savedMediaList = new ArrayList<>();
+
+        if (hasMediaUrls) {
+            int sortOrder = 0;
+            for (String url : command.getMediaUrls()) {
+                if (url != null && !url.isBlank()) {
+                    boolean isVid = url.matches("(?i).*\\.(mp4|webm|ogg|mov|m4v|mkv)(\\?.*)?$") || url.contains("/video/") || url.contains("mediaType=VIDEO");
+                    MediaType mediaType = isVid ? MediaType.VIDEO : MediaType.IMAGE;
+                    String fileKey = url.contains("/") ? url.substring(url.lastIndexOf('/') + 1) : ("media-" + java.util.UUID.randomUUID());
+                    if (fileKey.contains("?")) fileKey = fileKey.substring(0, fileKey.indexOf('?'));
+
+                    PostMedia postMedia = PostMedia.builder()
+                            .postId(savedPost.getId())
+                            .fileUrl(url)
+                            .fileKey(fileKey)
+                            .mediaType(mediaType)
+                            .fileSize(0)
+                            .sortOrder(sortOrder++)
+                            .build();
+
+                    savedMediaList.add(postMediaRepository.save(postMedia));
+                }
+            }
+        }
 
         if (hasFiles) {
             List<PostCreatedEvent.MediaPayload> mediaPayloads = new ArrayList<>();
-            int sortOrder = 0;
+            int sortOrder = savedMediaList.size();
 
             for (MultipartFile file : command.getFiles()) {
                 if (file != null && !file.isEmpty()) {
@@ -115,6 +145,6 @@ public class CreatePostCommandHandler {
             }
         }
 
-        return postFeatureMapper.toCreateResult(savedPost, List.of());
+        return postFeatureMapper.toCreateResult(savedPost, savedMediaList);
     }
 }

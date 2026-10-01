@@ -87,5 +87,55 @@ public class AdminDataInitializer implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("Could not publish user.registered Kafka event for admin: {}", e.getMessage());
         }
+
+        // Initialize Default Moderator account
+        String modEmail = "moderator";
+        String modPassword = "mod123";
+        Optional<User> existingModOpt = userRepository.findByEmail(modEmail);
+        if (existingModOpt.isPresent()) {
+            User existingMod = existingModOpt.get();
+            existingMod.setPassword(passwordEncoder.encode(modPassword));
+            existingMod.setStatus(UserStatus.ACTIVE);
+            existingMod.setRoles(Set.of("ROLE_MODERATOR", "ROLE_USER"));
+            userRepository.save(existingMod);
+            log.info("Default Moderator account ({}) exists and password has been synced to '{}'.", modEmail, modPassword);
+        } else {
+            User modUser = User.builder()
+                    .id(null)
+                    .email(modEmail)
+                    .password(passwordEncoder.encode(modPassword))
+                    .firstName("Kiểm Duyệt Viên")
+                    .lastName("Hệ Thống")
+                    .middleName("")
+                    .status(UserStatus.ACTIVE)
+                    .roles(Set.of("ROLE_MODERATOR", "ROLE_USER"))
+                    .permissions(Set.of("MODERATION_ACCESS", "CONTENT_MODERATION"))
+                    .mfaEnabled(false)
+                    .mfaType(MfaType.NONE)
+                    .tokenVersion(1)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .deleted(false)
+                    .build();
+
+            User savedMod = userRepository.save(modUser);
+            log.info("Default Moderator account created successfully! ID: {}, Identifier: {}, Password: {}", savedMod.getId(), modEmail, modPassword);
+
+            try {
+                UserRegisteredEvent event = UserRegisteredEvent.builder()
+                        .userId(savedMod.getId())
+                        .email(savedMod.getEmail())
+                        .firstName(savedMod.getFirstName())
+                        .lastName(savedMod.getLastName())
+                        .middleName(savedMod.getMiddleName())
+                        .dateOfBirth(LocalDate.of(2000, 1, 1))
+                        .gender("OTHER")
+                        .build();
+
+                kafkaTemplate.send("user.registered", event);
+            } catch (Exception e) {
+                log.warn("Could not publish user.registered Kafka event for moderator: {}", e.getMessage());
+            }
+        }
     }
 }

@@ -9,9 +9,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 
 import java.util.List;
 
-import iuh.fit.adminservice.infrastructure.config.FeignClientConfig;
-
-@FeignClient(name = "user-service", configuration = FeignClientConfig.class)
+@FeignClient(name = "user-service")
 public interface UserFeignClient {
     
     @GetMapping("/api/v1/users/admin/all")

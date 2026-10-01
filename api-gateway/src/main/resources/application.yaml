@@ -34,11 +34,7 @@ spring:
         - id: admin-service
           uri: lb://admin-service
           predicates:
-            - Path=/api/v1/admin/**
-        - id: moderation-service
-          uri: lb://moderation-service
-          predicates:
-            - Path=/api/v1/moderation/**
+            - Path=/api/v1/admin/**,/api/v1/moderation/**
         - id: auth-service
           uri: lb://auth-service
           predicates:
@@ -79,6 +75,14 @@ spring:
           uri: lb://call-service
           predicates:
             - Path=/api/v1/calls/**,/api/v1/call/**
+        - id: call-service-ws
+          uri: lb://call-service
+          predicates:
+            - Path=/ws-call/**
+        - id: ai-service
+          uri: lb://ai-service
+          predicates:
+            - Path=/api/v1/ai/**
 
 eureka:
   client:

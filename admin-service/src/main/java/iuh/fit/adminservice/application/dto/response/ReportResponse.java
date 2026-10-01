@@ -1,32 +1,28 @@
 package iuh.fit.adminservice.application.dto.response;
 
+import iuh.fit.adminservice.domain.enums.ReportReason;
 import iuh.fit.adminservice.domain.enums.ReportStatus;
-import iuh.fit.adminservice.domain.enums.ReportType;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import iuh.fit.adminservice.domain.enums.TargetType;
+import lombok.*;
+import lombok.experimental.FieldDefaults;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@FieldDefaults(level = AccessLevel.PRIVATE)
 public class ReportResponse {
-    private Long id;
-    private String reporterId;
-    private String reporterUsername;
-    private String reporterName;
-    private String reporterAvatarUrl;
-    private String targetId;
-    private ReportType targetType;
-    private String reason;
-    private String description;
-    private ReportStatus status;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private LocalDateTime resolvedAt;
-    private String resolvedBy;
-    private String resolutionNotes;
+    UUID reportId;
+    UUID reporterId;
+    TargetType targetType;
+    UUID targetId;
+    ReportReason reason;
+    String description;
+    ReportStatus status;
+    LocalDateTime createdAt;
+    LocalDateTime resolvedAt;
+    UUID resolvedBy;
 }

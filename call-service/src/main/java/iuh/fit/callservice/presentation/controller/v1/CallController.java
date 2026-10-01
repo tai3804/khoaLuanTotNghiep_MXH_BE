@@ -33,6 +33,11 @@ import iuh.fit.callservice.presentation.dto.request.ToggleMediaRequest;
 import iuh.fit.callservice.presentation.dto.response.CallHistoryResponse;
 import iuh.fit.callservice.presentation.dto.response.CallSessionResponse;
 import iuh.fit.callservice.presentation.mapper.CallPresentationMapper;
+import iuh.fit.callservice.domain.entities.CallParticipant;
+import iuh.fit.callservice.domain.entities.CallSession;
+import iuh.fit.callservice.domain.enums.CallStatus;
+import iuh.fit.callservice.infrastructure.persistence.repository.CallParticipantRepository;
+import iuh.fit.callservice.infrastructure.persistence.repository.CallSessionRepository;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -61,6 +66,8 @@ public class CallController {
     GetActiveCallQueryHandler getActiveCallQueryHandler;
     GetCallHistoryQueryHandler getCallHistoryQueryHandler;
     CallPresentationMapper callPresentationMapper;
+    CallSessionRepository callSessionRepository;
+    CallParticipantRepository callParticipantRepository;
     JwtUtil jwtUtil;
 
     @PostMapping("/initiate")
@@ -143,6 +150,53 @@ public class CallController {
         PagedResponse<GetCallHistoryResult> result = getCallHistoryQueryHandler.handle(query);
         PagedResponse<CallHistoryResponse> pagedResponse = callPresentationMapper.toPagedHistoryResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "Call history retrieved successfully"));
+    }
+
+    @GetMapping("/{callSessionId}")
+    @Operation(summary = "Get call session details", description = "Retrieves session details by call session ID")
+    public ResponseEntity<ApiResponse<CallSessionResponse>> getCallSession(@PathVariable UUID callSessionId) {
+        CallSession session = callSessionRepository.findById(callSessionId).orElse(null);
+        if (session == null) {
+            return ResponseEntity.ok(ApiResponse.success(null, "Call session not found"));
+        }
+        List<CallParticipant> participants = callParticipantRepository.findByCallSessionId(session.getId());
+        return ResponseEntity.ok(ApiResponse.success(callPresentationMapper.toResponse(session, participants), "Call session retrieved successfully"));
+    }
+
+    @GetMapping("/post/{postId}")
+    @Operation(summary = "Get call session for post", description = "Retrieves active or latest call session associated with a post")
+    public ResponseEntity<ApiResponse<CallSessionResponse>> getCallSessionByPost(@PathVariable UUID postId) {
+        CallSession session = callSessionRepository.findFirstByConversationIdOrderByStartedAtDesc(postId).orElse(null);
+        if (session == null) {
+            return ResponseEntity.ok(ApiResponse.success(null, "No call session found for post"));
+        }
+        List<CallParticipant> participants = callParticipantRepository.findByCallSessionId(session.getId());
+        return ResponseEntity.ok(ApiResponse.success(callPresentationMapper.toResponse(session, participants), "Post call session retrieved successfully"));
+    }
+
+    @PostMapping("/post/{postId}/join")
+    @Operation(summary = "Join call session for post", description = "Joins the active call session associated with a post")
+    public ResponseEntity<ApiResponse<CallSessionResponse>> joinCallByPost(@PathVariable UUID postId) {
+        UUID currentUserId = getCurrentUserId();
+        CallSession session = callSessionRepository.findByConversationIdAndStatusIn(postId, List.of(CallStatus.INITIATED, CallStatus.ACTIVE))
+                .stream().findFirst()
+                .orElseThrow(() -> new BusinessException(CallServiceErrorCode.CALL_SESSION_NOT_FOUND));
+
+        JoinCallCommand command = callPresentationMapper.toJoinCommand(session.getId(), currentUserId);
+        JoinCallResult result = joinCallCommandHandler.handle(command);
+        return ResponseEntity.ok(ApiResponse.success(callPresentationMapper.toResponse(result), "Joined post call session successfully"));
+    }
+
+    @PostMapping("/post/{postId}/end")
+    @Operation(summary = "End call session for post", description = "Ends the active call session associated with a post (Host only)")
+    public ResponseEntity<ApiResponse<Void>> endCallByPost(@PathVariable UUID postId) {
+        UUID currentUserId = getCurrentUserId();
+        List<CallSession> sessions = callSessionRepository.findByConversationIdAndStatusIn(postId, List.of(CallStatus.INITIATED, CallStatus.ACTIVE));
+        for (CallSession session : sessions) {
+            EndCallCommand command = callPresentationMapper.toEndCommand(session.getId(), currentUserId);
+            endCallCommandHandler.handle(command);
+        }
+        return ResponseEntity.ok(ApiResponse.success(null, "Post call session ended successfully"));
     }
 
     private UUID getCurrentUserId() {
