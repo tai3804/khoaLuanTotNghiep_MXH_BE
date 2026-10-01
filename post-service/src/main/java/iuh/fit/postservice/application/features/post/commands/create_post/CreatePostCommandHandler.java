@@ -8,6 +8,8 @@ import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
+import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
+import iuh.fit.commonframework.application.dto.ApiResponse;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -21,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -31,6 +34,7 @@ public class CreatePostCommandHandler {
     PostRepository postRepository;
     PostFeatureMapper postFeatureMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
+    UserConnectionClient userConnectionClient;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -40,6 +44,23 @@ public class CreatePostCommandHandler {
 
         if (!hasContent && !hasFiles) {
             throw new BusinessException(PostServiceErrorCode.INVALID_POST_CONTENT);
+        }
+
+        // A post assigned to a group must always be authored by an approved member.
+        // The client-side UI is not a security boundary, so enforce this at the service layer.
+        if (command.getGroupId() != null) {
+            try {
+                ApiResponse<List<UserConnectionClient.GroupFeedVisibility>> response =
+                        userConnectionClient.getGroupFeedVisibility(List.of(command.getGroupId()));
+                boolean isMember = response != null && response.getData() != null
+                        && response.getData().stream().anyMatch(entry -> command.getGroupId().equals(entry.groupId()) && entry.member());
+                if (!isMember) throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED);
+            } catch (BusinessException exception) {
+                throw exception;
+            } catch (Exception exception) {
+                // Fail closed when group membership cannot be checked.
+                throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED);
+            }
         }
 
         Post post = postFeatureMapper.toEntity(command);

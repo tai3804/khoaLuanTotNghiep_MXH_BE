@@ -78,6 +78,17 @@ public class GroupServiceImpl implements GroupService {
     }
 
     @Override @Transactional
+    public void leaveGroup(UUID groupId, UUID currentUserId) {
+        Group group = findGroup(groupId);
+        if (group.getCreatorId().equals(currentUserId)) {
+            throw new BusinessException(UserServiceErrorCode.UNAUTHORIZED);
+        }
+        GroupMember member = getMember(groupId, currentUserId);
+        if (member.getStatus() == GroupMemberStatus.APPROVED) increment(group, -1);
+        groupMemberRepository.delete(member);
+    }
+
+    @Override @Transactional
     public GroupResponse reviewMember(UUID groupId, UUID memberId, boolean approved, UUID currentUserId) {
         requireModerator(groupId, currentUserId); Group group = findGroup(groupId);
         GroupMember member = getMember(groupId, memberId);

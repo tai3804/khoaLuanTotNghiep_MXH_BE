@@ -67,6 +67,9 @@ public class GroupController {
     @PostMapping("/{id}/join")
     public ResponseEntity<ApiResponse<GroupResponse>> join(@PathVariable UUID id) { return ResponseEntity.ok(ApiResponse.success(groupService.joinGroup(id, currentUserId()), "Join request processed")); }
 
+    @DeleteMapping("/{id}/members/me")
+    public ResponseEntity<ApiResponse<Void>> leave(@PathVariable UUID id) { groupService.leaveGroup(id, currentUserId()); return ResponseEntity.ok(ApiResponse.success(null, "Left group")); }
+
     @GetMapping("/{id}/members")
     public ResponseEntity<ApiResponse<List<GroupMemberResponse>>> members(@PathVariable UUID id, @RequestParam(defaultValue = "false") boolean includePending) { return ResponseEntity.ok(ApiResponse.success(groupService.getMembers(id, currentUserId(), includePending), "Members retrieved")); }
 

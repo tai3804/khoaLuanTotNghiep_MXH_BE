@@ -31,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -61,6 +62,7 @@ public class ReportController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('ROLE_MODERATOR', 'ROLE_ADMIN')")
     @Operation(summary = "Get list of reports (Moderator only)", description = "Retrieves paginated list of violation reports using BaseFilter (status, targetType)")
     public ResponseEntity<ApiResponse<List<ReportResponse>>> getReports(@ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         GetReportsQuery query = GetReportsQuery.builder().filter(filter).build();
@@ -70,6 +72,7 @@ public class ReportController {
     }
 
     @GetMapping("/{reportId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_MODERATOR', 'ROLE_ADMIN')")
     @Operation(summary = "Get report details (Moderator only)", description = "Retrieves details of a specific violation report")
     public ResponseEntity<ApiResponse<ReportResponse>> getReportDetail(@PathVariable UUID reportId) {
         GetReportDetailQuery query = GetReportDetailQuery.builder().reportId(reportId).build();
@@ -78,6 +81,7 @@ public class ReportController {
     }
 
     @PostMapping("/{reportId}/process")
+    @PreAuthorize("hasAnyAuthority('ROLE_MODERATOR', 'ROLE_ADMIN')")
     @Operation(summary = "Process violation report (Moderator only)", description = "Resolves or dismisses a report and takes moderation action")
     public ResponseEntity<ApiResponse<Void>> processReport(
             @PathVariable UUID reportId,

@@ -13,7 +13,7 @@ public class RouteLocatorConfig {
         return builder.routes()
                 .route("auth-service", r -> r.path("/api/v1/auth/**", "/api/v1/devices/**")
                         .uri("lb://auth-service"))
-                .route("user-service", r -> r.path("/api/v1/users/**")
+                .route("user-service", r -> r.path("/api/v1/users/**", "/api/v1/groups/**")
                         .uri("lb://user-service"))
                 .route("post-service", r -> r.path("/api/v1/posts/**")
                         .uri("lb://post-service"))

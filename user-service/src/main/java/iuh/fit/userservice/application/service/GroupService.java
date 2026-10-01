@@ -17,6 +17,7 @@ public interface GroupService {
     GroupResponse updateGroup(UUID groupId, UpdateGroupRequest request, UUID currentUserId);
     void deleteGroup(UUID groupId, UUID currentUserId);
     GroupResponse joinGroup(UUID groupId, UUID currentUserId);
+    void leaveGroup(UUID groupId, UUID currentUserId);
     GroupResponse reviewMember(UUID groupId, UUID memberId, boolean approved, UUID currentUserId);
     GroupResponse addMembers(UUID groupId, List<UUID> memberIds, UUID currentUserId);
     List<GroupMemberResponse> getMembers(UUID groupId, UUID currentUserId, boolean includePending);

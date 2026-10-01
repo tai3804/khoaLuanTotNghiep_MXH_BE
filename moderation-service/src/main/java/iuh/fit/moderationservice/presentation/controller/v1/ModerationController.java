@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -43,6 +44,7 @@ public class ModerationController {
     JwtUtil jwtUtil;
 
     @PostMapping("/posts/{postId}/delete")
+    @PreAuthorize("hasAnyAuthority('ROLE_MODERATOR', 'ROLE_ADMIN')")
     @Operation(summary = "Directly delete/moderate a post (Moderator only)", description = "Allows moderators to directly delete a post and publish moderation event to Kafka")
     public ResponseEntity<ApiResponse<Void>> moderatePost(
             @PathVariable UUID postId,
@@ -54,6 +56,7 @@ public class ModerationController {
     }
 
     @GetMapping("/logs")
+    @PreAuthorize("hasAnyAuthority('ROLE_MODERATOR', 'ROLE_ADMIN')")
     @Operation(summary = "Get moderation audit logs (Moderator/Admin only)", description = "Retrieves paginated audit log history of moderation actions")
     public ResponseEntity<ApiResponse<List<ModerationLogResponse>>> getModerationLogs(@ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         GetModerationLogsQuery query = GetModerationLogsQuery.builder().filter(filter).build();
