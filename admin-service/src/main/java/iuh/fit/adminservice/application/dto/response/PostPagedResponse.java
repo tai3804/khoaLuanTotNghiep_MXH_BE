@@ -8,11 +8,17 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class PostPagedResponse {
     private int code;
-    private List<Object> data;
+    private List<PostSummary> data;
     private long totalElements;
     private int totalPages;
     private int page;
     private int size;
     private boolean last;
     private String message;
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class PostSummary {
+        private String content;
+    }
 }

@@ -81,6 +81,7 @@ public class ModerationReportController {
     }
 
     @PostMapping("/{reportId}/process")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     @Operation(summary = "Process violation report (Moderator only)", description = "Resolves or dismisses a report and takes moderation action")
     public ResponseEntity<ApiResponse<Void>> processReport(
             @PathVariable UUID reportId,

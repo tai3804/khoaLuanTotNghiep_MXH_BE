@@ -104,9 +104,9 @@ public class GetAnalyticsQuery {
 
         try {
             PostPagedResponse postResp = postFeignClient.getPosts(1, 100);
-            if (postResp != null && postResp.getContent() != null) {
+            if (postResp != null && postResp.getData() != null) {
                 Pattern hashtagPattern = Pattern.compile("#\\w+");
-                for (var post : postResp.getContent()) {
+                for (var post : postResp.getData()) {
                     if (post.getContent() != null) {
                         Matcher matcher = hashtagPattern.matcher(post.getContent());
                         while (matcher.find()) {
