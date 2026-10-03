@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -28,21 +29,25 @@ public class DeleteCommentCommandHandler {
     MediaClient mediaClient;
 
     @Transactional
-    @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
+    @CacheEvict(cacheNames = { "post-feed-v2", "post-user-feed-v2", "post-detail-v2" }, allEntries = true)
     public void handle(DeleteCommentCommand command) {
         Comment comment = commentRepository.findByIdAndDeletedFalse(command.getCommentId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.COMMENT_NOT_FOUND));
 
-        if (!comment.getAuthorId().equals(command.getUserId())) {
+        Post post = postRepository.findByIdAndDeletedFalse(comment.getPostId()).orElse(null);
+        boolean isCommentAuthor = comment.getAuthorId().equals(command.getUserId());
+        boolean isPostAuthor = post != null && post.getAuthorId().equals(command.getUserId());
+
+        if (!isCommentAuthor && !isPostAuthor) {
             throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
 
         // A root comment owns its replies in the UI. Soft-delete them as well so
         // they cannot remain visible through a direct replies request.
-        List<Comment> commentsToDelete = new java.util.ArrayList<>();
+        List<Comment> commentsToDelete = new ArrayList<>();
         commentsToDelete.add(comment);
         if (comment.getParentCommentId() == null) {
-            commentsToDelete.addAll(commentRepository.findByParentCommentIdAndDeletedFalse(comment.getId(), org.springframework.data.domain.Pageable.unpaged()).getContent());
+            commentsToDelete.addAll(commentRepository.findByParentCommentIdAndDeletedFalse(comment.getId()));
         }
         commentsToDelete.forEach(item -> item.setDeleted(true));
         commentRepository.saveAll(commentsToDelete);
@@ -56,9 +61,9 @@ public class DeleteCommentCommandHandler {
         }
 
         // Decrement comment count on post
-        postRepository.findByIdAndDeletedFalse(comment.getPostId()).ifPresent(post -> {
+        if (post != null) {
             post.setCommentCount(Math.max(0, post.getCommentCount() - commentsToDelete.size()));
             postRepository.save(post);
-        });
+        }
     }
 }

@@ -59,60 +59,63 @@ public class GeminiApiClient {
             return createFallbackResult(content);
         }
 
-        try {
-            String endpoint = String.format("%s/%s:generateContent?key=%s", apiUrl, modelName, apiKey);
+        for (String candidateModel : getCandidateModels()) {
+            try {
+                String endpoint = String.format("%s/%s:generateContent?key=%s", apiUrl, candidateModel, apiKey);
 
-            String systemPrompt = """
-                    Bạn là một AI kiểm duyệt nội dung mạng xã hội Tiếng Việt chuyên nghiệp.
-                    Nhiệm vụ của bạn là phân tích văn bản và trả về JSON thuần túy (không bọc trong markdown hay ```json).
-                    
-                    Các tiêu chí phân tích:
-                    - toxicityScore: Điểm độc hại từ 0.0 (hoàn toàn an toàn) đến 1.0 (cực kỳ độc hại/nguy hiểm).
-                    - category: 1 trong các loại: NONE, PROFANITY (từ tục tĩu), HATE_SPEECH (thù ghét), HARASSMENT (quấy rối/xúc phạm), SEXUAL (18+/khiêu dâm), VIOLENCE (bạo lực/đe dọa), SPAM_SCAM (lừa đảo/cờ bạc).
-                    - severity: 1 trong các mức: LOW, MEDIUM, HIGH, CRITICAL.
-                    - suggestedAction: 1 trong các hành động: ALLOW (cho phép), WARN_USER (cảnh báo tác giả), AUTO_HIDE (tự động ẩn bài), DELETE_POST (xóa bài viết).
-                    - reason: Giải thích ngắn gọn lý do vi phạm bằng tiếng Việt (1 câu).
-                    - extractedKeywords: Mảng các từ lóng, từ ngữ nhạy cảm, xúc phạm mới được phát hiện trong bài viết (chữ thường).
-                    
-                    Ví dụ định dạng trả về:
-                    {"toxicityScore": 0.85, "category": "HARASSMENT", "severity": "HIGH", "suggestedAction": "AUTO_HIDE", "reason": "Chứa ngôn từ thóa mạ và xúc phạm cá nhân", "extractedKeywords": ["từ_cấm_1", "từ_cấm_2"]}
-                    """;
+                String systemPrompt = """
+                        Bạn là một AI kiểm duyệt nội dung mạng xã hội Tiếng Việt chuyên nghiệp.
+                        Nhiệm vụ của bạn là phân tích văn bản và trả về JSON thuần túy (không bọc trong markdown hay ```json).
+                        
+                        Các tiêu chí phân tích:
+                        - toxicityScore: Điểm độc hại từ 0.0 (hoàn toàn an toàn) đến 1.0 (cực kỳ độc hại/nguy hiểm).
+                        - category: 1 trong các loại: NONE, PROFANITY (từ tục tĩu), HATE_SPEECH (thù ghét), HARASSMENT (quấy rối/xúc phạm), SEXUAL (18+/khiêu dâm), VIOLENCE (bạo lực/đe dọa), SPAM_SCAM (lừa đảo/cờ bạc).
+                        - severity: 1 trong các mức: LOW, MEDIUM, HIGH, CRITICAL.
+                        - suggestedAction: 1 trong các hành động: ALLOW (cho phép), WARN_USER (cảnh báo tác giả), AUTO_HIDE (tự động ẩn bài), DELETE_POST (xóa bài viết).
+                        - reason: Giải thích ngắn gọn lý do vi phạm bằng tiếng Việt (1 câu).
+                        - extractedKeywords: Mảng các từ lóng, từ ngữ nhạy cảm, xúc phạm mới được phát hiện trong bài viết (chữ thường).
+                        
+                        Ví dụ định dạng trả về:
+                        {"toxicityScore": 0.85, "category": "HARASSMENT", "severity": "HIGH", "suggestedAction": "AUTO_HIDE", "reason": "Chứa ngôn từ thóa mạ và xúc phạm cá nhân", "extractedKeywords": ["từ_cấm_1", "từ_cấm_2"]}
+                        """;
 
-            Map<String, Object> requestBodyMap = Map.of(
-                    "contents", List.of(
-                            Map.of("role", "user", "parts", List.of(
-                                    Map.of("text", systemPrompt + "\n\nNội dung cần phân tích:\n" + content)
-                            ))
-                    ),
-                    "generationConfig", Map.of(
-                            "temperature", 0.1,
-                            "maxOutputTokens", 512,
-                            "responseMimeType", "application/json"
-                    )
-            );
+                Map<String, Object> requestBodyMap = Map.of(
+                        "contents", List.of(
+                                Map.of("role", "user", "parts", List.of(
+                                        Map.of("text", systemPrompt + "\n\nNội dung cần phân tích:\n" + content)
+                                ))
+                        ),
+                        "generationConfig", Map.of(
+                                "temperature", 0.1,
+                                "maxOutputTokens", 1024,
+                                "responseMimeType", "application/json"
+                        )
+                );
 
-            String requestJson = objectMapper.writeValueAsString(requestBodyMap);
+                String requestJson = objectMapper.writeValueAsString(requestBodyMap);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint))
-                    .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(8))
-                    .POST(HttpRequest.BodyPublishers.ofString(requestJson))
-                    .build();
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(endpoint))
+                        .header("Content-Type", "application/json")
+                        .timeout(Duration.ofSeconds(10))
+                        .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                        .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            if (response.statusCode() == 200) {
-                return parseGeminiResponse(response.body());
-            } else {
-                log.error("Gemini API returned error code {}: {}. Falling back to Fast Filter.", response.statusCode(), response.body());
-                return createFallbackResult(content);
+                if (response.statusCode() == 200) {
+                    return parseGeminiResponse(response.body());
+                } else {
+                    log.warn("Gemini API with model {} returned error code {}: {}. Trying next model...", candidateModel, response.statusCode(), response.body());
+                }
+
+            } catch (Exception e) {
+                log.warn("Failed to call Gemini API with model {}: {}. Trying next model...", candidateModel, e.getMessage());
             }
-
-        } catch (Exception e) {
-            log.error("Failed to call Gemini API: {}. Falling back to Fast Filter.", e.getMessage());
-            return createFallbackResult(content);
         }
+
+        log.error("All Gemini candidate models failed. Falling back to Fast Filter.");
+        return createFallbackResult(content);
     }
 
     private GeminiModerationResult parseGeminiResponse(String responseBody) {
@@ -196,5 +199,74 @@ public class GeminiApiClient {
                 .extractedKeywords(scan.getMatchedKeywords())
                 .isFallback(true)
                 .build();
+    }
+
+    public boolean hasValidApiKey() {
+        return apiKey != null && !apiKey.trim().isEmpty() && !apiKey.contains("your-gemini-api-key");
+    }
+
+    private List<String> getCandidateModels() {
+        Set<String> models = new LinkedHashSet<>();
+        if (modelName != null && !modelName.isBlank() && !modelName.contains("gemini-3.5-flash")) {
+            models.add(modelName.trim());
+        }
+        models.add("gemini-2.0-flash");
+        models.add("gemini-1.5-flash");
+        models.add("gemini-2.5-flash");
+        models.add("gemini-1.5-pro");
+        return new ArrayList<>(models);
+    }
+
+    public String generateText(String prompt, String fallbackText) {
+        if (!hasValidApiKey()) {
+            log.info("Gemini API key is not configured. Utilizing smart fallback engine.");
+            return fallbackText;
+        }
+
+        for (String candidateModel : getCandidateModels()) {
+            try {
+                String endpoint = String.format("%s/%s:generateContent?key=%s", apiUrl, candidateModel, apiKey);
+
+                Map<String, Object> requestBodyMap = Map.of(
+                        "contents", List.of(
+                                Map.of("role", "user", "parts", List.of(
+                                        Map.of("text", prompt)
+                                ))
+                        ),
+                        "generationConfig", Map.of(
+                                "temperature", 0.7,
+                                "maxOutputTokens", 1024
+                        )
+                );
+
+                String requestJson = objectMapper.writeValueAsString(requestBodyMap);
+
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(endpoint))
+                        .header("Content-Type", "application/json")
+                        .timeout(Duration.ofSeconds(12))
+                        .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    JsonNode rootNode = objectMapper.readTree(response.body());
+                    JsonNode textNode = rootNode.path("candidates").get(0).path("content").path("parts").get(0).path("text");
+                    String text = textNode.asText().trim();
+                    if (!text.isBlank()) {
+                        return text;
+                    }
+                } else {
+                    log.warn("Gemini Assistant API with model {} returned code {}: {}. Trying next model...", candidateModel, response.statusCode(), response.body());
+                }
+
+            } catch (Exception e) {
+                log.warn("Gemini Assistant generation error with model {}: {}. Trying next model...", candidateModel, e.getMessage());
+            }
+        }
+
+        log.warn("All Gemini candidate models failed for generateText. Utilizing smart fallback engine.");
+        return fallbackText;
     }
 }

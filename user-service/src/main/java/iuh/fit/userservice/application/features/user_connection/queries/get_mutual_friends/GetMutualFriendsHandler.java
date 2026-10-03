@@ -36,7 +36,7 @@ public class GetMutualFriendsHandler {
 
         List<UUID> mutualList = new ArrayList<>(mutualIds);
 
-        int page = query.getFilter() != null ? query.getFilter().getPage() : 0;
+        int page = query.getFilter() != null ? Math.max(0, query.getFilter().getPage() - 1) : 0;
         int size = query.getFilter() != null ? query.getFilter().getSize() : 20;
 
         int totalElements = mutualList.size();

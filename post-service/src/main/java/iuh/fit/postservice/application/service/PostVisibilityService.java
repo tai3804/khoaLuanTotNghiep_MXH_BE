@@ -5,6 +5,7 @@ import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PostVisibilityService {
@@ -22,11 +24,12 @@ public class PostVisibilityService {
 
     public boolean canView(Post post, UUID viewerId) {
         if (viewerId == null || post == null) return false;
-        if (post.getGroupId() != null && !viewerId.equals(post.getAuthorId())) {
+        if (viewerId.equals(post.getAuthorId())) return true;
+        if (post.getGroupId() != null) {
             UserConnectionClient.GroupFeedVisibility group = loadGroupVisibility(List.of(post)).get(post.getGroupId());
-            if (group == null || (!group.member() && !group.publicGroup())) return false;
+            return group != null && (group.member() || group.publicGroup());
         }
-        if (viewerId.equals(post.getAuthorId()) || post.getPrivacy() == PostPrivacy.PUBLIC) return true;
+        if (post.getPrivacy() == PostPrivacy.PUBLIC) return true;
         if (post.getPrivacy() == PostPrivacy.PRIVATE) return false;
         if (post.getPrivacy() == PostPrivacy.CUSTOM) return post.getAllowedUserIds() != null && post.getAllowedUserIds().contains(viewerId);
         if (post.getPrivacy() != PostPrivacy.FRIENDS) return false;
@@ -36,8 +39,9 @@ public class PostVisibilityService {
             Object value = data != null ? data.get("friend") : null;
             if (value == null && data != null) value = data.get("isFriend");
             return value instanceof Boolean bool && bool;
-        } catch (Exception ignored) {
-            return false; // privacy must fail closed if the relationship cannot be verified
+        } catch (Exception e) {
+            log.warn("Privacy verification failed between viewer {} and author {}: {}", viewerId, post.getAuthorId(), e.getMessage());
+            return false;
         }
     }
 
@@ -51,27 +55,51 @@ public class PostVisibilityService {
 
     /**
      * Main feed only includes joined-group posts plus a small number of public
-     * group recommendations. Group-detail pages opt out of that recommendation cap.
+     * group recommendations. Group-detail pages opt out of that recommendation cap,
+     * but strictly hide private group posts from non-members.
      */
     public Set<UUID> visiblePostIds(Collection<Post> posts, UUID viewerId, boolean limitPublicGroupRecommendations) {
         Set<UUID> visible = new HashSet<>();
-        if (posts == null || viewerId == null) return visible;
+        if (posts == null) return visible;
+        if (viewerId == null) {
+            for (Post post : posts) {
+                if (post != null && post.getPrivacy() == PostPrivacy.PUBLIC && post.getGroupId() == null) {
+                    visible.add(post.getId());
+                }
+            }
+            return visible;
+        }
 
         boolean requiresFriendLookup = posts.stream().anyMatch(post ->
-                post != null && post.getPrivacy() == PostPrivacy.FRIENDS && !viewerId.equals(post.getAuthorId()));
+                post != null && post.getGroupId() == null && post.getPrivacy() == PostPrivacy.FRIENDS && !viewerId.equals(post.getAuthorId()));
         Set<UUID> friendIds = requiresFriendLookup ? loadFriendIds() : Set.of();
         Map<UUID, UserConnectionClient.GroupFeedVisibility> groupVisibility = loadGroupVisibility(posts);
         int publicGroupRecommendations = 0;
 
         for (Post post : posts) {
             if (post == null) continue;
-            if (post.getGroupId() != null && !viewerId.equals(post.getAuthorId())) {
-                UserConnectionClient.GroupFeedVisibility group = groupVisibility.get(post.getGroupId());
-                if (group == null || (!group.member() && !group.publicGroup())) continue;
-                if (!group.member() && limitPublicGroupRecommendations && publicGroupRecommendations >= 3) continue;
-                if (!group.member() && limitPublicGroupRecommendations) publicGroupRecommendations++;
+            if (viewerId.equals(post.getAuthorId())) {
+                visible.add(post.getId());
+                continue;
             }
-            if (viewerId.equals(post.getAuthorId()) || post.getPrivacy() == PostPrivacy.PUBLIC
+            if (post.getGroupId() != null) {
+                UserConnectionClient.GroupFeedVisibility group = groupVisibility.get(post.getGroupId());
+                if (group == null) continue;
+
+                // Private group posts are ONLY visible to members
+                if (!group.publicGroup() && !group.member()) {
+                    continue;
+                }
+
+                if (limitPublicGroupRecommendations && !group.member()) {
+                    if (publicGroupRecommendations >= 3) continue;
+                    publicGroupRecommendations++;
+                }
+
+                visible.add(post.getId());
+                continue;
+            }
+            if (post.getPrivacy() == PostPrivacy.PUBLIC
                     || (post.getPrivacy() == PostPrivacy.FRIENDS && friendIds.contains(post.getAuthorId()))
                     || (post.getPrivacy() == PostPrivacy.CUSTOM && post.getAllowedUserIds() != null
                     && post.getAllowedUserIds().contains(viewerId))) {
@@ -94,8 +122,9 @@ public class PostVisibilityService {
                 if (entry != null && entry.groupId() != null) result.put(entry.groupId(), entry);
             }
             return result;
-        } catch (Exception ignored) {
-            return Map.of(); // group posts fail closed if membership cannot be checked
+        } catch (Exception e) {
+            log.warn("Could not load group visibility for groups {}: {}", groupIds, e.getMessage());
+            return Map.of();
         }
     }
 

@@ -7,11 +7,13 @@ import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
 import iuh.fit.postservice.domain.enums.MediaType;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
+import iuh.fit.postservice.infrastructure.client.media.MediaClient;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,7 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -28,6 +33,7 @@ public class UpdatePostCommandHandler {
     PostRepository postRepository;
     PostMediaRepository postMediaRepository;
     PostFeatureMapper postFeatureMapper;
+    MediaClient mediaClient;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -60,10 +66,31 @@ public class UpdatePostCommandHandler {
             post.setArchived(command.getIsArchived());
         }
 
-        // The edit form submits the complete attachment list. This makes add and
-        // remove operations deterministic, while a missing field leaves media intact
-        // for other update endpoints (pin/archive/privacy).
+        // The edit form submits the complete attachment list.
         if (command.getMediaUrls() != null) {
+            List<PostMedia> currentMedia = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
+            Set<String> newUrls = command.getMediaUrls().stream()
+                    .filter(u -> u != null && !u.isBlank())
+                    .map(String::trim)
+                    .collect(Collectors.toSet());
+
+            // Delete removed media from S3
+            for (PostMedia oldMedia : currentMedia) {
+                if (!newUrls.contains(oldMedia.getFileUrl())) {
+                    try {
+                        String targetKey = (oldMedia.getFileUrl() != null && !oldMedia.getFileUrl().isBlank())
+                                ? oldMedia.getFileUrl()
+                                : oldMedia.getFileKey();
+                        if (targetKey != null && !targetKey.isBlank()) {
+                            mediaClient.deleteFile(targetKey);
+                            log.info("Deleted removed post media from S3: {}", targetKey);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to delete removed post media [{}] from S3: {}", oldMedia.getFileKey(), e.getMessage());
+                    }
+                }
+            }
+
             postMediaRepository.deleteByPostId(post.getId());
 
             List<PostMedia> replacementMedia = new ArrayList<>();
@@ -101,13 +128,29 @@ public class UpdatePostCommandHandler {
     }
 
     private String createFileKey(String url, int sortOrder) {
-        String path = url.split("[?#]", 2)[0];
-        int lastSlash = path.lastIndexOf('/');
-        String name = lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
-        if (name.isBlank()) {
-            name = "edited-media-" + sortOrder;
+        if (url == null || url.isBlank()) return "posts/edited-media-" + sortOrder;
+        try {
+            if (url.startsWith("http://") || url.startsWith("https://")) {
+                java.net.URI uri = new java.net.URI(url);
+                String path = uri.getPath();
+                if (path != null && path.startsWith("/")) {
+                    path = path.substring(1);
+                }
+                if (path != null && path.startsWith("api/v1/media/files/")) {
+                    return path.substring("api/v1/media/files/".length());
+                }
+                if (path != null && !path.isBlank()) {
+                    return path;
+                }
+            }
+        } catch (Exception ignored) {}
+        String clean = url.contains("?") ? url.substring(0, url.indexOf('?')) : url;
+        if (clean.contains(".net/")) {
+            return clean.substring(clean.indexOf(".net/") + 5);
         }
-        // file_key is an internal reference here; URLs may be signed or long.
-        return name.length() <= 255 ? name : name.substring(name.length() - 255);
+        if (clean.contains(".com/")) {
+            return clean.substring(clean.indexOf(".com/") + 5);
+        }
+        return clean.startsWith("posts/") ? clean : ("posts/" + (clean.contains("/") ? clean.substring(clean.lastIndexOf('/') + 1) : clean));
     }
 }

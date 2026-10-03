@@ -3,6 +3,9 @@ package iuh.fit.postservice.presentation.controller.admin.v1;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.application.exception.ErrorCode;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
+import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.infrastructure.client.media.MediaClient;
+import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +25,8 @@ import java.util.UUID;
 public class AdminPostController {
 
     PostRepository postRepository;
+    PostMediaRepository postMediaRepository;
+    MediaClient mediaClient;
     JwtUtil jwtUtil;
 
     private void checkAdminPermission() {
@@ -46,6 +51,20 @@ public class AdminPostController {
         checkAdminPermission();
         log.info("Admin requested delete for post: {}", postId);
         try {
+            List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(postId);
+            for (PostMedia media : mediaList) {
+                try {
+                    String targetKey = (media.getFileUrl() != null && !media.getFileUrl().isBlank())
+                            ? media.getFileUrl()
+                            : media.getFileKey();
+                    if (targetKey != null && !targetKey.isBlank()) {
+                        mediaClient.deleteFile(targetKey);
+                    }
+                } catch (Exception e) {
+                    log.warn("Admin delete: Failed to delete media [{}] from S3: {}", media.getFileKey(), e.getMessage());
+                }
+            }
+            postMediaRepository.deleteByPostId(postId);
             postRepository.deleteById(postId);
         } catch (Exception e) {
             log.warn("Failed to delete post {}: {}", postId, e.getMessage());

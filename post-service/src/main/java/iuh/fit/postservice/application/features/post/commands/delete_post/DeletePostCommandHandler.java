@@ -44,7 +44,13 @@ public class DeletePostCommandHandler {
         List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
         for (PostMedia media : mediaList) {
             try {
-                mediaClient.deleteFile(media.getFileKey());
+                String targetKey = (media.getFileUrl() != null && !media.getFileUrl().isBlank())
+                        ? media.getFileUrl()
+                        : media.getFileKey();
+                if (targetKey != null && !targetKey.isBlank()) {
+                    mediaClient.deleteFile(targetKey);
+                    log.info("Requested media-service to delete file: {}", targetKey);
+                }
             } catch (Exception e) {
                 log.error("Failed to delete media file [{}] from S3: {}", media.getFileKey(), e.getMessage());
             }

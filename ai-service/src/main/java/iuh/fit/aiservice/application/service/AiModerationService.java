@@ -34,6 +34,7 @@ public class AiModerationService {
     private final FastSensitiveWordFilter fastFilter;
     private final SelfLearningService selfLearningService;
     private final AiNotificationProducer aiNotificationProducer;
+    private final iuh.fit.aiservice.infrastructure.event.PostModerationProducer postModerationProducer;
     private final AiModerationLogRepository moderationLogRepository;
 
     @Value("${ai.moderation.enabled:true}")
@@ -239,5 +240,108 @@ public class AiModerationService {
         geminiResult.setExtractedKeywords(combinedKeywords);
 
         return geminiResult;
+    }
+
+    /**
+     * Tự động kiểm duyệt bài viết mới tạo qua sự kiện Kafka 'post.created'
+     */
+    @Transactional
+    public void evaluateNewPost(UUID postId, UUID authorId, String content) {
+        if (!moderationEnabled) {
+            log.info("AI Moderation is disabled. Skipping auto-moderation for post: {}", postId);
+            return;
+        }
+
+        if (content == null || content.isBlank()) {
+            return;
+        }
+
+        log.info("AI Auto-Evaluating newly created post: {} [Author: {}]", postId, authorId);
+        try {
+            GeminiModerationResult result = evaluateTextContent(content);
+
+            String action = result.getSuggestedAction();
+            double score = result.getToxicityScore();
+
+            if (score >= thresholdDelete || "DELETE_POST".equalsIgnoreCase(action)) {
+                action = "DELETE_POST";
+                log.warn("AI AUTO-MODERATION [DELETE_POST]: Post {} has high toxicity: {}", postId, score);
+
+                postModerationProducer.publishPostModerated(postId, "DELETE_POST", "AI_AUTO_MODERATION: " + result.getReason());
+
+                if (authorId != null) {
+                    aiNotificationProducer.sendWarningNotification(
+                            authorId,
+                            "Bài viết đã bị gỡ bỏ do vi phạm nghiêm trọng",
+                            String.format("Bài viết của bạn đã bị hệ thống AI gỡ bỏ do vi phạm chuẩn mực (%s): %s",
+                                    result.getCategory(), result.getReason()),
+                            postId.toString()
+                    );
+                }
+
+            } else if (score >= thresholdHide || "AUTO_HIDE".equalsIgnoreCase(action)) {
+                action = "AUTO_HIDE";
+                log.warn("AI AUTO-MODERATION [HIDE_POST]: Post {} has medium-high toxicity: {}", postId, score);
+
+                postModerationProducer.publishPostModerated(postId, "HIDE_POST", "AI_AUTO_MODERATION: " + result.getReason());
+
+                if (authorId != null) {
+                    aiNotificationProducer.sendWarningNotification(
+                            authorId,
+                            "Bài viết của bạn đã bị tạm ẩn",
+                            String.format("Bài viết của bạn bị ẩn do chứa nội dung không phù hợp (%s): %s. Bạn có thể chỉnh sửa lại bài viết.",
+                                    result.getCategory(), result.getReason()),
+                            postId.toString()
+                    );
+                }
+
+            } else if (score >= thresholdWarn || "WARN_USER".equalsIgnoreCase(action)) {
+                action = "WARN_USER";
+                log.info("AI AUTO-MODERATION [WARN_USER]: Sending warning notification to author: {}", authorId);
+
+                if (authorId != null) {
+                    aiNotificationProducer.sendWarningNotification(
+                            authorId,
+                            "Cảnh báo nội dung từ hệ thống AI",
+                            String.format("Bài viết của bạn có dấu hiệu vi phạm chuẩn mực (%s): %s. Vui lòng kiểm tra lại.",
+                                    result.getCategory(), result.getReason()),
+                            postId.toString()
+                    );
+                }
+            } else {
+                action = "ALLOW";
+                log.info("AI Auto-Moderation: Post {} is CLEAN (Score: {})", postId, score);
+            }
+
+            if (result.getExtractedKeywords() != null && !result.getExtractedKeywords().isEmpty()) {
+                selfLearningService.learnKeywords(
+                        result.getExtractedKeywords(),
+                        result.getCategory(),
+                        result.getSeverity(),
+                        true
+                );
+            }
+
+            AiModerationLog logEntry = AiModerationLog.builder()
+                    .targetType("POST")
+                    .targetId(postId)
+                    .authorId(authorId)
+                    .reportId(null)
+                    .contentSnippet(content.length() > 255 ? content.substring(0, 255) + "..." : content)
+                    .toxicityScore(score)
+                    .category(result.getCategory())
+                    .severity(result.getSeverity())
+                    .actionTaken(action)
+                    .reason(result.getReason())
+                    .extractedKeywords(result.getExtractedKeywords() != null ? String.join(", ", result.getExtractedKeywords()) : "")
+                    .isFallback(result.isFallback())
+                    .build();
+
+            moderationLogRepository.save(logEntry);
+            log.info("Successfully recorded AI Moderation Log for new post: {}", postId);
+
+        } catch (Exception e) {
+            log.error("Error during auto AI evaluation for post {}: {}", postId, e.getMessage(), e);
+        }
     }
 }

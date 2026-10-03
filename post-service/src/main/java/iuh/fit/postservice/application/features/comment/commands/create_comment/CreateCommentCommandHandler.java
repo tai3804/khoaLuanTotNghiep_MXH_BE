@@ -79,7 +79,7 @@ public class CreateCommentCommandHandler {
             }
             String contentText = snippet != null ? snippet : "đã bình luận hình ảnh";
 
-            // If replying to someone else's comment
+            // 1. If replying to someone else's comment, notify parent comment author
             if (parent != null && parent.getAuthorId() != null && !parent.getAuthorId().equals(command.getAuthorId())) {
                 Map<String, Object> replyEvent = new HashMap<>();
                 replyEvent.put("recipientId", parent.getAuthorId().toString());
@@ -94,8 +94,9 @@ public class CreateCommentCommandHandler {
                 kafkaTemplate.send("notification.in-app.send", replyEvent);
                 log.info("Published REPLY_COMMENT notification to parent author: {}", parent.getAuthorId());
             }
-            // Else if commenting on someone else's post
-            else if (post.getAuthorId() != null && !post.getAuthorId().equals(command.getAuthorId())) {
+
+            // 2. Notify post author if different from commenter and parent comment author
+            if (post.getAuthorId() != null && !post.getAuthorId().equals(command.getAuthorId()) && (parent == null || !post.getAuthorId().equals(parent.getAuthorId()))) {
                 Map<String, Object> notifEvent = new HashMap<>();
                 notifEvent.put("recipientId", post.getAuthorId().toString());
                 notifEvent.put("actorId", command.getAuthorId().toString());

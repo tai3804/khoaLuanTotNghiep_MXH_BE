@@ -55,6 +55,7 @@ public class SecurityConfig {
                         "/api/v1/posts",
                         "/api/v1/posts/**",
                         "/api/v1/media/files/**",
+                        "/api/v1/ai/**",
                         "/ws-chat",
                         "/ws-chat/**",
                         "/ws-notifications",

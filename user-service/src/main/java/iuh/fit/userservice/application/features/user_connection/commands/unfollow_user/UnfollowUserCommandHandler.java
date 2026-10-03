@@ -17,7 +17,7 @@ public class UnfollowUserCommandHandler {
 
     @Transactional
     public void handle(UnfollowUserCommand command) {
-        userConnectionRepository.findByRequesterIdAndTargetIdAndType(command.getFollowerId(), command.getTargetId(), ConnectionType.FOLLOW)
+        userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(command.getFollowerId(), command.getTargetId(), ConnectionType.FOLLOW)
                 .ifPresent(userConnectionRepository::delete);
     }
 }

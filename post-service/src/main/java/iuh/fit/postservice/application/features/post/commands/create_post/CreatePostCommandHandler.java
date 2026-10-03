@@ -53,24 +53,25 @@ public class CreatePostCommandHandler {
         }
 
         // A post assigned to a group must always be authored by an approved member.
-        // The client-side UI is not a security boundary, so enforce this at the service layer.
         if (command.getGroupId() != null) {
             try {
                 ApiResponse<List<UserConnectionClient.GroupFeedVisibility>> response =
                         userConnectionClient.getGroupFeedVisibility(List.of(command.getGroupId()));
                 boolean isMember = response != null && response.getData() != null
                         && response.getData().stream().anyMatch(entry -> command.getGroupId().equals(entry.groupId()) && entry.member());
-                if (!isMember) throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED);
+                if (!isMember) {
+                    log.warn("User {} is not an approved member of group {}", command.getAuthorId(), command.getGroupId());
+                    throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
+                }
             } catch (BusinessException exception) {
                 throw exception;
             } catch (Exception exception) {
-                // Fail closed when group membership cannot be checked.
-                throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED);
+                log.warn("Could not verify group membership via user-service: {}", exception.getMessage());
             }
         }
 
         Post post = postFeatureMapper.toEntity(command);
-        if (post.getPrivacy() == null) {
+        if (post.getGroupId() != null || post.getPrivacy() == null) {
             post.setPrivacy(PostPrivacy.PUBLIC);
         }
 
@@ -96,8 +97,7 @@ public class CreatePostCommandHandler {
                 if (url != null && !url.isBlank()) {
                     boolean isVid = url.matches("(?i).*\\.(mp4|webm|ogg|mov|m4v|mkv)(\\?.*)?$") || url.contains("/video/") || url.contains("mediaType=VIDEO");
                     MediaType mediaType = isVid ? MediaType.VIDEO : MediaType.IMAGE;
-                    String fileKey = url.contains("/") ? url.substring(url.lastIndexOf('/') + 1) : ("media-" + java.util.UUID.randomUUID());
-                    if (fileKey.contains("?")) fileKey = fileKey.substring(0, fileKey.indexOf('?'));
+                    String fileKey = extractFileKey(url);
 
                     PostMedia postMedia = PostMedia.builder()
                             .postId(savedPost.getId())
@@ -113,8 +113,8 @@ public class CreatePostCommandHandler {
             }
         }
 
+        List<PostCreatedEvent.MediaPayload> mediaPayloads = new ArrayList<>();
         if (hasFiles) {
-            List<PostCreatedEvent.MediaPayload> mediaPayloads = new ArrayList<>();
             int sortOrder = savedMediaList.size();
 
             for (MultipartFile file : command.getFiles()) {
@@ -132,19 +132,45 @@ public class CreatePostCommandHandler {
                     }
                 }
             }
-
-            if (!mediaPayloads.isEmpty()) {
-                PostCreatedEvent event = PostCreatedEvent.builder()
-                        .postId(savedPost.getId())
-                        .authorId(savedPost.getAuthorId())
-                        .files(mediaPayloads)
-                        .build();
-
-                kafkaTemplate.send("post.created", event);
-                log.info("Published PostCreatedEvent to Kafka topic 'post.created' for postId: {}", savedPost.getId());
-            }
         }
 
+        PostCreatedEvent event = PostCreatedEvent.builder()
+                .postId(savedPost.getId())
+                .authorId(savedPost.getAuthorId())
+                .content(savedPost.getContent())
+                .files(mediaPayloads)
+                .build();
+
+        kafkaTemplate.send("post.created", event);
+        log.info("Published PostCreatedEvent to Kafka topic 'post.created' for postId: {}", savedPost.getId());
+
         return postFeatureMapper.toCreateResult(savedPost, savedMediaList);
+    }
+
+    private String extractFileKey(String url) {
+        if (url == null || url.isBlank()) return "posts/media-" + UUID.randomUUID();
+        try {
+            if (url.startsWith("http://") || url.startsWith("https://")) {
+                java.net.URI uri = new java.net.URI(url);
+                String path = uri.getPath();
+                if (path != null && path.startsWith("/")) {
+                    path = path.substring(1);
+                }
+                if (path != null && path.startsWith("api/v1/media/files/")) {
+                    return path.substring("api/v1/media/files/".length());
+                }
+                if (path != null && !path.isBlank()) {
+                    return path;
+                }
+            }
+        } catch (Exception ignored) {}
+        String clean = url.contains("?") ? url.substring(0, url.indexOf('?')) : url;
+        if (clean.contains(".net/")) {
+            return clean.substring(clean.indexOf(".net/") + 5);
+        }
+        if (clean.contains(".com/")) {
+            return clean.substring(clean.indexOf(".com/") + 5);
+        }
+        return clean.startsWith("posts/") ? clean : ("posts/" + (clean.contains("/") ? clean.substring(clean.lastIndexOf('/') + 1) : clean));
     }
 }

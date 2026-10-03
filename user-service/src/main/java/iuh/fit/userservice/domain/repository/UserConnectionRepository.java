@@ -18,19 +18,51 @@ import java.util.UUID;
 @Repository
 public interface UserConnectionRepository extends JpaRepository<UserConnection, UUID> {
 
-    Optional<UserConnection> findByRequesterIdAndTargetIdAndType(UUID requesterId, UUID targetId, ConnectionType type);
+    Optional<UserConnection> findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(UUID requesterId, UUID targetId, ConnectionType type);
+
+    List<UserConnection> findAllByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(UUID requesterId, UUID targetId, ConnectionType type);
 
     boolean existsByRequesterIdAndTargetIdAndTypeAndStatus(UUID requesterId, UUID targetId, ConnectionType type, ConnectionStatus status);
 
     @Query(UserConnectionQueryConstants.FIND_CONNECTION_BETWEEN)
-    Optional<UserConnection> findConnectionBetween(@Param("user1") UUID user1, @Param("user2") UUID user2, @Param("type") ConnectionType type);
+    List<UserConnection> findAllConnectionBetween(@Param("user1") UUID user1, @Param("user2") UUID user2, @Param("type") ConnectionType type);
+
+    default Optional<UserConnection> findConnectionBetween(UUID user1, UUID user2, ConnectionType type) {
+        List<UserConnection> list = findAllConnectionBetween(user1, user2, type);
+        if (list.isEmpty()) {
+            return Optional.empty();
+        }
+        if (list.size() > 1) {
+            UserConnection chosen = list.stream()
+                    .filter(c -> c.getStatus() == ConnectionStatus.ACCEPTED)
+                    .findFirst()
+                    .orElse(list.get(0));
+            for (UserConnection c : list) {
+                if (!c.getId().equals(chosen.getId())) {
+                    try {
+                        delete(c);
+                    } catch (Exception ignored) {}
+                }
+            }
+            return Optional.of(chosen);
+        }
+        return Optional.of(list.get(0));
+    }
 
     @Query("SELECT c FROM UserConnection c WHERE " +
            "((c.requesterId = :user1 AND c.targetId = :user2) OR (c.requesterId = :user2 AND c.targetId = :user1))")
     List<UserConnection> findAllConnectionsBetween(@Param("user1") UUID user1, @Param("user2") UUID user2);
 
     @Query(UserConnectionQueryConstants.FIND_ACCEPTED_FRIENDSHIP)
-    Optional<UserConnection> findAcceptedFriendship(@Param("user1") UUID user1, @Param("user2") UUID user2);
+    List<UserConnection> findAllAcceptedFriendshipsBetween(@Param("user1") UUID user1, @Param("user2") UUID user2);
+
+    default Optional<UserConnection> findAcceptedFriendship(UUID user1, UUID user2) {
+        List<UserConnection> list = findAllAcceptedFriendshipsBetween(user1, user2);
+        if (list.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(list.get(0));
+    }
 
     @Query(UserConnectionQueryConstants.FIND_FRIENDS_OF_USER)
     Page<UserConnection> findFriendsOfUser(@Param("userId") UUID userId, Pageable pageable);

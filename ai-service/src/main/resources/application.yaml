@@ -38,7 +38,7 @@ spring:
 ai:
   gemini:
     api-key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-1.5-flash}
+    model: ${GEMINI_MODEL:gemini-2.0-flash}
     api-url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models}
   moderation:
     enabled: ${AI_MODERATION_ENABLED:true}

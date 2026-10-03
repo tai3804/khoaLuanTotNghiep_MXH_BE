@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.List;
 
-@FeignClient(name = "user-service", configuration = UserConnectionFeignConfig.class)
+@FeignClient(name = "user-service", url = "${USER_SERVICE_URL:http://localhost:8085}", configuration = UserConnectionFeignConfig.class)
 public interface UserConnectionClient {
     @GetMapping("/api/v1/users/connections/status/{targetId}")
     ApiResponse<Map<String, Object>> getConnectionStatus(@PathVariable("targetId") UUID targetId);

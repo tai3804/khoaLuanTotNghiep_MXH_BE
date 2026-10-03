@@ -121,7 +121,7 @@ public class PostController {
         GetAllPostsQuery query = GetAllPostsQuery.builder()
                 .filter(filter)
                 .cursor(cursor)
-                .viewerId(getCurrentUserId())
+                .viewerId(getOptionalCurrentUserId())
                 .build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(query);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
@@ -135,7 +135,7 @@ public class PostController {
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         BaseFilter searchFilter = filter != null ? filter : new BaseFilter();
         searchFilter.setKeyword(query);
-        GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter).viewerId(getCurrentUserId()).build();
+        GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter).viewerId(getOptionalCurrentUserId()).build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(searchQuery);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
@@ -150,7 +150,7 @@ public class PostController {
         if (groupFilter.getFilters() == null) groupFilter.setFilters(new HashMap<>());
         groupFilter.getFilters().put("groupId", groupId);
         groupFilter.getFilters().put("_groupFeed", true);
-        GetAllPostsQuery query = GetAllPostsQuery.builder().filter(groupFilter).viewerId(getCurrentUserId()).build();
+        GetAllPostsQuery query = GetAllPostsQuery.builder().filter(groupFilter).viewerId(getOptionalCurrentUserId()).build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(query);
         return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(result), MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
     }
@@ -158,7 +158,7 @@ public class PostController {
     @GetMapping("/{postId}")
     @Operation(summary = "Get post details", description = "Retrieves detail information of a specific post by ID")
     public ResponseEntity<ApiResponse<PostResponse>> getPostById(@PathVariable("postId") UUID postId) {
-        GetPostDetailQuery query = GetPostDetailQuery.builder().postId(postId).viewerId(getCurrentUserId()).build();
+        GetPostDetailQuery query = GetPostDetailQuery.builder().postId(postId).viewerId(getOptionalCurrentUserId()).build();
         GetPostDetailResult result = getPostDetailQueryHandler.handle(query);
         PostResponse response = postPresentationMapper.toResponse(result);
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.POST_RETRIEVED_SUCCESSFULLY));
@@ -280,7 +280,7 @@ public class PostController {
             @PathVariable("userId") UUID userId,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "10") int size) {
-        GetUserPostsQuery query = GetUserPostsQuery.builder().userId(userId).viewerId(getCurrentUserId()).page(page).size(size).build();
+        GetUserPostsQuery query = GetUserPostsQuery.builder().userId(userId).viewerId(getOptionalCurrentUserId()).page(page).size(size).build();
         PagedResponse<GetPostDetailResult> result = getUserPostsQueryHandler.handle(query);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.USER_POSTS_RETRIEVED_SUCCESSFULLY));
@@ -292,6 +292,18 @@ public class PostController {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
         return UUID.fromString(userIdStr);
+    }
+
+    private UUID getOptionalCurrentUserId() {
+        String userIdStr = jwtUtil.getCurrentUserId();
+        if (userIdStr == null || userIdStr.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(userIdStr);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void clearPostCaches() {

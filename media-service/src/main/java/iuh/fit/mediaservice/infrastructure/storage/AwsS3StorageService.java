@@ -212,16 +212,34 @@ public class AwsS3StorageService {
             return;
         }
 
+        String actualKey = extractFileKeyFromUrl(fileKey.trim());
+        if (actualKey == null || actualKey.isBlank()) {
+            return;
+        }
+
         try {
             DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
                     .bucket(awsS3Properties.getBucketName())
-                    .key(fileKey)
+                    .key(actualKey)
                     .build();
 
             s3Client.deleteObject(deleteObjectRequest);
-            log.info("Successfully deleted file from S3. Key: {}", fileKey);
+            log.info("Successfully deleted file from S3. Key: {}", actualKey);
+
+            // If actualKey has no folder prefix, also attempt deletion in "posts/" and "avatars/"
+            if (!actualKey.contains("/")) {
+                for (String folder : List.of("posts", "avatars", "covers", "uploads")) {
+                    try {
+                        s3Client.deleteObject(DeleteObjectRequest.builder()
+                                .bucket(awsS3Properties.getBucketName())
+                                .key(folder + "/" + actualKey)
+                                .build());
+                        log.info("Also requested S3 deletion for fallback folder key: {}/{}", folder, actualKey);
+                    } catch (Exception ignored) {}
+                }
+            }
         } catch (Exception e) {
-            log.error("Failed to delete file from S3: {}", e.getMessage(), e);
+            log.error("Failed to delete file from S3 for key [{}]: {}", actualKey, e.getMessage(), e);
             throw new BusinessException(MediaServiceErrorCode.FILE_DELETE_FAILED);
         }
     }

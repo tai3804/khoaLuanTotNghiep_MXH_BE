@@ -83,7 +83,7 @@ public class AcceptFriendRequestCommandHandler {
 
 
     private void ensureFollow(UUID followerId, UUID targetId) {
-        userConnectionRepository.findByRequesterIdAndTargetIdAndType(followerId, targetId, ConnectionType.FOLLOW)
+        userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(followerId, targetId, ConnectionType.FOLLOW)
                 .ifPresentOrElse(
                         follow -> {
                             follow.setStatus(ConnectionStatus.ACCEPTED);

@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ import java.util.UUID;
 public interface CommentRepository extends BaseJpaRepository<Comment, UUID> {
     Page<Comment> findByPostIdAndParentCommentIdIsNullAndDeletedFalse(UUID postId, Pageable pageable);
     Page<Comment> findByParentCommentIdAndDeletedFalse(UUID parentCommentId, Pageable pageable);
+    List<Comment> findByParentCommentIdAndDeletedFalse(UUID parentCommentId);
     Optional<Comment> findByIdAndDeletedFalse(UUID id);
     long countByPostIdAndDeletedFalse(UUID postId);
 }

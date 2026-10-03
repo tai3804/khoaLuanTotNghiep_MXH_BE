@@ -15,6 +15,7 @@ import java.util.UUID;
 public class PostCreatedEvent implements Serializable {
     UUID postId;
     UUID authorId;
+    String content;
     List<MediaPayload> files;
 
     @Data

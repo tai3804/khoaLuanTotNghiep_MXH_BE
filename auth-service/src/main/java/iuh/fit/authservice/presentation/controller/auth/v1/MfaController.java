@@ -100,10 +100,10 @@ public class MfaController {
         if ("WEB".equalsIgnoreCase(clientType) && response.getRefreshToken() != null) {
             ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
                     .httpOnly(true)
-                    .secure(true)
+                    .secure(false)
                     .path("/")
                     .maxAge(refreshTokenExpiration / 1000)
-                    .sameSite("Strict")
+                    .sameSite("Lax")
                     .build();
             httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
         }

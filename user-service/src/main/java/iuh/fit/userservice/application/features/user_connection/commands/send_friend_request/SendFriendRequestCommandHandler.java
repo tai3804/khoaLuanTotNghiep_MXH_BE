@@ -54,7 +54,7 @@ public class SendFriendRequestCommandHandler {
 
         // Rule 1: Sending friend request automatically FOLLOWS the target user
         UUID finalTargetUserId = targetUserId;
-        userConnectionRepository.findByRequesterIdAndTargetIdAndType(command.getRequesterId(), finalTargetUserId, ConnectionType.FOLLOW)
+        userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(command.getRequesterId(), finalTargetUserId, ConnectionType.FOLLOW)
                 .ifPresentOrElse(
                         follow -> {
                             follow.setStatus(ConnectionStatus.ACCEPTED);
