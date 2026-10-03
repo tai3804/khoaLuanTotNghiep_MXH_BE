@@ -23,5 +23,5 @@ public interface UserConnectionClient {
     @PostMapping("/api/v1/groups/feed-visibility")
     ApiResponse<List<GroupFeedVisibility>> getGroupFeedVisibility(@RequestBody List<UUID> groupIds);
 
-    record GroupFeedVisibility(UUID groupId, boolean member, boolean publicGroup) { }
+    record GroupFeedVisibility(UUID groupId, boolean member, boolean publicGroup, String role, boolean postApprovalRequired) { }
 }

@@ -9,6 +9,7 @@ import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
 import iuh.fit.postservice.domain.enums.MediaType;
+import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -47,6 +48,8 @@ public class GetAllPostsQueryHandler {
         Specification<Post> spec = (root, q, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("deleted"), false));
+            // Pending/rejected group posts are never exposed through public/group feeds.
+            predicates.add(cb.equal(root.get("status"), PostStatus.PUBLISHED));
 
             if (filter.getKeyword() != null && !filter.getKeyword().isBlank()) {
                 String searchPattern = "%" + filter.getKeyword().toLowerCase().trim() + "%";

@@ -54,17 +54,22 @@ public class CreatePostCommandHandler {
 
         // A post assigned to a group must always be authored by an approved member.
         // The client-side UI is not a security boundary, so enforce this at the service layer.
+        boolean requiresGroupApproval = false;
         if (command.getGroupId() != null) {
             try {
                 ApiResponse<List<UserConnectionClient.GroupFeedVisibility>> response =
                         userConnectionClient.getGroupFeedVisibility(List.of(command.getGroupId()));
-                boolean isMember = response != null && response.getData() != null
-                        && response.getData().stream().anyMatch(entry -> command.getGroupId().equals(entry.groupId()) && entry.member());
+                UserConnectionClient.GroupFeedVisibility membership = response != null && response.getData() != null
+                        ? response.getData().stream().filter(entry -> command.getGroupId().equals(entry.groupId()) && entry.member()).findFirst().orElse(null) : null;
+                boolean isMember = membership != null;
                 if (!isMember) throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED);
+                requiresGroupApproval = membership.postApprovalRequired()
+                        && !"ADMIN".equals(membership.role()) && !"MODERATOR".equals(membership.role());
             } catch (BusinessException exception) {
+                log.error("BusinessException checking group membership for group {}: error={}, msg={}", command.getGroupId(), exception.getErrorCode(), exception.getMessage());
                 throw exception;
             } catch (Exception exception) {
-                // Fail closed when group membership cannot be checked.
+                log.error("Failed to check group membership for group {}: {}", command.getGroupId(), exception.getMessage(), exception);
                 throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED);
             }
         }
@@ -81,7 +86,9 @@ public class CreatePostCommandHandler {
             post.setAllowedUserIds(new HashSet<>());
         }
 
-        if (hasFiles) {
+        if (requiresGroupApproval) {
+            post.setStatus(PostStatus.PENDING_APPROVAL);
+        } else if (hasFiles) {
             post.setStatus(PostStatus.PROCESSING);
         } else {
             post.setStatus(PostStatus.PUBLISHED);
