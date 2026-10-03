@@ -34,11 +34,13 @@ public class ProcessReportCommandHandler {
 
         if (command.getAction() == ModerationAction.DISMISS) {
             report.setStatus(ReportStatus.DISMISSED);
+        } else if (command.getAction() == ModerationAction.RESTORE_POST) {
+            report.setStatus(ReportStatus.PENDING);
+            report.setResolvedAt(null);
+            report.setResolvedBy(null);
         } else {
             report.setStatus(ReportStatus.RESOLVED);
         }
-        report.setResolvedAt(LocalDateTime.now());
-        report.setResolvedBy(command.getModeratorId());
         reportRepository.save(report);
 
         // Record moderation log
@@ -48,19 +50,23 @@ public class ProcessReportCommandHandler {
                 .targetId(report.getTargetId())
                 .action(command.getAction())
                 .reason(report.getReason().name())
-                .note(command.getNote())
+                .note(command.getNote() != null ? command.getNote() : "Hoàn tác quyết định")
                 .reportId(report.getId())
                 .build();
         moderationLogRepository.save(log);
 
-        // If DELETE_POST action, publish event to Kafka
-        if (command.getAction() == ModerationAction.DELETE_POST && report.getTargetType() == TargetType.POST) {
+        if ((command.getAction() == ModerationAction.DELETE_POST || command.getAction() == ModerationAction.HIDE_POST || command.getAction() == ModerationAction.RESTORE_POST)
+                && report.getTargetType() == TargetType.POST) {
             moderationEventPublisher.publishPostModerated(
                     report.getTargetId(),
                     command.getAction().name(),
                     report.getReason().name(),
                     command.getModeratorId()
             );
+        }
+        if (command.getAction() == ModerationAction.DELETE_COMMENT && report.getTargetType() == TargetType.COMMENT) {
+            moderationEventPublisher.publishCommentModerated(
+                    report.getTargetId(), command.getAction().name(), report.getReason().name(), command.getModeratorId());
         }
     }
 }

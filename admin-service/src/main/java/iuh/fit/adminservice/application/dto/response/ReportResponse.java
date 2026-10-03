@@ -25,4 +25,6 @@ public class ReportResponse {
     LocalDateTime createdAt;
     LocalDateTime resolvedAt;
     UUID resolvedBy;
+    String appealMessage;
+    LocalDateTime appealedAt;
 }

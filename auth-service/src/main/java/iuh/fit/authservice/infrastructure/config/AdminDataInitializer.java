@@ -46,10 +46,8 @@ public class AdminDataInitializer implements ApplicationRunner {
             existingUser.setRoles(Set.of("ROLE_ADMIN", "ROLE_USER"));
             userRepository.save(existingUser);
             log.info("Default Admin account ({}) exists and password has been synced to '{}'.", adminEmail, adminPassword);
-            return;
-        }
-
-        User adminUser = User.builder()
+        } else {
+            User adminUser = User.builder()
                 .id(null)
                 .email(adminEmail)
                 .password(passwordEncoder.encode(adminPassword))
@@ -67,11 +65,11 @@ public class AdminDataInitializer implements ApplicationRunner {
                 .deleted(false)
                 .build();
 
-        User savedAdmin = userRepository.save(adminUser);
-        log.info("Default Admin account created successfully! ID: {}, Identifier: {}, Password: {}", savedAdmin.getId(), adminEmail, adminPassword);
+            User savedAdmin = userRepository.save(adminUser);
+            log.info("Default Admin account created successfully! ID: {}, Identifier: {}, Password: {}", savedAdmin.getId(), adminEmail, adminPassword);
 
         // Broadcast UserRegisteredEvent for UserProfile creation in user-service
-        try {
+            try {
             UserRegisteredEvent event = UserRegisteredEvent.builder()
                     .userId(savedAdmin.getId())
                     .email(savedAdmin.getEmail())
@@ -84,12 +82,18 @@ public class AdminDataInitializer implements ApplicationRunner {
 
             kafkaTemplate.send("user.registered", event);
             log.info("Sent user.registered event for Admin userId: {}", savedAdmin.getId());
-        } catch (Exception e) {
-            log.warn("Could not publish user.registered Kafka event for admin: {}", e.getMessage());
+            } catch (Exception e) {
+                log.warn("Could not publish user.registered Kafka event for admin: {}", e.getMessage());
+            }
         }
 
-        // Initialize Default Moderator account
-        String modEmail = "moderator";
+        initializeModerator();
+    }
+
+    private void initializeModerator() {
+        // This intentionally runs independently of Admin creation. Existing deployments
+        // normally already have an Admin account, and must still receive the test Moderator.
+        String modEmail = "moderator@kltn.local";
         String modPassword = "mod123";
         Optional<User> existingModOpt = userRepository.findByEmail(modEmail);
         if (existingModOpt.isPresent()) {

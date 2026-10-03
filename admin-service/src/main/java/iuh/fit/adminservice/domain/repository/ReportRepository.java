@@ -9,15 +9,21 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 import java.util.UUID;
+import java.util.Collection;
+import java.util.List;
 
 @Repository
 public interface ReportRepository extends BaseJpaRepository<Report, UUID> {
 
     boolean existsByReporterIdAndTargetTypeAndTargetIdAndStatus(UUID reporterId, TargetType targetType, UUID targetId, ReportStatus status);
 
+    boolean existsByReporterIdAndTargetTypeAndTargetIdAndStatusIn(UUID reporterId, TargetType targetType, UUID targetId, Collection<ReportStatus> statuses);
+
     Page<Report> findByStatus(ReportStatus status, Pageable pageable);
 
     Page<Report> findByTargetTypeAndTargetId(TargetType targetType, UUID targetId, Pageable pageable);
+
+    List<Report> findByReporterIdOrderByCreatedAtDesc(UUID reporterId);
 
     long countByStatus(ReportStatus status);
 }

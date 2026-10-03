@@ -28,9 +28,16 @@ public class PostModeratedEventListener {
         Optional<Post> postOpt = postRepository.findById(event.getPostId());
         if (postOpt.isPresent()) {
             Post post = postOpt.get();
-            post.setDeleted(true);
+            if ("HIDE_POST".equals(event.getAction())) {
+                post.setArchived(true);
+            } else if ("RESTORE_POST".equals(event.getAction()) || "UNHIDE_POST".equals(event.getAction())) {
+                post.setArchived(false);
+                post.setDeleted(false);
+            } else {
+                post.setDeleted(true);
+            }
             postRepository.save(post);
-            log.info("Successfully soft-deleted moderated post: {}", event.getPostId());
+            log.info("Successfully applied {} to moderated post: {}", event.getAction(), event.getPostId());
         } else {
             log.warn("Post with ID {} not found for moderation event", event.getPostId());
         }

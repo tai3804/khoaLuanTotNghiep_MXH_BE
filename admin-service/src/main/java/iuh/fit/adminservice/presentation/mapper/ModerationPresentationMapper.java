@@ -5,6 +5,7 @@ import iuh.fit.adminservice.application.dto.request.ModeratePostRequest;
 import iuh.fit.adminservice.application.dto.request.ProcessReportRequest;
 import iuh.fit.adminservice.application.dto.response.ModerationLogResponse;
 import iuh.fit.adminservice.application.dto.response.ReportResponse;
+import iuh.fit.adminservice.domain.entities.Report;
 import iuh.fit.adminservice.application.features.moderation.commands.moderate_post.ModeratePostCommand;
 import iuh.fit.adminservice.application.features.moderation.queries.get_moderation_logs.GetModerationLogsResult;
 import iuh.fit.adminservice.application.features.report.commands.create_report.CreateReportCommand;
@@ -33,6 +34,8 @@ public interface ModerationPresentationMapper {
     ReportResponse toResponse(GetReportsResult result);
 
     ReportResponse toResponse(GetReportDetailResult result);
+
+    ReportResponse toResponse(Report report);
 
     List<ReportResponse> toReportResponseList(List<GetReportsResult> results);
 

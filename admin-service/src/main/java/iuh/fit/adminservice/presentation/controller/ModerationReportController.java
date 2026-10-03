@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import iuh.fit.adminservice.application.dto.request.CreateReportRequest;
+import iuh.fit.adminservice.application.dto.request.AppealReportRequest;
 import iuh.fit.adminservice.application.dto.request.ProcessReportRequest;
 import iuh.fit.adminservice.application.dto.response.ReportResponse;
 import iuh.fit.adminservice.application.exception.AdminServiceErrorCode;
@@ -19,6 +20,9 @@ import iuh.fit.adminservice.application.features.report.queries.get_reports.GetR
 import iuh.fit.adminservice.application.features.report.queries.get_reports.GetReportsQueryHandler;
 import iuh.fit.adminservice.application.features.report.queries.get_reports.GetReportsResult;
 import iuh.fit.adminservice.presentation.constants.ApiConstants;
+import iuh.fit.adminservice.domain.entities.Report;
+import iuh.fit.adminservice.domain.enums.ReportStatus;
+import iuh.fit.adminservice.domain.repository.ReportRepository;
 import iuh.fit.adminservice.presentation.mapper.ModerationPresentationMapper;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.application.dto.PagedResponse;
@@ -51,6 +55,7 @@ public class ModerationReportController {
     GetReportDetailQueryHandler getReportDetailQueryHandler;
     ModerationPresentationMapper moderationPresentationMapper;
     JwtUtil jwtUtil;
+    ReportRepository reportRepository;
 
     @PostMapping
     @Operation(summary = "Submit violation report", description = "Allows users to report a post, comment, or user for community guideline violations")
@@ -59,6 +64,34 @@ public class ModerationReportController {
         CreateReportCommand command = moderationPresentationMapper.toCreateReportCommand(request, reporterId);
         CreateReportResult result = createReportCommandHandler.handle(command);
         return ResponseEntity.ok(ApiResponse.success(moderationPresentationMapper.toResponse(result), "Report submitted successfully"));
+    }
+
+    @GetMapping("/mine")
+    @Operation(summary = "Get current user's submitted reports")
+    public ResponseEntity<ApiResponse<List<ReportResponse>>> getMyReports() {
+        List<ReportResponse> reports = reportRepository.findByReporterIdOrderByCreatedAtDesc(getCurrentUserId())
+                .stream().map(moderationPresentationMapper::toResponse).toList();
+        return ResponseEntity.ok(ApiResponse.success(reports, "Submitted reports retrieved successfully"));
+    }
+
+    @PostMapping("/{reportId}/appeal")
+    @Operation(summary = "Request another review of a report decision")
+    public ResponseEntity<ApiResponse<ReportResponse>> appealReport(@PathVariable UUID reportId,
+                                                                      @Valid @RequestBody AppealReportRequest request) {
+        Report report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new BusinessException(AdminServiceErrorCode.REPORT_NOT_FOUND));
+        if (!report.getReporterId().equals(getCurrentUserId())) {
+            throw new BusinessException(AdminServiceErrorCode.UNAUTHORIZED);
+        }
+        if (report.getStatus() != ReportStatus.RESOLVED && report.getStatus() != ReportStatus.DISMISSED) {
+            return ResponseEntity.badRequest().build();
+        }
+        report.setAppealMessage(request.getMessage().trim());
+        report.setAppealedAt(java.time.LocalDateTime.now());
+        report.setResolvedAt(null);
+        report.setResolvedBy(null);
+        report.setStatus(ReportStatus.PENDING);
+        return ResponseEntity.ok(ApiResponse.success(moderationPresentationMapper.toResponse(reportRepository.save(report)), "Appeal submitted successfully"));
     }
 
     @GetMapping

@@ -61,4 +61,10 @@ public class Report extends BaseEntity {
 
     @Column(name = "resolved_by")
     UUID resolvedBy;
+
+    @Column(name = "appeal_message", columnDefinition = "TEXT")
+    String appealMessage;
+
+    @Column(name = "appealed_at")
+    LocalDateTime appealedAt;
 }

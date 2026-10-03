@@ -1,6 +1,7 @@
 package iuh.fit.adminservice.infrastructure.event;
 
 import iuh.fit.commonframework.event.PostModeratedEvent;
+import iuh.fit.commonframework.event.CommentModeratedEvent;
 import iuh.fit.commonframework.event.ReportCreatedEvent;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -34,5 +35,16 @@ public class ModerationEventPublisher {
     public void publishReportCreated(ReportCreatedEvent event) {
         kafkaTemplate.send("report.created", event);
         log.info("Published ReportCreatedEvent for reportId: {}", event.getReportId());
+    }
+
+    public void publishCommentModerated(UUID commentId, String action, String reason, UUID moderatorId) {
+        CommentModeratedEvent event = CommentModeratedEvent.builder()
+                .commentId(commentId)
+                .action(action)
+                .reason(reason)
+                .moderatorId(moderatorId)
+                .build();
+        kafkaTemplate.send("comment.moderated", event);
+        log.info("Published CommentModeratedEvent for commentId: {}, action: {}", commentId, action);
     }
 }
