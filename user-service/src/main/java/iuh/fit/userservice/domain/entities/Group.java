@@ -18,7 +18,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @SuperBuilder
 @FieldDefaults(level = AccessLevel.PRIVATE)
-@SQLRestriction("deleted = false")
+@SQLRestriction("is_deleted = false")
 public class Group extends BaseEntity {
 
 
