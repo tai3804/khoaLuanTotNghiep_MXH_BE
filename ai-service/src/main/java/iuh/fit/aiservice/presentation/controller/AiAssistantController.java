@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -270,6 +271,136 @@ public class AiAssistantController {
         String reply = geminiApiClient.generateText(prompt, fallbackReply);
 
         return ResponseEntity.ok(ApiResponse.success(new ChatResponse(reply != null && !reply.isBlank() ? reply.trim() : fallbackReply), "Trả lời thành công"));
+    }
+
+    @PostMapping("/suggest-bio")
+    public ResponseEntity<ApiResponse<BioSuggestionResponse>> suggestBio(@RequestBody BioRequest request) {
+        String name = request.getName() != null ? request.getName().trim() : "";
+        String major = request.getMajor() != null ? request.getMajor().trim() : "";
+        String interests = request.getInterests() != null ? request.getInterests().trim() : "";
+        String tone = request.getTone() != null ? request.getTone().trim() : "năng động, trẻ trung";
+
+        List<String> defaultBios = smartAssistantEngine.suggestBios(name, major, interests, tone);
+
+        String prompt = String.format("""
+                Bạn là một chuyên gia sáng tạo nội dung tiểu sử cá nhân (Profile Bio) cho mạng xã hội sinh viên.
+                Dựa trên thông tin người dùng:
+                - Tên: %s
+                - Chuyên ngành/Công việc: %s
+                - Sở thích/Đam mê: %s
+                - Phong cách/Giọng điệu: %s
+                
+                Hãy gợi ý đúng 3 câu tiểu sử cá nhân ngắn gọn (mỗi câu không quá 100 ký tự), súc tích, ấn tượng, có đính kèm 1-2 emoji phù hợp.
+                
+                Yêu cầu:
+                - Mỗi gợi ý nằm trên một dòng riêng biệt, không đánh số thứ tự 1 2 3, không dùng ký tự gạch đầu dòng.
+                - BẮT BUỘC: Chỉ trả về 3 dòng gợi ý, không giải thích hay mở đầu.
+                """, name, major, interests, tone);
+
+        String fallback = String.join("\n", defaultBios);
+        String rawResult = geminiApiClient.generateText(prompt, fallback);
+
+        List<String> suggestions = Arrays.stream(rawResult.split("\n"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .map(s -> s.replaceFirst("^[0-9]+[.\\-\\)]\\s*", "").replaceFirst("^[\\-*•]\\s*", "").trim())
+                .filter(s -> !s.isBlank())
+                .limit(3)
+                .toList();
+
+        if (suggestions.isEmpty()) {
+            suggestions = defaultBios;
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(new BioSuggestionResponse(suggestions), "Gợi ý tiểu sử cá nhân thành công"));
+    }
+
+    @PostMapping("/analyze-post")
+    public ResponseEntity<ApiResponse<PostAnalysisResponse>> analyzePost(@RequestBody PostAnalysisRequest request) {
+        String content = request.getContent() != null ? request.getContent().trim() : "";
+        var fallback = smartAssistantEngine.analyzePost(content);
+
+        if (content.isBlank()) {
+            return ResponseEntity.ok(ApiResponse.success(
+                    new PostAnalysisResponse(fallback.getSentiment(), fallback.getEngagementScore(), fallback.getVibe(), fallback.getSuggestions()),
+                    "Nội dung bài viết rỗng"
+            ));
+        }
+
+        String prompt = String.format("""
+                Bạn là chuyên gia phân tích nội dung mạng xã hội và tối ưu tương tác (Engagement Growth).
+                Hãy phân tích bài viết sau và trả về đúng định dạng JSON thuần túy (không bọc trong markdown ```json):
+                {
+                  "sentiment": "POSITIVE",
+                  "engagementScore": 85,
+                  "vibe": "Tích cực & Truyền cảm hứng ✨",
+                  "suggestions": ["Thêm câu hỏi kích thích bình luận ở cuối bài.", "Gắn thêm hashtag #KLTN."]
+                }
+                
+                Nội dung bài viết:
+                "%s"
+                """, content);
+
+        String rawResult = geminiApiClient.generateText(prompt, null);
+        if (rawResult != null && !rawResult.isBlank()) {
+            try {
+                String cleanJson = rawResult.trim();
+                if (cleanJson.startsWith("```json")) cleanJson = cleanJson.substring(7);
+                if (cleanJson.startsWith("```")) cleanJson = cleanJson.substring(3);
+                if (cleanJson.endsWith("```")) cleanJson = cleanJson.substring(0, cleanJson.length() - 3);
+                cleanJson = cleanJson.trim();
+
+                com.fasterxml.jackson.databind.JsonNode rootNode = new com.fasterxml.jackson.databind.ObjectMapper().readTree(cleanJson);
+                String sentiment = rootNode.has("sentiment") ? rootNode.get("sentiment").asText() : fallback.getSentiment();
+                int score = rootNode.has("engagementScore") ? rootNode.get("engagementScore").asInt() : fallback.getEngagementScore();
+                String vibe = rootNode.has("vibe") ? rootNode.get("vibe").asText() : fallback.getVibe();
+                List<String> suggestions = new ArrayList<>();
+                if (rootNode.has("suggestions") && rootNode.get("suggestions").isArray()) {
+                    for (com.fasterxml.jackson.databind.JsonNode item : rootNode.get("suggestions")) {
+                        suggestions.add(item.asText());
+                    }
+                }
+                if (suggestions.isEmpty()) suggestions = fallback.getSuggestions();
+
+                return ResponseEntity.ok(ApiResponse.success(
+                        new PostAnalysisResponse(sentiment, score, vibe, suggestions),
+                        "Phân tích bài viết bằng AI thành công"
+                ));
+            } catch (Exception e) {
+                log.warn("Could not parse AI analyze-post response, using fallback: {}", e.getMessage());
+            }
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(
+                new PostAnalysisResponse(fallback.getSentiment(), fallback.getEngagementScore(), fallback.getVibe(), fallback.getSuggestions()),
+                "Phân tích bài viết thành công"
+        ));
+    }
+
+    @Data
+    public static class BioRequest {
+        private String name;
+        private String major;
+        private String interests;
+        private String tone;
+    }
+
+    @Data
+    public static class BioSuggestionResponse {
+        private final List<String> suggestions;
+    }
+
+    @Data
+    public static class PostAnalysisRequest {
+        private String content;
+    }
+
+    @Data
+    public static class PostAnalysisResponse {
+        private final String sentiment;
+        private final int engagementScore;
+        private final String vibe;
+        private final List<String> suggestions;
     }
 
     @Data

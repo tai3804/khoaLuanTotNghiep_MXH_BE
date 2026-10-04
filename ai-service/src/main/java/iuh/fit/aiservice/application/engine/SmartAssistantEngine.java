@@ -363,6 +363,115 @@ public class SmartAssistantEngine {
         );
     }
 
+    /**
+     * Gợi ý tiểu sử cá nhân (Profile Bio)
+     */
+    public List<String> suggestBios(String name, String major, String interests, String tone) {
+        String safeName = (name != null && !name.isBlank()) ? name.trim() : "Tôi";
+        String safeMajor = (major != null && !major.isBlank()) ? major.trim() : "Sinh viên";
+        String safeInterests = (interests != null && !interests.isBlank()) ? interests.trim() : "Công nghệ & Cuộc sống";
+        String safeTone = (tone != null) ? tone.toLowerCase() : "năng động, trẻ trung";
+
+        if (safeTone.contains("chuyên nghiệp") || safeTone.contains("nghiêm túc")) {
+            return List.of(
+                    String.format("💼 %s | Đam mê %s. Luôn hướng tới sự chuẩn mực, sáng tạo và không ngừng nâng cao bản thân. 🌐", safeMajor, safeInterests),
+                    String.format("🎯 Mục tiêu rõ ràng, tư duy cầu tiến | %s | Yêu thích nghiên cứu & ứng dụng %s 🚀", safeMajor, safeInterests),
+                    String.format("✨ Kết nối để cùng chia sẻ cơ hội và kiến thức về %s. Hân hạnh được làm quen! 🤝", safeInterests)
+            );
+        }
+
+        if (safeTone.contains("tối giản") || safeTone.contains("sâu lắng")) {
+            return List.of(
+                    String.format("🌱 %s | Yêu những điều giản dị và đam mê %s.", safeMajor, safeInterests),
+                    String.format("☕ Một chút tĩnh lặng, một chút đam mê cùng %s. Sống trọn từng khoảnh khắc ✨", safeInterests),
+                    String.format("📖 Học tập, trải nghiệm và sẻ chia | %s | Keep it simple & true 🌿", safeMajor)
+            );
+        }
+
+        // Mặc định: Năng động, hài hước, trẻ trung
+        return List.of(
+                String.format("🚀 %s năng lượng tràn đầy! Đam mê %s và mê kết nối bạn bè 🌟", safeMajor, safeInterests),
+                String.format("✨ Sống hết mình với đam mê %s | Học hết sức, vui hết mình! Cùng kết nối nhé ❤️", safeInterests),
+                String.format("💻 %s chính hiệu | Thích %s, mê cà phê và những ý tưởng mới mẻ ☕🔥", safeMajor, safeInterests)
+        );
+    }
+
+    /**
+     * Phân tích cảm xúc, mức độ lan tỏa và gợi ý tối ưu bài viết
+     */
+    public PostAnalysisLocalResult analyzePost(String content) {
+        if (content == null || content.isBlank()) {
+            return PostAnalysisLocalResult.builder()
+                    .sentiment("NEUTRAL")
+                    .engagementScore(50)
+                    .vibe("Chưa có nội dung")
+                    .suggestions(List.of("Hãy nhập nội dung bài viết để AI có thể đánh giá chi tiết."))
+                    .build();
+        }
+
+        String normalized = normalizer.normalize(content.toLowerCase());
+        int length = content.length();
+
+        // 1. Phân tích Sentiment
+        boolean isPositive = containsAny(normalized, "vui", "tuyet", "thanh cong", "cam on", "yeu", "hanh phuc", "kham pha", "hao hung", "chuc mung");
+        boolean isNegative = containsAny(normalized, "buon", "that vong", "chan", "kho", "stress", "met", "te", "khoc");
+
+        String sentiment = isPositive && !isNegative ? "POSITIVE" : (isNegative && !isPositive ? "NEGATIVE" : "NEUTRAL");
+
+        // 2. Tính điểm tương tác dự kiến (50 - 95)
+        int score = 65;
+        if (length >= 50 && length <= 400) score += 10;
+        if (content.contains("?") || content.contains("ai") || content.contains("sao")) score += 8;
+        if (content.matches(".*[\\p{So}\\p{Cs}].*") || content.contains("❤️") || content.contains("✨") || content.contains("🔥")) score += 7;
+        if (content.contains("#")) score += 5;
+        score = Math.min(score, 95);
+
+        // 3. Nhận diện vibe
+        String vibe;
+        if (isPositive) {
+            vibe = "Tích cực & Truyền cảm hứng ✨";
+        } else if (containsAny(normalized, "hoc", "chia se", "kinh nghiem", "code", "lap trinh", "cong nghe")) {
+            vibe = "Học thuật & Chia sẻ kiến thức 📚";
+        } else if (containsAny(normalized, "hoi", "cac ban", "ai biet", "?")) {
+            vibe = "Thảo luận & Giao lưu sôi nổi 💬";
+        } else {
+            vibe = "Tâm sự & Kết nối thân thiện 🌿";
+        }
+
+        // 4. Gợi ý cải thiện
+        List<String> suggestions = new ArrayList<>();
+        if (!content.contains("?")) {
+            suggestions.add("Thêm một câu hỏi mở ở cuối bài (ví dụ: 'Các bạn thấy sao?', 'Cùng chia sẻ nhé!') để tăng lượt bình luận.");
+        }
+        if (!content.contains("#")) {
+            suggestions.add("Gắn thêm 2-3 hashtag thịnh hành (như #KLTN, #SinhVien) để bài viết tiếp cận nhiều độc giả hơn.");
+        }
+        if (length < 30) {
+            suggestions.add("Mở rộng thêm 1-2 câu chia sẻ cảm nghĩ cụ thể để bài viết có chiều sâu hơn.");
+        }
+        if (suggestions.isEmpty()) {
+            suggestions.add("Bài viết của bạn đã rất cân đối, thu hút và chuẩn mực! Sẵn sàng đăng tải.");
+        }
+
+        return PostAnalysisLocalResult.builder()
+                .sentiment(sentiment)
+                .engagementScore(score)
+                .vibe(vibe)
+                .suggestions(suggestions)
+                .build();
+    }
+
+    @lombok.Data
+    @lombok.Builder
+    @lombok.AllArgsConstructor
+    @lombok.NoArgsConstructor
+    public static class PostAnalysisLocalResult {
+        private String sentiment;
+        private int engagementScore;
+        private String vibe;
+        private List<String> suggestions;
+    }
+
     private boolean containsAny(String source, String... targets) {
         if (source == null || source.isBlank()) return false;
         for (String target : targets) {
