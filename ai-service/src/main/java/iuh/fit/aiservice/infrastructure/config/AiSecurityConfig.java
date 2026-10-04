@@ -14,8 +14,7 @@ import org.springframework.security.web.SecurityFilterChain;
 public class AiSecurityConfig {
 
     @Bean
-    @Order(1)
-    public SecurityFilterChain aiSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
