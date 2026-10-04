@@ -2,13 +2,19 @@ package iuh.fit.postservice.infrastructure.persistence.repository;
 
 import iuh.fit.commonframework.infrastructure.persistence.jpa.BaseJpaRepository;
 import iuh.fit.postservice.domain.entities.Post;
+import iuh.fit.postservice.domain.enums.PostPrivacy;
+import iuh.fit.postservice.domain.enums.PostStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
-import java.util.List;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -18,23 +24,23 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedTrue(UUID authorId, Pageable pageable);
     Page<Post> findByDeletedFalse(Pageable pageable);
     Optional<Post> findByIdAndDeletedFalse(UUID id);
-    List<Post> findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, iuh.fit.postservice.domain.enums.PostStatus status);
+    List<Post> findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, PostStatus status);
 
-    @org.springframework.data.jpa.repository.Query("SELECT p FROM Post p JOIN p.hashtags h WHERE LOWER(h) = LOWER(:hashtag) AND p.deleted = false AND p.status = 'PUBLISHED' ORDER BY p.createdAt DESC")
-    Page<Post> findByHashtag(@org.springframework.data.repository.query.Param("hashtag") String hashtag, Pageable pageable);
+    @Query("SELECT p FROM Post p JOIN p.hashtags h WHERE LOWER(h) = LOWER(:hashtag) AND p.deleted = false AND p.status = 'PUBLISHED' ORDER BY p.createdAt DESC")
+    Page<Post> findByHashtag(@Param("hashtag") String hashtag, Pageable pageable);
 
-    @org.springframework.data.jpa.repository.Modifying
-    @org.springframework.transaction.annotation.Transactional
-    @org.springframework.data.jpa.repository.Query("UPDATE Post p SET p.privacy = :privacy WHERE p.authorId = :authorId AND p.deleted = false")
+    @Modifying
+    @Transactional
+    @Query("UPDATE Post p SET p.privacy = :privacy WHERE p.authorId = :authorId AND p.deleted = false")
     int updatePrivacyByAuthorId(
-            @org.springframework.data.repository.query.Param("authorId") UUID authorId,
-            @org.springframework.data.repository.query.Param("privacy") iuh.fit.postservice.domain.enums.PostPrivacy privacy);
+            @Param("authorId") UUID authorId,
+            @Param("privacy") PostPrivacy privacy);
 
-    @org.springframework.data.jpa.repository.Modifying
-    @org.springframework.transaction.annotation.Transactional
-    @org.springframework.data.jpa.repository.Query(value = "UPDATE posts SET created_at = :createdAt WHERE id = :postId AND author_id = :authorId AND is_deleted = false", nativeQuery = true)
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE posts SET created_at = :createdAt WHERE id = :postId AND author_id = :authorId AND is_deleted = false", nativeQuery = true)
     int updateCreatedAtByIdAndAuthorId(
-            @org.springframework.data.repository.query.Param("postId") UUID postId,
-            @org.springframework.data.repository.query.Param("authorId") UUID authorId,
-            @org.springframework.data.repository.query.Param("createdAt") LocalDateTime createdAt);
+            @Param("postId") UUID postId,
+            @Param("authorId") UUID authorId,
+            @Param("createdAt") LocalDateTime createdAt);
 }
