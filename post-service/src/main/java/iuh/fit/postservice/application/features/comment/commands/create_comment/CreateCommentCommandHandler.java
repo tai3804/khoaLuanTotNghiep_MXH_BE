@@ -4,6 +4,7 @@ import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.CommentFeatureMapper;
+import iuh.fit.postservice.application.util.TagAndHashtagHelper;
 import iuh.fit.postservice.domain.entities.Comment;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.infrastructure.client.media.MediaClient;
@@ -74,7 +75,7 @@ public class CreateCommentCommandHandler {
         if (command.getTaggedUserIds() != null) {
             allTaggedUserIds.addAll(command.getTaggedUserIds());
         }
-        allTaggedUserIds.addAll(iuh.fit.postservice.application.util.TagAndHashtagHelper.extractMentions(command.getContent()));
+        allTaggedUserIds.addAll(TagAndHashtagHelper.extractMentions(command.getContent()));
         comment.setTaggedUserIds(allTaggedUserIds);
 
         Comment savedComment = commentRepository.save(comment);

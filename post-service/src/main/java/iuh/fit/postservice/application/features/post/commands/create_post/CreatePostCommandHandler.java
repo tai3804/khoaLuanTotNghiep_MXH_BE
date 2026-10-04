@@ -1,34 +1,37 @@
 package iuh.fit.postservice.application.features.post.commands.create_post;
 
+import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.event.PostCreatedEvent;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.PostFeatureMapper;
+import iuh.fit.postservice.application.util.TagAndHashtagHelper;
 import iuh.fit.postservice.domain.entities.Post;
+import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.domain.enums.MediaType;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.domain.enums.PostStatus;
-import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
-import iuh.fit.commonframework.application.dto.ApiResponse;
+import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
+import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-
-import iuh.fit.postservice.domain.entities.PostMedia;
-import iuh.fit.postservice.domain.enums.MediaType;
-import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 
 @Slf4j
 @Service
@@ -91,7 +94,7 @@ public class CreatePostCommandHandler {
         }
 
         // Extract and assign hashtags
-        Set<String> hashtags = iuh.fit.postservice.application.util.TagAndHashtagHelper.extractHashtags(command.getContent());
+        Set<String> hashtags = TagAndHashtagHelper.extractHashtags(command.getContent());
         post.setHashtags(hashtags);
 
         // Extract and assign tagged users
@@ -99,7 +102,7 @@ public class CreatePostCommandHandler {
         if (command.getTaggedUserIds() != null) {
             allTaggedUserIds.addAll(command.getTaggedUserIds());
         }
-        allTaggedUserIds.addAll(iuh.fit.postservice.application.util.TagAndHashtagHelper.extractMentions(command.getContent()));
+        allTaggedUserIds.addAll(TagAndHashtagHelper.extractMentions(command.getContent()));
         post.setTaggedUserIds(allTaggedUserIds);
 
         if (requiresGroupApproval) {
@@ -171,7 +174,7 @@ public class CreatePostCommandHandler {
             for (UUID taggedUserId : allTaggedUserIds) {
                 if (taggedUserId != null && !taggedUserId.equals(savedPost.getAuthorId())) {
                     try {
-                        java.util.Map<String, Object> tagEvent = new java.util.HashMap<>();
+                        Map<String, Object> tagEvent = new HashMap<>();
                         tagEvent.put("recipientId", taggedUserId.toString());
                         tagEvent.put("actorId", savedPost.getAuthorId().toString());
                         tagEvent.put("type", "TAG_POST");
@@ -197,7 +200,7 @@ public class CreatePostCommandHandler {
         if (url == null || url.isBlank()) return "posts/media-" + UUID.randomUUID();
         try {
             if (url.startsWith("http://") || url.startsWith("https://")) {
-                java.net.URI uri = new java.net.URI(url);
+                URI uri = new URI(url);
                 String path = uri.getPath();
                 if (path != null && path.startsWith("/")) {
                     path = path.substring(1);
