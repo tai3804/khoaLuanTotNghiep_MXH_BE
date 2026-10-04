@@ -4,6 +4,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 import java.time.LocalDateTime;
+import java.util.Set;
 import java.util.UUID;
 
 @Getter
@@ -22,6 +23,6 @@ public class CreateCommentResult {
     String mediaKey;
     long likeCount;
     long replyCount;
-    java.util.Set<UUID> taggedUserIds;
+    Set<UUID> taggedUserIds;
     LocalDateTime createdAt;
 }

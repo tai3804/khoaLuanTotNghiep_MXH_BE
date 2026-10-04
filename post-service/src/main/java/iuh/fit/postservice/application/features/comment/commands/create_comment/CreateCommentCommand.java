@@ -4,6 +4,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Set;
 import java.util.UUID;
 
 @Getter
@@ -18,5 +19,5 @@ public class CreateCommentCommand {
     UUID parentCommentId;
     String content;
     MultipartFile file;
-    java.util.Set<UUID> taggedUserIds;
+    Set<UUID> taggedUserIds;
 }

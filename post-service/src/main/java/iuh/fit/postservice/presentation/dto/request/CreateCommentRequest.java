@@ -3,6 +3,7 @@ package iuh.fit.postservice.presentation.dto.request;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.util.Set;
 import java.util.UUID;
 
 @Data
@@ -13,5 +14,5 @@ import java.util.UUID;
 public class CreateCommentRequest {
     UUID parentCommentId;
     String content;
-    java.util.Set<UUID> taggedUserIds;
+    Set<UUID> taggedUserIds;
 }
