@@ -30,6 +30,8 @@ public class GetPostDetailResult {
     long commentCount;
     long shareCount;
     List<PostMedia> mediaList;
+    Set<UUID> taggedUserIds;
+    Set<String> hashtags;
     boolean isPinned;
     boolean isArchived;
     LocalDateTime createdAt;

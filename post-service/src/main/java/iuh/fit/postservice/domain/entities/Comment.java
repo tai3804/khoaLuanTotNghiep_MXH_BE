@@ -6,6 +6,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -46,4 +47,10 @@ public class Comment extends BaseEntity {
     @Column(name = "reply_count", nullable = false)
     @Builder.Default
     long replyCount = 0;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "comment_tagged_users", joinColumns = @JoinColumn(name = "comment_id"))
+    @Column(name = "user_id")
+    @Builder.Default
+    Set<UUID> taggedUserIds = new java.util.HashSet<>();
 }

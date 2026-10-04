@@ -21,5 +21,6 @@ public class CommentResponse {
     String mediaKey;
     long likeCount;
     long replyCount;
+    java.util.Set<UUID> taggedUserIds;
     LocalDateTime createdAt;
 }

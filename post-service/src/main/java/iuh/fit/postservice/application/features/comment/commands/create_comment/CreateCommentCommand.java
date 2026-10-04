@@ -18,4 +18,5 @@ public class CreateCommentCommand {
     UUID parentCommentId;
     String content;
     MultipartFile file;
+    java.util.Set<UUID> taggedUserIds;
 }

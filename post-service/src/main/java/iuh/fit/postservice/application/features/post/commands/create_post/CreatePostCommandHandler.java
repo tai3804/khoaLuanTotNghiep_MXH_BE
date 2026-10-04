@@ -23,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import iuh.fit.postservice.domain.entities.PostMedia;
@@ -89,6 +90,18 @@ public class CreatePostCommandHandler {
             post.setAllowedUserIds(new HashSet<>());
         }
 
+        // Extract and assign hashtags
+        Set<String> hashtags = iuh.fit.postservice.application.util.TagAndHashtagHelper.extractHashtags(command.getContent());
+        post.setHashtags(hashtags);
+
+        // Extract and assign tagged users
+        Set<UUID> allTaggedUserIds = new HashSet<>();
+        if (command.getTaggedUserIds() != null) {
+            allTaggedUserIds.addAll(command.getTaggedUserIds());
+        }
+        allTaggedUserIds.addAll(iuh.fit.postservice.application.util.TagAndHashtagHelper.extractMentions(command.getContent()));
+        post.setTaggedUserIds(allTaggedUserIds);
+
         if (requiresGroupApproval) {
             post.setStatus(PostStatus.PENDING_APPROVAL);
         } else if (hasFiles) {
@@ -152,6 +165,30 @@ public class CreatePostCommandHandler {
 
         kafkaTemplate.send("post.created", event);
         log.info("Published PostCreatedEvent to Kafka topic 'post.created' for postId: {}", savedPost.getId());
+
+        // Publish TAG_POST notifications to tagged users
+        if (!allTaggedUserIds.isEmpty()) {
+            for (UUID taggedUserId : allTaggedUserIds) {
+                if (taggedUserId != null && !taggedUserId.equals(savedPost.getAuthorId())) {
+                    try {
+                        java.util.Map<String, Object> tagEvent = new java.util.HashMap<>();
+                        tagEvent.put("recipientId", taggedUserId.toString());
+                        tagEvent.put("actorId", savedPost.getAuthorId().toString());
+                        tagEvent.put("type", "TAG_POST");
+                        tagEvent.put("title", "Gắn thẻ trong bài viết");
+                        tagEvent.put("content", "Một người dùng đã gắn thẻ bạn trong một bài viết.");
+                        tagEvent.put("targetId", savedPost.getId().toString());
+                        tagEvent.put("targetUrl", "/posts/" + savedPost.getId());
+                        tagEvent.put("avatarUrl", null);
+
+                        kafkaTemplate.send("notification.in-app.send", tagEvent);
+                        log.info("Published TAG_POST notification to tagged user: {}", taggedUserId);
+                    } catch (Exception e) {
+                        log.warn("Failed to publish TAG_POST notification for user {}: {}", taggedUserId, e.getMessage());
+                    }
+                }
+            }
+        }
 
         return postFeatureMapper.toCreateResult(savedPost, savedMediaList);
     }

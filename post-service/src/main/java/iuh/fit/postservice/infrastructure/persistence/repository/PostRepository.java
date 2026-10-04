@@ -20,6 +20,9 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     Optional<Post> findByIdAndDeletedFalse(UUID id);
     List<Post> findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, iuh.fit.postservice.domain.enums.PostStatus status);
 
+    @org.springframework.data.jpa.repository.Query("SELECT p FROM Post p JOIN p.hashtags h WHERE LOWER(h) = LOWER(:hashtag) AND p.deleted = false AND p.status = 'PUBLISHED' ORDER BY p.createdAt DESC")
+    Page<Post> findByHashtag(@org.springframework.data.repository.query.Param("hashtag") String hashtag, Pageable pageable);
+
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.transaction.annotation.Transactional
     @org.springframework.data.jpa.repository.Query("UPDATE Post p SET p.privacy = :privacy WHERE p.authorId = :authorId AND p.deleted = false")

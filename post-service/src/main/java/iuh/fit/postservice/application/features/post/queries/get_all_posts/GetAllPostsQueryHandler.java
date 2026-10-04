@@ -87,6 +87,12 @@ public class GetAllPostsQueryHandler {
                             predicates.add(cb.exists(subquery));
                             continue;
                         }
+                        if ("hashtag".equalsIgnoreCase(entry.getKey())) {
+                            String cleanTag = entry.getValue().toString().trim().toLowerCase();
+                            if (cleanTag.startsWith("#")) cleanTag = cleanTag.substring(1);
+                            predicates.add(cb.isMember(cleanTag, root.get("hashtags")));
+                            continue;
+                        }
                         try {
                             predicates.add(cb.equal(root.get(entry.getKey()), entry.getValue()));
                         } catch (IllegalArgumentException ignored) {}

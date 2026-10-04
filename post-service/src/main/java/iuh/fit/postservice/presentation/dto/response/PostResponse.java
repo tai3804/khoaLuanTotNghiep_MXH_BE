@@ -28,6 +28,8 @@ public class PostResponse {
     long commentCount;
     long shareCount;
     List<PostMediaResponse> mediaList;
+    Set<UUID> taggedUserIds;
+    Set<String> hashtags;
     boolean isPinned;
     boolean isArchived;
     LocalDateTime createdAt;

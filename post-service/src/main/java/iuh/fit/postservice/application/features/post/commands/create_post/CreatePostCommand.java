@@ -23,4 +23,5 @@ public class CreatePostCommand {
     UUID groupId;
     List<MultipartFile> files;
     List<String> mediaUrls;
+    Set<UUID> taggedUserIds;
 }

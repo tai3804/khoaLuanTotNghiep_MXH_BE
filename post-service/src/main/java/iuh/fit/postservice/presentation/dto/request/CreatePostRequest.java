@@ -19,4 +19,5 @@ public class CreatePostRequest {
     Set<UUID> allowedUserIds;
     UUID groupId;
     List<String> mediaUrls;
+    Set<UUID> taggedUserIds;
 }

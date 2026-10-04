@@ -20,7 +20,10 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -65,6 +68,15 @@ public class CreateCommentCommandHandler {
         }
 
         Comment comment = commentFeatureMapper.toEntity(command, mediaUrl, mediaKey);
+
+        // Extract mentions and tagged users
+        Set<UUID> allTaggedUserIds = new HashSet<>();
+        if (command.getTaggedUserIds() != null) {
+            allTaggedUserIds.addAll(command.getTaggedUserIds());
+        }
+        allTaggedUserIds.addAll(iuh.fit.postservice.application.util.TagAndHashtagHelper.extractMentions(command.getContent()));
+        comment.setTaggedUserIds(allTaggedUserIds);
+
         Comment savedComment = commentRepository.save(comment);
 
         // Increment comment count on post
@@ -109,6 +121,26 @@ public class CreateCommentCommandHandler {
 
                 kafkaTemplate.send("notification.in-app.send", notifEvent);
                 log.info("Published COMMENT_POST notification to post author: {}", post.getAuthorId());
+            }
+
+            // 3. Notify mentioned/tagged users in this comment
+            if (!allTaggedUserIds.isEmpty()) {
+                for (UUID mentionedUserId : allTaggedUserIds) {
+                    if (mentionedUserId != null && !mentionedUserId.equals(command.getAuthorId())) {
+                        Map<String, Object> tagCommentEvent = new HashMap<>();
+                        tagCommentEvent.put("recipientId", mentionedUserId.toString());
+                        tagCommentEvent.put("actorId", command.getAuthorId().toString());
+                        tagCommentEvent.put("type", "TAG_COMMENT");
+                        tagCommentEvent.put("title", "Nhắc đến bạn trong bình luận");
+                        tagCommentEvent.put("content", "Một người dùng đã nhắc đến bạn trong một bình luận: \"" + contentText + "\"");
+                        tagCommentEvent.put("targetId", post.getId().toString());
+                        tagCommentEvent.put("targetUrl", "/posts/" + post.getId());
+                        tagCommentEvent.put("avatarUrl", null);
+
+                        kafkaTemplate.send("notification.in-app.send", tagCommentEvent);
+                        log.info("Published TAG_COMMENT notification to mentioned user: {}", mentionedUserId);
+                    }
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to publish comment notification event: {}", e.getMessage());

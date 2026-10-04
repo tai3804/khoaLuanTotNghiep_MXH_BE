@@ -13,4 +13,5 @@ import java.util.UUID;
 public class CreateCommentRequest {
     UUID parentCommentId;
     String content;
+    java.util.Set<UUID> taggedUserIds;
 }

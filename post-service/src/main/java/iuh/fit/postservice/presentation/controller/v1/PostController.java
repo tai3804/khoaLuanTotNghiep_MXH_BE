@@ -145,6 +145,26 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
     }
 
+    @GetMapping("/hashtag/{hashtag}")
+    @Operation(summary = "Get posts by hashtag", description = "Retrieves paginated list of posts matching a given hashtag")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getPostsByHashtag(
+            @PathVariable("hashtag") String hashtag,
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+        String cleanTag = hashtag != null ? (hashtag.startsWith("#") ? hashtag.substring(1).trim().toLowerCase() : hashtag.trim().toLowerCase()) : "";
+        BaseFilter hashtagFilter = filter != null ? filter : new BaseFilter();
+        if (hashtagFilter.getFilters() == null) {
+            hashtagFilter.setFilters(new HashMap<>());
+        }
+        hashtagFilter.getFilters().put("hashtag", cleanTag);
+        GetAllPostsQuery query = GetAllPostsQuery.builder()
+                .filter(hashtagFilter)
+                .viewerId(getOptionalCurrentUserId())
+                .build();
+        PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(query);
+        PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
+        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "Lấy danh sách bài viết theo hashtag thành công"));
+    }
+
     @GetMapping("/group/{groupId}")
     @Operation(summary = "Get group posts", description = "Retrieves only posts belonging to the specified community group")
     public ResponseEntity<ApiResponse<List<PostResponse>>> getGroupPosts(

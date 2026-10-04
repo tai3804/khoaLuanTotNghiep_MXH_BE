@@ -50,6 +50,18 @@ public class Post extends BaseEntity {
     @Builder.Default
     Set<UUID> allowedUserIds = new HashSet<>();
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "post_tagged_users", joinColumns = @JoinColumn(name = "post_id"))
+    @Column(name = "user_id")
+    @Builder.Default
+    Set<UUID> taggedUserIds = new HashSet<>();
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "post_hashtags", joinColumns = @JoinColumn(name = "post_id"))
+    @Column(name = "hashtag")
+    @Builder.Default
+    Set<String> hashtags = new HashSet<>();
+
     @Column(name = "original_post_id")
     UUID originalPostId;
 
