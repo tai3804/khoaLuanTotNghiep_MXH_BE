@@ -6,20 +6,35 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.HashMap;
 import java.util.Map;
 
-@ControllerAdvice
+@RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
 
         @ExceptionHandler(value = Exception.class)
         public ResponseEntity<ApiResponse<Void>> handlingRuntimeException(Exception exception) {
                 log.error("Exception: ", exception);
+
+                // Unwrap BusinessException if wrapped inside nested exceptions
+                Throwable cause = exception.getCause();
+                while (cause != null) {
+                        if (cause instanceof BusinessException be) {
+                                return handlingBusinessException(be);
+                        }
+                        cause = cause.getCause();
+                }
+
+                String msg = exception.getMessage();
+                if (msg != null && !msg.isBlank() && !msg.contains("Exception") && msg.length() < 200) {
+                        return ResponseEntity.status(500).body(ApiResponse.error(500, msg));
+                }
+
                 ApiResponse<Void> apiResponse = ApiResponse.error(
                                 ErrorCode.UNCATEGORIZED_EXCEPTION.getCode(),
                                 ErrorCode.UNCATEGORIZED_EXCEPTION.getMessage());

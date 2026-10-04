@@ -18,4 +18,7 @@ public interface AiModerationLogRepository extends JpaRepository<AiModerationLog
 
     @Query("SELECT COUNT(l) FROM AiModerationLog l WHERE l.actionTaken != 'ALLOW'")
     long countFlaggedContent();
+
+    boolean existsByTargetTypeAndTargetId(String targetType, UUID targetId);
 }
+

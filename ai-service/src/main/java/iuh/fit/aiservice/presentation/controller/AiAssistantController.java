@@ -1,9 +1,12 @@
 package iuh.fit.aiservice.presentation.controller;
 
+import iuh.fit.aiservice.application.dto.MessageSummaryDto;
 import iuh.fit.aiservice.application.engine.SmartAssistantEngine;
 import iuh.fit.aiservice.infrastructure.gemini.GeminiApiClient;
 import iuh.fit.commonframework.application.dto.ApiResponse;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -255,22 +258,38 @@ public class AiAssistantController {
             return ResponseEntity.ok(ApiResponse.success(new ChatResponse("Xin chào! Tôi có thể giúp gì cho bạn hôm nay?"), "Tin nhắn rỗng"));
         }
 
-        String fallbackReply = smartAssistantEngine.generateChatReply(message);
-
-        String prompt = String.format("""
-                Bạn là Trợ lý AI KLTN Social thông minh, nhiệt tình, thân thiện của mạng xã hội sinh viên/giới trẻ.
-                Nhiệm vụ của bạn là hỗ trợ người dùng:
-                - Gợi ý ý tưởng đăng bài, viết caption, hashtag, sáng tạo nội dung.
-                - Trả lời các câu hỏi học tập, lập trình, công nghệ, cuộc sống sinh viên.
-                - Trao đổi văn minh, thân thiện, súc tích, định dạng markdown đẹp mắt (in đậm, bullet points khi cần).
-                
-                Người dùng hỏi:
-                "%s"
-                """, message);
-
-        String reply = geminiApiClient.generateText(prompt, fallbackReply);
+        String fallbackReply = smartAssistantEngine.generateChatReply(message, request.getHistory());
+        String reply = geminiApiClient.chatWithHistory(message, request.getHistory(), fallbackReply);
 
         return ResponseEntity.ok(ApiResponse.success(new ChatResponse(reply != null && !reply.isBlank() ? reply.trim() : fallbackReply), "Trả lời thành công"));
+    }
+
+    @PostMapping("/summarize-messages")
+    public ResponseEntity<ApiResponse<MessageSummaryDto.SummarizeMessagesResponse>> summarizeMessages(
+            @RequestBody MessageSummaryDto.SummarizeMessagesRequest request) {
+
+        if (request == null || request.getMessages() == null || request.getMessages().isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(
+                    MessageSummaryDto.SummarizeMessagesResponse.builder()
+                            .summary("Không có tin nhắn nào để tóm tắt.")
+                            .mediaDescription("Không có hình ảnh đính kèm.")
+                            .actionItems(List.of())
+                            .messageCount(0)
+                            .imageCount(0)
+                            .build(),
+                    "Danh sách tin nhắn rỗng"
+            ));
+        }
+
+        var fallback = smartAssistantEngine.summarizeMessages(
+                request.getConversationName(),
+                request.getIsGroup(),
+                request.getMessages()
+        );
+
+        var result = geminiApiClient.summarizeMessagesWithGemini(request, fallback);
+
+        return ResponseEntity.ok(ApiResponse.success(result, "Tóm tắt cuộc trò chuyện thành công"));
     }
 
     @PostMapping("/suggest-bio")
@@ -474,8 +493,17 @@ public class AiAssistantController {
     }
 
     @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ChatMessageItem {
+        private String sender;
+        private String text;
+    }
+
+    @Data
     public static class ChatRequest {
         private String message;
+        private List<ChatMessageItem> history;
     }
 
     @Data

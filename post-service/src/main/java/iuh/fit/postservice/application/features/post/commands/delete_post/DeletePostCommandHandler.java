@@ -1,6 +1,7 @@
 package iuh.fit.postservice.application.features.post.commands.delete_post;
 
 import iuh.fit.commonframework.application.exception.BusinessException;
+import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
@@ -26,6 +27,7 @@ public class DeletePostCommandHandler {
     PostRepository postRepository;
     PostMediaRepository postMediaRepository;
     MediaClient mediaClient;
+    JwtUtil jwtUtil;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -33,7 +35,15 @@ public class DeletePostCommandHandler {
         Post post = postRepository.findByIdAndDeletedFalse(command.getPostId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 
-        if (!post.getAuthorId().equals(command.getUserId())) {
+        List<String> roles = jwtUtil.getCurrentUserRoles();
+        boolean isAdminOrMod = roles != null && (
+                roles.contains("ROLE_ADMIN") ||
+                roles.contains("ADMIN") ||
+                roles.contains("ROLE_MODERATOR") ||
+                roles.contains("MODERATOR")
+        );
+
+        if (!post.getAuthorId().equals(command.getUserId()) && !isAdminOrMod) {
             throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
 

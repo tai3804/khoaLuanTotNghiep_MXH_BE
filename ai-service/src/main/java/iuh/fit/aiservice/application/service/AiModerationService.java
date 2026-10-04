@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -209,37 +210,31 @@ public class AiModerationService {
                     .build();
         }
 
-        // Tầng 1: Lọc nhanh từ điển cục bộ
-        FastSensitiveWordFilter.FastScanResult fastScan = fastFilter.scan(content);
+        // Ưu tiên Gemini AI phân tích toàn diện ngữ cảnh ngữ nghĩa tiếng Việt
+        // Nếu API ngoại tuyến, GeminiApiClient tự động kích hoạt Fallback Engine chuẩn mực và giáo dục
+        return geminiApiClient.evaluate(content);
+    }
 
-        // Nếu phát hiện từ cấm cực đoan (CRITICAL) -> Không cần tốn API Gemini
-        if ("CRITICAL".equalsIgnoreCase(fastScan.getHighestSeverity())) {
-            log.info("Tầng 1 Fast Filter caught CRITICAL violation. Bypassing Gemini API.");
-            return GeminiModerationResult.builder()
-                    .isToxic(true)
-                    .toxicityScore(0.95)
-                    .category(fastScan.getPrimaryCategory())
-                    .severity("CRITICAL")
-                    .suggestedAction("DELETE_POST")
-                    .reason("Phát hiện từ cấm nghiêm trọng trong từ điển: " + String.join(", ", fastScan.getMatchedKeywords()))
-                    .extractedKeywords(fastScan.getMatchedKeywords())
-                    .isFallback(false)
-                    .build();
+    private volatile long lastConfigCheck = 0;
+    private volatile boolean cachedDynamicEnabled = true;
+
+    private boolean isDynamicModerationEnabled() {
+        if (!moderationEnabled) {
+            return false;
         }
-
-        // Tầng 2: Gọi Gemini AI phân tích sâu ngữ cảnh
-        GeminiModerationResult geminiResult = geminiApiClient.evaluate(content);
-
-        // Gộp các từ phát hiện từ cả 2 tầng
-        List<String> combinedKeywords = new ArrayList<>(geminiResult.getExtractedKeywords());
-        for (String kw : fastScan.getMatchedKeywords()) {
-            if (!combinedKeywords.contains(kw)) {
-                combinedKeywords.add(kw);
+        long now = System.currentTimeMillis();
+        if (now - lastConfigCheck > 30000) {
+            lastConfigCheck = now;
+            try {
+                Map<String, String> configs = adminFeignClient.getSystemConfigs();
+                if (configs != null && configs.containsKey("ai_moderation_enabled")) {
+                    cachedDynamicEnabled = !"false".equalsIgnoreCase(configs.get("ai_moderation_enabled"));
+                }
+            } catch (Exception e) {
+                log.debug("Could not refresh system configs from admin-service: {}", e.getMessage());
             }
         }
-        geminiResult.setExtractedKeywords(combinedKeywords);
-
-        return geminiResult;
+        return cachedDynamicEnabled;
     }
 
     /**
@@ -247,12 +242,17 @@ public class AiModerationService {
      */
     @Transactional
     public void evaluateNewPost(UUID postId, UUID authorId, String content) {
-        if (!moderationEnabled) {
-            log.info("AI Moderation is disabled. Skipping auto-moderation for post: {}", postId);
+        if (!isDynamicModerationEnabled()) {
+            log.info("AI Moderation is disabled by System Admin Setting. Skipping auto-moderation for post: {}", postId);
             return;
         }
 
         if (content == null || content.isBlank()) {
+            return;
+        }
+
+        if (postId != null && moderationLogRepository.existsByTargetTypeAndTargetId("POST", postId)) {
+            log.info("Post {} has already been evaluated by AI. Skipping duplicate evaluation.", postId);
             return;
         }
 
@@ -279,9 +279,9 @@ public class AiModerationService {
                     );
                 }
 
-            } else if (score >= thresholdHide || "AUTO_HIDE".equalsIgnoreCase(action)) {
+            } else if (score >= thresholdWarn || "AUTO_HIDE".equalsIgnoreCase(action) || "WARN_USER".equalsIgnoreCase(action) || result.isToxic()) {
                 action = "AUTO_HIDE";
-                log.warn("AI AUTO-MODERATION [HIDE_POST]: Post {} has medium-high toxicity: {}", postId, score);
+                log.warn("AI AUTO-MODERATION [HIDE_POST]: Post {} has toxicity: {}", postId, score);
 
                 postModerationProducer.publishPostModerated(postId, "HIDE_POST", "AI_AUTO_MODERATION: " + result.getReason());
 
@@ -290,20 +290,6 @@ public class AiModerationService {
                             authorId,
                             "Bài viết của bạn đã bị tạm ẩn",
                             String.format("Bài viết của bạn bị ẩn do chứa nội dung không phù hợp (%s): %s. Bạn có thể chỉnh sửa lại bài viết.",
-                                    result.getCategory(), result.getReason()),
-                            postId.toString()
-                    );
-                }
-
-            } else if (score >= thresholdWarn || "WARN_USER".equalsIgnoreCase(action)) {
-                action = "WARN_USER";
-                log.info("AI AUTO-MODERATION [WARN_USER]: Sending warning notification to author: {}", authorId);
-
-                if (authorId != null) {
-                    aiNotificationProducer.sendWarningNotification(
-                            authorId,
-                            "Cảnh báo nội dung từ hệ thống AI",
-                            String.format("Bài viết của bạn có dấu hiệu vi phạm chuẩn mực (%s): %s. Vui lòng kiểm tra lại.",
                                     result.getCategory(), result.getReason()),
                             postId.toString()
                     );

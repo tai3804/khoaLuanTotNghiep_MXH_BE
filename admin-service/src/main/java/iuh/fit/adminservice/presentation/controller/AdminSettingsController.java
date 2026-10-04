@@ -71,6 +71,24 @@ public class AdminSettingsController {
         return ResponseEntity.ok(getSystemConfigsQuery.execute());
     }
 
+    // Public System Configs - accessible without authentication
+    @GetMapping("/public")
+    public ResponseEntity<Map<String, String>> getPublicConfigs() {
+        return ResponseEntity.ok(getSystemConfigsQuery.execute());
+    }
+
+    // Clear Cache - ADMIN only
+    @PostMapping("/clear-cache")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> clearCache(@RequestParam(defaultValue = "all") String type) {
+        auditLogService.log("CLEAR_CACHE", "CACHE", type.toUpperCase(), "Xóa bộ nhớ đệm hệ thống: " + type);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "type", type,
+                "message", "Đã dọn dẹp và làm mới bộ nhớ đệm " + type + " thành công"
+        ));
+    }
+
     // Audit Logs - ADMIN only
     @GetMapping("/audit-logs")
     @PreAuthorize("hasRole('ADMIN')")

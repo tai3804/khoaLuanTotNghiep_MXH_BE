@@ -97,7 +97,7 @@ public class MfaController {
         MfaVerifyResult result = mfaVerifyCommandHandler.handle(mfaPresentationMapper.toMfaVerifyCommand(request));
         LoginUserResponse response = mfaPresentationMapper.toLoginUserResponse(result);
 
-        if ("WEB".equalsIgnoreCase(clientType) && response.getRefreshToken() != null) {
+        if (response.getRefreshToken() != null) {
             ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
                     .httpOnly(true)
                     .secure(false)

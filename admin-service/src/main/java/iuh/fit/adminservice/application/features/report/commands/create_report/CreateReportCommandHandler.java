@@ -4,16 +4,23 @@ import iuh.fit.adminservice.application.exception.AdminServiceErrorCode;
 import iuh.fit.adminservice.application.mapper.ReportFeatureMapper;
 import iuh.fit.adminservice.domain.entities.Report;
 import iuh.fit.adminservice.domain.enums.ReportStatus;
+import iuh.fit.adminservice.domain.entities.ModerationLog;
+import iuh.fit.adminservice.domain.enums.ModerationAction;
+import iuh.fit.adminservice.domain.enums.TargetType;
+import iuh.fit.adminservice.domain.repository.ModerationLogRepository;
 import iuh.fit.adminservice.domain.repository.ReportRepository;
+import iuh.fit.adminservice.domain.repository.SettingsRepository;
 import iuh.fit.adminservice.infrastructure.event.ModerationEventPublisher;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.event.ReportCreatedEvent;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -22,6 +29,8 @@ public class CreateReportCommandHandler {
     ReportRepository reportRepository;
     ReportFeatureMapper reportFeatureMapper;
     ModerationEventPublisher moderationEventPublisher;
+    SettingsRepository settingsRepository;
+    ModerationLogRepository moderationLogRepository;
 
     @Transactional
     public CreateReportResult handle(CreateReportCommand command) {
@@ -54,6 +63,80 @@ public class CreateReportCommandHandler {
                         .build()
         );
 
+        // Kiểm tra số lượng báo cáo vi phạm có vượt ngưỡng cấu hình để tự động ẩn nội dung không
+        checkAndApplyReportThreshold(report);
+
         return reportFeatureMapper.toCreateReportResult(report);
+    }
+
+    private static final java.util.UUID SYSTEM_MODERATOR_ID = java.util.UUID.fromString("00000000-0000-0000-0000-000000000000");
+
+    private void checkAndApplyReportThreshold(Report report) {
+        try {
+            long pendingCount = reportRepository.countByTargetTypeAndTargetIdAndStatus(
+                    report.getTargetType(), report.getTargetId(), ReportStatus.PENDING
+            );
+
+            int maxReports = settingsRepository.findConfigByKey("max_reports_auto_hide")
+                    .map(config -> {
+                        try {
+                            return Integer.parseInt(config.getValue().trim());
+                        } catch (Exception e) {
+                            return 5;
+                        }
+                    })
+                    .orElse(5);
+
+            log.info("Checking auto-hide threshold for target [{} - {}]: current pending reports = {}, threshold = {}",
+                    report.getTargetType(), report.getTargetId(), pendingCount, maxReports);
+
+            if (pendingCount >= maxReports) {
+                if (report.getTargetType() == TargetType.POST) {
+                    log.warn("Auto-hiding POST {} because pending reports ({}) reached threshold ({})",
+                            report.getTargetId(), pendingCount, maxReports);
+
+                    moderationEventPublisher.publishPostModerated(
+                            report.getTargetId(),
+                            "HIDE_POST",
+                            String.format("Tự động tạm ẩn: Bài viết đã nhận %d lượt báo cáo vi phạm (ngưỡng tối đa: %d)", pendingCount, maxReports),
+                            SYSTEM_MODERATOR_ID
+                    );
+
+                    ModerationLog mLog = ModerationLog.builder()
+                            .moderatorId(SYSTEM_MODERATOR_ID)
+                            .targetType(TargetType.POST)
+                            .targetId(report.getTargetId())
+                            .action(ModerationAction.HIDE_POST)
+                            .reason(report.getReason().name())
+                            .note(String.format("Tự động tạm ẩn bài viết do vượt quá ngưỡng báo cáo (%d/%d báo cáo)", pendingCount, maxReports))
+                            .reportId(report.getId())
+                            .build();
+                    moderationLogRepository.save(mLog);
+                } else if (report.getTargetType() == TargetType.COMMENT) {
+                    log.warn("Auto-deleting COMMENT {} because pending reports ({}) reached threshold ({})",
+                            report.getTargetId(), pendingCount, maxReports);
+
+                    moderationEventPublisher.publishCommentModerated(
+                            report.getTargetId(),
+                            "DELETE_COMMENT",
+                            String.format("Tự động ẩn bình luận: Đã nhận %d lượt báo cáo vi phạm (ngưỡng: %d)", pendingCount, maxReports),
+                            SYSTEM_MODERATOR_ID
+                    );
+
+                    ModerationLog mLog = ModerationLog.builder()
+                            .moderatorId(SYSTEM_MODERATOR_ID)
+                            .targetType(TargetType.COMMENT)
+                            .targetId(report.getTargetId())
+                            .action(ModerationAction.DELETE_COMMENT)
+                            .reason(report.getReason().name())
+                            .note(String.format("Tự động ẩn bình luận do vượt quá ngưỡng báo cáo (%d/%d báo cáo)", pendingCount, maxReports))
+                            .reportId(report.getId())
+                            .build();
+                    moderationLogRepository.save(mLog);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error evaluating report threshold auto-hide for target {}: {}", report.getTargetId(), e.getMessage(), e);
+        }
     }
 }

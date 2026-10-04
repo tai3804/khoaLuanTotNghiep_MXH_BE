@@ -1,9 +1,11 @@
 package iuh.fit.aiservice.application.engine;
 
+import iuh.fit.aiservice.application.dto.MessageSummaryDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalTime;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -19,108 +21,144 @@ public class SmartAssistantEngine {
      * Phản hồi trò chuyện thông minh theo ngữ cảnh người dùng hỏi
      */
     public String generateChatReply(String message) {
+        return generateChatReply(message, null);
+    }
+
+    /**
+     * Phản hồi trò chuyện thông minh có ghi nhớ lịch sử đối thoại (multi-turn conversation)
+     */
+    public String generateChatReply(String message, List<?> history) {
         if (message == null || message.isBlank()) {
-            return "Chào bạn! Tôi là **Trợ lý AI KLTN Social**. Bạn cần tôi hỗ trợ viết caption, gợi ý hashtag hay giải đáp câu hỏi nào không?";
+            return "Chào bạn! 👋 Tôi là **Trợ lý AI KLTN Social**. Bạn cần tôi hỗ trợ viết caption, gợi ý ý tưởng, giải đáp thắc mắc lập trình hay học tập?";
         }
 
         String lower = message.toLowerCase().trim();
         String normalized = normalizer.normalize(lower);
 
-        // 1. Gợi ý Caption bài viết
-        if (containsAny(normalized, "caption", "viet stt", "stt", "dang bai", "status") || 
-            (containsAny(normalized, "goi y", "viet cho toi", "tao cho toi") && containsAny(normalized, "nang luong", "hoc tap", "ngay moi"))) {
+        // 1. Chào hỏi & Nhận diện danh tính
+        if (containsAny(normalized, "xin chao", "hello", "hi ban", "alo", "chao ban", "hi ai", "hey", "good morning", "good evening") ||
+            (lower.equals("hi") || lower.equals("chao") || lower.equals("hey"))) {
+            return getDynamicGreeting(lower);
+        }
+
+        if (containsAny(normalized, "ban la ai", "ten gi", "gioi thieu ve ban", "chuc nang cua ban", "tro ly gi", "ai gi")) {
+            return """
+                    🤖 **Tôi là Trợ lý AI KLTN Social** — trợ lý ảo đồng hành cùng bạn trên mạng xã hội sinh viên!
+                    
+                    💡 **Những việc tôi có thể hỗ trợ bạn ngay:**
+                    - ✍️ **Sáng tạo nội dung:** Viết caption lôi cuốn, tạo status bắt trend, gợi ý hashtag viral, viết bio cá nhân ấn tượng.
+                    - 💻 **Lập trình & Kỹ thuật:** Tư vấn kiến trúc Microservices, Spring Boot, React, Kafka, Docker, gỡ lỗi code và giải thuật.
+                    - 🎓 **Học tập & Khóa luận:** Hướng dẫn làm đồ án, mẹo bảo vệ trước hội đồng phản biện, phương pháp học tập Pomodoro & Active Recall.
+                    - 📩 **Tóm tắt tin nhắn & Cuộc trò chuyện:** Tổng hợp nhanh nội dung tin nhắn chưa đọc kèm phân tích hình ảnh đính kèm!
+                    
+                    Bạn đang quan tâm đến chủ đề nào? Hãy cứ thoải mái chia sẻ nhé! ✨
+                    """;
+        }
+
+        // 2. Bảo vệ đồ án / Khóa luận tốt nghiệp (KLTN)
+        if (containsAny(normalized, "bao ve do an", "bao ve khoa luan", "do an tot nghiep", "khoa luan tot nghiep", "bao ve kltn", "hoi dong phan bien", "hoi dong khoa luan")) {
+            return """
+                    🎓 **Bí kíp 5 bước bảo vệ Khóa luận / Đồ án tốt nghiệp đạt điểm tối đa:**
+                    
+                    1. 📑 **Báo cáo chuẩn mực:**
+                       - Kiểm tra kỹ danh mục hình vẽ, bảng biểu, trích dẫn tài liệu tham khảo theo chuẩn APA/IEEE. Căn lề lề trên 2.5cm, dưới 2.5cm, trái 3.5cm, phải 2.0cm.
+                    
+                    2. 🖥️ **Slide súc tích (15 - 20 slide):**
+                       - *Cấu trúc vàng:* Đặt vấn đề (2 slide) ➔ Yêu cầu & Kiến trúc hệ thống (4 slide) ➔ Công nghệ cốt lõi (3 slide) ➔ Kết quả đạt được & Demo (6 slide) ➔ Kết luận & Hướng phát triển (2 slide).
+                    
+                    3. ⏱️ **Kỹ năng thuyết trình (Canh chuẩn 12-15 phút):**
+                       - Giọng nói dõng dạc, tự tin, mắt nhìn bao quát hội đồng. Nhấn mạnh vào điểm sáng tạo và giải pháp bạn đã giải quyết được.
+                    
+                    4. 🛡️ **Kịch bản Demo dự phòng (Fail-safe):**
+                       - Chuẩn bị sẵn 1 video quay màn hình chất lượng cao phòng trường hợp mạng hội trường hoặc thiết bị chập chờn.
+                    
+                    5. 🎯 **Bình tĩnh khi phản biện:**
+                       - Chuẩn bị sổ tay ghi lại trọn vẹn câu hỏi của thầy cô. Trả lời đúng trọng tâm, trung thực: điều gì đã làm được thì trình bày rõ ràng, điều gì chưa làm được thì chân thành tiếp thu để phát triển trong tương lai.
+                    
+                    ✨ *Chúc bạn có một buổi bảo vệ khóa luận thành công rực rỡ và ghi trọn điểm 10!*
+                    """;
+        }
+
+        // 3. Gợi ý Caption bài viết
+        if (containsAny(normalized, "caption", "viet stt", "stt", "dang bai", "status") ||
+            (containsAny(normalized, "goi y", "viet cho toi", "tao cho toi") && containsAny(normalized, "nang luong", "hoc tap", "ngay moi", "hai huoc", "tam trang"))) {
             return generateCaptionsForChat(normalized);
         }
 
-        // 2. Gợi ý Hashtag
+        // 4. Gợi ý Hashtag
         if (containsAny(normalized, "hashtag", "hash tag", "the tag", "tag pho bien", "tag thinh hanh")) {
             return generateHashtagsForChat(normalized);
         }
 
-        // 3. Bảo vệ đồ án / Khóa luận tốt nghiệp
-        if (containsAny(normalized, "bao ve do an", "bao ve khoa luan", "do an tot nghiep", "khoa luan tot nghiep", "bao ve kltn", "do an")) {
+        // 5. Ý tưởng đăng bài cho nhóm / fanpage
+        if (containsAny(normalized, "chu de thao luan", "y tuong dang bai", "dang len nhom", "post group", "nhom sinh vien", "tang tuong tac")) {
             return """
-                    🎓 **Tóm tắt 5 bước bảo vệ Đồ án / Khóa luận tốt nghiệp thành công:**
+                    💡 **Gợi ý 3 chủ đề đăng bài kích thích tương tác cực mạnh cho nhóm sinh viên:**
                     
-                    1. **Hoàn thiện Báo cáo & Tài liệu chuẩn chỉ:**
-                       - Kiểm tra kỹ lỗi chính tả, định dạng căn lề, mục lục, danh mục hình vẽ và tài liệu tham khảo theo quy chuẩn khoa/trường.
+                    1. ⚖️ **Cân bằng giữa Học tập & Đi làm thêm (Internship / Part-time):**
+                       - *Câu mở đầu gợi ý:* "Vừa gánh deadline môn học, vừa chạy việc ở công ty — Các bạn trong nhóm đang quản lý thời gian như thế nào để không bị kiệt sức (burnout)?"
+                       - *Điểm nhấn:* Kích thích mọi người bình luận chia sẻ thời gian biểu thực tế.
                     
-                    2. **Thiết kế Slide thuyết trình ấn tượng:**
-                       - Giới hạn 15 - 20 slide súc tích. Tập trung vào: *Vấn đề nghiên cứu -> Giải pháp kiến trúc -> Kết quả đạt được -> Demo sản phẩm*.
+                    2. 🛠️ **Top công cụ & Extension AI không thể thiếu kỳ này:**
+                       - *Câu mở đầu gợi ý:* "Nếu chỉ được chọn 3 công cụ công nghệ giúp việc học của bạn 'dễ thở' hơn gấp đôi, bạn sẽ chọn gì? Cùng chia sẻ kho bí kíp bên dưới nhé!"
+                       - *Điểm nhấn:* Thu hút chia sẻ kiến thức, lưu bài viết (Save post).
                     
-                    3. **Luyện tập thuyết trình (Timing 10-15 phút):**
-                       - Nói to, rõ ràng, phong thái tự tin. Phân chia thời gian hợp lý giữa phần trình bày lý thuyết và phần demo trực tiếp.
+                    3. 🎯 **Tranh luận: Nên học sâu chuyên môn (Specialist) hay học đa năng (Generalist)?**
+                       - *Câu mở đầu gợi ý:* "Năm 3, năm 4 nên đào sâu một ngôn ngữ/framework duy nhất hay nên biết cả Frontend, Backend, DevOps? Góc nhìn thực tế từ các tiền bối đi trước!"
+                       - *Điểm nhấn:* Tạo luồng tranh luận học thuật sôi nổi và đa chiều.
                     
-                    4. **Chuẩn bị kịch bản Demo & Kịch bản dự phòng (Backup):**
-                       - Quay sẵn 1 video demo ngắn phòng trường hợp mạng hoặc server gặp sự cố trong buổi hội đồng.
-                    
-                    5. **Chuẩn bị tâm thế trả lời phản biện:**
-                       - Lắng nghe trọn vẹn câu hỏi của thầy cô, ghi chép lại, trả lời trọng tâm, trung thực và cầu thị.
-                    
-                    ✨ *Chúc bạn có một buổi bảo vệ khóa luận thành công rực rỡ và đạt điểm số tối đa!*
+                    🔥 *Mẹo tăng tương tác: Đính kèm một bức ảnh thực tế hoặc tạo cuộc thăm dò ý kiến (Poll) để tương tác bùng nổ nhé!*
                     """;
         }
 
-        // 4. Chủ đề thảo luận / Ý tưởng đăng bài cho nhóm sinh viên
-        if (containsAny(normalized, "chu de thao luan", "y tuong dang bai", "dang len nhom", "post group", "nhom sinh vien")) {
-            return """
-                    💡 **Gợi ý 3 chủ đề thảo luận sôi nổi cho nhóm sinh viên:**
-                    
-                    1. **Chủ đề 1: Bí quyết cân bằng giữa việc Học và Đi làm thêm (Part-time / Internship)**
-                       - *Gợi ý mở đầu:* "Vừa chạy deadline môn học, vừa làm thêm kiếm kinh nghiệm — Các bạn trong nhóm đang quản lý thời gian như thế nào để không bị 'burnout'?"
-                    
-                    2. **Chủ đề 2: Bộ công cụ (Tools & AI) đắc lực hỗ trợ sinh viên học tập hiệu quả**
-                       - *Gợi ý mở đầu:* "Top 3 ứng dụng/công cụ công nghệ mà bạn thấy không thể thiếu trong kỳ học này là gì? Cùng chia sẻ để mọi người cùng tối ưu hóa việc học nhé!"
-                    
-                    3. **Chủ đề 3: Định hướng nghề nghiệp — Frontend, Backend hay DevOps / AI?**
-                       - *Gợi ý mở đầu:* "Năm 3, năm 4 nên tập trung sâu vào một mảng hay học rộng đa kỹ năng (Fullstack)? Góc nhìn và trải nghiệm thực tế từ các anh chị đi trước!"
-                    
-                    🔥 *Mẹo nhỏ: Đính kèm một bức ảnh sinh động hoặc tạo cuộc bình chọn (Poll) để tăng tương tác gấp 3 lần nhé!*
-                    """;
-        }
-
-        // 5. Câu hỏi về Công nghệ / Lập trình (Java, Spring Boot, React, Kafka, Docker, AI, Microservices)
-        if (containsAny(normalized, "spring boot", "java", "react", "kafka", "docker", "microservice", "rest api", "sql", "postgresql", "frontend", "backend")) {
+        // 6. Công nghệ & Lập trình (Spring Boot, React, Kafka, Docker, Database, Cloud, Architecture)
+        if (containsAny(normalized, "spring boot", "java", "react", "kafka", "docker", "microservice", "rest api", "sql", "postgresql", "frontend", "backend", "webrtc", "websocket", "redis", "jwt", "oauth")) {
             return handleTechQuestion(normalized, message);
         }
 
-        // 6. Câu hỏi về Phương pháp học tập / Ôn thi
-        if (containsAny(normalized, "on thi", "hoc tap", "phuong phap hoc", "pomodoro", "bi quyet hoc", "tap trung")) {
+        // 7. Phương pháp học tập & Thi cử
+        if (containsAny(normalized, "on thi", "hoc tap", "phuong phap hoc", "pomodoro", "bi quyet hoc", "tap trung", "qua mon", "gpa", "hoc nhanh")) {
             return """
-                    📚 **3 Phương pháp học tập & ôn thi hiệu quả cao dành cho bạn:**
+                    📚 **3 Chiến lược học tập thông minh giúp tăng 50% hiệu suất học & đạt GPA cao:**
                     
-                    - ⏱️ **Kỹ thuật Pomodoro:** Học tập trung cao độ trong 25 phút, nghỉ ngắn 5 phút. Lặp lại 4 chu kỳ thì nghỉ dài 15-20 phút để não bộ tái tạo năng lượng.
-                    - 🧠 **Active Recall (Chủ động gợi nhớ):** Tự đặt câu hỏi và tự trả lời tóm tắt kiến thức mà không nhìn tài liệu, giúp ghi nhớ sâu gấp nhiều lần việc đọc lại thụ động.
-                    - 🗣️ **Phương pháp Feynman:** Thử giải thích một khái niệm phức tạp bằng ngôn từ đơn giản nhất cho một người chưa biết gì hiểu.
+                    - ⏱️ **Kỹ thuật Pomodoro cải tiến:**
+                      - 25 phút tập trung tuyệt đối (tắt mọi thông báo điện thoại) + 5 phút giải lao nhẹ nhàng (uống nước, vươn vai). Sau 4 chu kỳ, nghỉ dài 20 phút.
                     
-                    💪 *Hãy chọn cho mình không gian yên tĩnh và uống đủ nước trong suốt buổi học nhé!*
+                    - 🧠 **Active Recall (Chủ động gợi nhớ) kết hợp Spaced Repetition (Lặp lại ngắt quãng):**
+                      - Sau khi đọc tài liệu, hãy đóng sách lại và viết ra giấy mọi thứ bạn vừa nhớ. Ôn lại sau 1 ngày, 3 ngày, 7 ngày và 14 ngày để biến trí nhớ ngắn hạn thành dài hạn.
+                    
+                    - 🗣️ **Kỹ thuật Feynman (Giảng giải cho người khác):**
+                      - Hãy thử giải thích một khái niệm phức tạp bằng ngôn từ đơn giản nhất cho một người bạn chưa biết gì. Chỗ nào bạn ngập ngừng chính là lỗ hổng kiến thức cần đọc lại ngay!
+                    
+                    💪 *Bắt đầu ngay hôm nay với mục tiêu rõ ràng, bạn chắc chắn sẽ gặt hái kết quả xuất sắc!*
                     """;
         }
 
-        // 7. Lời chào hỏi & Giới thiệu
-        if (containsAny(normalized, "xin chao", "hello", "hi ", "ban la ai", "tro ly gi", "giup gi", "gioi thieu")) {
+        // 8. Tâm sự, Động viên, Giải tỏa căng thẳng (Stress, Deadline, Mệt mỏi)
+        if (containsAny(normalized, "met", "stress", "ap luc", "nan", "deadline", "buon", "cang thang", "chan", "lo lang")) {
             return """
-                    Xin chào bạn! 👋 Tôi là **Trợ lý AI KLTN Social** — người bạn đồng hành thông minh trên mạng xã hội sinh viên.
+                    🌿 **Gửi đến bạn một chút bình yên và năng lượng tích cực hôm nay:**
                     
-                    Tôi có thể hỗ trợ bạn:
-                    - ✍️ **Sáng tạo nội dung:** Viết caption hay, tinh chỉnh văn phong bài viết, sửa lỗi ngữ pháp.
-                    - 🏷️ **Hashtag:** Gợi ý hashtag thịnh hành, chuẩn SEO mạng xã hội theo từng chủ đề.
-                    - 💬 **Gợi ý bình luận:** Phản hồi thông minh, tích cực và tự nhiên.
-                    - 📖 **Học tập & Đồ án:** Hướng dẫn làm đồ án, bảo vệ khóa luận, giải đáp công nghệ & lập trình.
+                    Tôi hiểu rằng giai đoạn này có rất nhiều deadline, bài vở và áp lực đang đè nặng lên vai bạn. Nhưng hãy nhớ rằng:
+                    - ☕ **Bạn đã rất nỗ lực:** Dành cho bản thân 15-30 phút nghỉ ngơi thật sự, uống một tách trà ấm hoặc nghe một bản nhạc nhẹ nhàng.
+                    - 🎯 **Chia nhỏ vấn đề:** Thay vì nhìn cả một ngọn núi việc, hãy chọn ra đúng **1 việc nhỏ nhất** và hoàn thành nó trước.
+                    - 🌈 **Mọi thử thách đều sẽ qua:** Cảm giác mệt mỏi này chỉ là tạm thời, những kiến thức và sự kiên trì bạn tích lũy hôm nay sẽ là hành trang vô giá cho tương lai.
                     
-                    Bạn hãy nhập câu hỏi hoặc bấm vào các gợi ý nhanh bên dưới để bắt đầu nhé! 🚀
+                    Hít thở một hơi thật sâu nào! Nếu bạn cần tôi hỗ trợ tóm tắt tài liệu, viết dàn ý bài hay đơn giản là trò chuyện giải tỏa, tôi luôn ở đây đồng hành cùng bạn nhé! 💙
                     """;
         }
 
-        // 8. Phản hồi chung, chuyên nghiệp
-        return String.format("""
-                Cảm ơn câu hỏi của bạn về: **"%s"** ✨
-                
-                Dưới đây là một số thông tin và gợi ý hữu ích:
-                - 🎯 **Trọng tâm:** Bạn có thể áp dụng các giải pháp thực tế, bám sát mục tiêu học tập và chia sẻ tích cực trên cộng đồng.
-                - 💡 **Ý tưởng phát triển:** Đừng ngần ngại chia sẻ quan điểm của bạn trên bảng tin KLTN Social kèm hashtag phù hợp để kết nối thêm nhiều bạn bè có cùng sở thích.
-                - 🤝 **Hỗ trợ thêm:** Bạn có thể yêu cầu tôi viết caption, gợi ý hashtag hoặc hỗ trợ kỹ thuật chi tiết hơn về chủ đề này!
-                """, message);
+        // 9. Lời cảm ơn
+        if (containsAny(normalized, "cam on", "thank", "tuyet voi", "hay qua", "gioi qua", "ok cam on")) {
+            return """
+                    Rất vui vì đã giúp ích được cho bạn! 😊✨
+                    
+                    Chúc bạn học tập hiệu quả, làm việc nhiều cảm hứng và có những trải nghiệm thật tuyệt vời trên KLTN Social. Bất cứ khi nào cần hỗ trợ, cứ nhắn cho tôi nhé! 🚀
+                    """;
+        }
+
+        // 10. Phản hồi thông minh, chuyên sâu và cá nhân hóa cho câu hỏi tự do
+        return generateContextualAssistance(message, normalized);
     }
 
     private String generateCaptionsForChat(String normalized) {
@@ -470,6 +508,166 @@ public class SmartAssistantEngine {
         private int engagementScore;
         private String vibe;
         private List<String> suggestions;
+    }
+
+    private String getDynamicGreeting(String lower) {
+        LocalTime now = LocalTime.now();
+        String timeGreeting;
+        if (now.getHour() < 12) {
+            timeGreeting = "Chào buổi sáng tốt lành! ☀️";
+        } else if (now.getHour() < 18) {
+            timeGreeting = "Chào buổi chiều tràn đầy năng lượng! 🌤️";
+        } else {
+            timeGreeting = "Chào buổi tối ấm áp! 🌙";
+        }
+
+        String[] greetings = new String[]{
+                timeGreeting + " Tôi là **Trợ lý AI KLTN Social**. Hôm nay tôi có thể hỗ trợ gì cho bạn trong việc học tập, lập trình hay sáng tạo bài viết?",
+                "Xin chào bạn! ✨ Rất vui được đồng hành cùng bạn hôm nay. Bạn đang cần tìm ý tưởng viết bài, gợi ý caption hay hỗ trợ đồ án?",
+                "Hello bạn! 👋 Chúc bạn một ngày học tập và làm việc thật hiệu quả. Đang có câu hỏi kỹ thuật hay cần tóm tắt nội dung gì cứ thoải mái nhắn cho tôi nhé!",
+                timeGreeting + " Trợ lý AI KLTN Social luôn sẵn sàng giải đáp và cùng bạn chia sẻ mọi ý tưởng sáng tạo!"
+        };
+
+        return greetings[Math.abs(lower.hashCode()) % greetings.length];
+    }
+
+    private String generateContextualAssistance(String message, String normalized) {
+        // Database & SQL
+        if (containsAny(normalized, "sql", "database", "co so du lieu", "index", "khoa chinh", "query", "postgresql", "mysql")) {
+            return """
+                    🗄️ **Tối ưu Cơ sở dữ liệu & Truy vấn SQL:**
+                    
+                    1. **Đánh Index hợp lý:**
+                       - Tạo Index trên các cột thường xuyên xuất hiện trong mệnh đề `WHERE`, `JOIN` và `ORDER BY`.
+                       - Tránh đánh Index tràn lan trên các bảng có tần suất ghi (`INSERT`/`UPDATE`) rất cao.
+                    2. **Tránh N+1 Query:**
+                       - Trong JPA/Hibernate, sử dụng `JOIN FETCH` hoặc `@EntityGraph` để nạp dữ liệu quan hệ trong 1 truy vấn duy nhất.
+                    3. **Phân trang hiệu quả:**
+                       - Dùng Keyset Pagination (Seek method) thay cho `OFFSET/LIMIT` lớn khi dữ liệu lên tới hàng trăm nghìn bản ghi.
+                    
+                    Bạn đang cần tối ưu câu truy vấn cụ thể nào? Hãy gửi để tôi phân tích nhé!
+                    """;
+        }
+
+        // Security & Authentication
+        if (containsAny(normalized, "cookie", "token", "jwt", "bao mat", "security", "xss", "csrf", "localstorage", "auth")) {
+            return """
+                    🔒 **Kiến trúc Bảo mật & Quản lý Token chuẩn sản xuất:**
+                    
+                    - **Access Token:** Có thời hạn ngắn (ví dụ: 15 phút), lưu trong memory (State/Context) của ứng dụng Frontend để chống XSS.
+                    - **Refresh Token:** Lưu trữ an toàn trong `HttpOnly; Secure; SameSite=Strict` Cookie, ngăn chặn hoàn toàn việc đánh cắp token qua JavaScript/LocalStorage.
+                    - **Silent Refresh:** Khi Access Token hết hạn, tự động gọi API `/auth/refresh` bằng Cookie để cấp mới Access Token mà người dùng không bị gián đoạn trải nghiệm.
+                    
+                    Bạn đang muốn tìm hiểu sâu hơn về luồng xác thực nào?
+                    """;
+        }
+
+        // Học tập & Nghiên cứu khoa học
+        if (containsAny(normalized, "nghien cuu", "tai lieu", "viet bao", "khoa luan", "de tai", "thao luan")) {
+            return """
+                    📚 **Phương pháp Nghiên cứu & Hoàn thiện Đề tài:**
+                    
+                    - **Xác định bài toán cốt lõi:** Làm rõ khoảng trống nghiên cứu (Research Gap) và tính cấp thiết của đề tài.
+                    - **Khảo sát tài liệu:** Tìm kiếm các bài báo trên IEEE Xplore, ScienceDirect, Google Scholar trong 3-5 năm gần nhất.
+                    - **Minh chứng thực nghiệm:** Chuẩn bị bộ dữ liệu thử nghiệm rõ ràng, so sánh hiệu năng trước và sau khi áp dụng giải pháp.
+                    
+                    Cứ đặt câu hỏi chi tiết về đề tài của bạn, tôi sẽ cùng bạn phân tích nhé!
+                    """;
+        }
+
+        // Câu hỏi mở chung
+        return String.format("""
+                💡 **Về vấn đề bạn đang quan tâm:**
+                
+                *"%s"*
+                
+                Để giải quyết bài toán này một cách tối ưu và nhanh chóng nhất:
+                - 🎯 **Trọng tâm:** Xác định rõ mục tiêu đầu ra và các ràng buộc cụ thể của hệ thống/yêu cầu.
+                - 🚀 **Các bước tiếp cận:** Bắt đầu từ nguyên mẫu đơn giản nhất (MVP), kiểm thử tính khả thi rồi mở rộng từng bước.
+                - 🛠️ **Công cụ hỗ trợ:** Bạn có thể kết hợp các tính năng AI của KLTN Social (gợi ý caption, phân tích bài viết, tóm tắt tin nhắn) để tăng tốc độ xử lý.
+                
+                Hãy chia sẻ thêm chi tiết nếu bạn muốn tôi đi sâu vào khía cạnh cụ thể nhé! ✨
+                """, message);
+    }
+
+    /**
+     * Tóm tắt cuộc trò chuyện (tin nhắn chưa đọc kèm hình ảnh) - Fallback thông minh
+     */
+    public MessageSummaryDto.SummarizeMessagesResponse summarizeMessages(
+            String conversationName,
+            Boolean isGroup,
+            List<MessageSummaryDto.MessageItem> messages) {
+
+        if (messages == null || messages.isEmpty()) {
+            return MessageSummaryDto.SummarizeMessagesResponse.builder()
+                    .summary("Hiện tại không có tin nhắn mới nào cần tóm tắt.")
+                    .mediaDescription("Không có tệp đính kèm nào.")
+                    .actionItems(Collections.emptyList())
+                    .messageCount(0)
+                    .imageCount(0)
+                    .build();
+        }
+
+        int totalMessages = messages.size();
+        int imageCount = 0;
+        List<String> imageHints = new ArrayList<>();
+        List<String> actionItems = new ArrayList<>();
+        Set<String> participants = new LinkedHashSet<>();
+
+        for (MessageSummaryDto.MessageItem item : messages) {
+            if (item.getSenderName() != null && !item.getSenderName().isBlank()) {
+                participants.add(item.getSenderName());
+            }
+
+            String text = item.getText() != null ? item.getText() : "";
+            String media = item.getMediaUrl() != null ? item.getMediaUrl() : "";
+
+            boolean isImage = (media.contains(".jpg") || media.contains(".jpeg") || media.contains(".png") || media.contains(".webp") || media.contains("images"))
+                    || (text.startsWith("http") && (text.contains(".jpg") || text.contains(".jpeg") || text.contains(".png") || text.contains(".webp")));
+
+            if (isImage) {
+                imageCount++;
+                imageHints.add(String.format("Ảnh do %s gửi lúc %s",
+                        item.getSenderName() != null ? item.getSenderName() : "thành viên",
+                        item.getTime() != null ? item.getTime() : "vừa xong"));
+            }
+
+            // Tìm kiếm các việc cần làm, lịch hẹn, deadline trong tin nhắn
+            String lower = text.toLowerCase();
+            String normal = normalizer.normalize(lower);
+            if (containsAny(normal, "deadline", "han chot", "nop bai", "hop", "gap nhau", "gui file", "sua lai", "check giup", "xem giup", "kiem tra", "demo", "thuyet trinh")) {
+                String senderPrefix = item.getSenderName() != null ? item.getSenderName() + ": " : "";
+                actionItems.add(senderPrefix + text);
+            }
+        }
+
+        if (actionItems.size() > 5) {
+            actionItems = actionItems.subList(0, 5);
+        }
+
+        String convTitle = (conversationName != null && !conversationName.isBlank()) ? conversationName : (Boolean.TRUE.equals(isGroup) ? "Nhóm chat" : "Cuộc trò chuyện");
+        String membersStr = participants.isEmpty() ? "các thành viên" : String.join(", ", participants);
+
+        String summaryText = String.format(
+                "Trong %d tin nhắn gần nhất của cuộc trò chuyện '%s' giữa %s: Các thành viên đã trao đổi về tiến độ công việc, chia sẻ thông tin và cập nhật tài liệu quan trọng.",
+                totalMessages, convTitle, membersStr
+        );
+
+        String mediaDesc = imageCount > 0
+                ? String.format("Cuộc trò chuyện có %d hình ảnh đính kèm (%s).", imageCount, String.join("; ", imageHints.stream().limit(3).toList()))
+                : "Không có hình ảnh đính kèm trong loạt tin nhắn này.";
+
+        if (actionItems.isEmpty()) {
+            actionItems.add("Tiếp tục theo dõi cuộc trò chuyện để cập nhật thêm thông tin.");
+        }
+
+        return MessageSummaryDto.SummarizeMessagesResponse.builder()
+                .summary(summaryText)
+                .mediaDescription(mediaDesc)
+                .actionItems(actionItems)
+                .messageCount(totalMessages)
+                .imageCount(imageCount)
+                .build();
     }
 
     private boolean containsAny(String source, String... targets) {

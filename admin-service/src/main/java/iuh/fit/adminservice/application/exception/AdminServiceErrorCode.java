@@ -10,10 +10,10 @@ import lombok.experimental.FieldDefaults;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public enum AdminServiceErrorCode implements BaseError {
-    RESOURCE_NOT_FOUND(404, "Resource not found", 404),
-    REPORT_NOT_FOUND(404, "Report not found", 404),
-    REPORT_ALREADY_SUBMITTED(400, "You have already submitted a pending report for this item", 400),
-    UNAUTHORIZED(401, "Unauthorized access", 401);
+    RESOURCE_NOT_FOUND(404, "Không tìm thấy tài nguyên yêu cầu", 404),
+    REPORT_NOT_FOUND(404, "Không tìm thấy thông tin báo cáo", 404),
+    REPORT_ALREADY_SUBMITTED(400, "Bạn đã gửi báo cáo cho nội dung này rồi và đang chờ quản trị viên xem xét.", 400),
+    UNAUTHORIZED(401, "Bạn không có quyền truy cập", 401);
 
     int code;
     String message;

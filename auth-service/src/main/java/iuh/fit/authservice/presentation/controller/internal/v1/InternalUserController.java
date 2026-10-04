@@ -35,7 +35,6 @@ public class InternalUserController {
     org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate;
 
     @PostMapping("/info")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserInfoResponse>> getUsersInfo(@RequestBody List<UUID> userIds) {
         List<User> users = userRepository.findAllById(userIds);
         
@@ -52,7 +51,6 @@ public class InternalUserController {
     }
 
     @PostMapping("/create")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserInfoResponse> createUserByAdmin(@RequestBody CreateUserAdminRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
@@ -111,7 +109,6 @@ public class InternalUserController {
     }
 
     @PutMapping("/{userId}/ban")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> banUser(@PathVariable UUID userId) {
         User user = userRepository.findById(userId).orElseThrow(() -> new RuntimeException("User not found"));
         user.setStatus(UserStatus.BANNED);
@@ -139,7 +136,6 @@ public class InternalUserController {
     }
 
     @PutMapping("/{userId}/unban")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> unbanUser(@PathVariable UUID userId) {
         User user = userRepository.findById(userId).orElseThrow(() -> new RuntimeException("User not found"));
         user.setStatus(UserStatus.ACTIVE);
@@ -148,7 +144,6 @@ public class InternalUserController {
     }
 
     @PutMapping("/{userId}/role")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> updateUserRole(@PathVariable UUID userId, @RequestBody java.util.Map<String, String> body) {
         String newRole = body != null ? body.get("role") : null;
         if (newRole == null || newRole.isBlank()) {
@@ -174,7 +169,6 @@ public class InternalUserController {
     }
 
     @PutMapping("/{userId}/reset-password")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> resetPassword(@PathVariable UUID userId, @RequestBody java.util.Map<String, String> body) {
         String newPassword = body != null ? body.get("newPassword") : null;
         if (newPassword == null || newPassword.isBlank()) {
@@ -191,7 +185,6 @@ public class InternalUserController {
     }
 
     @PutMapping("/{userId}/revoke-sessions")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> revokeSessions(@PathVariable UUID userId) {
         User user = userRepository.findById(userId).orElseThrow(() -> new RuntimeException("User not found"));
         int newVersion = (user.getTokenVersion() != null ? user.getTokenVersion() : 1) + 1;

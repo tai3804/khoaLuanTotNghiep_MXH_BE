@@ -55,14 +55,22 @@ public class ProcessReportCommandHandler {
                 .build();
         moderationLogRepository.save(log);
 
-        if ((command.getAction() == ModerationAction.DELETE_POST || command.getAction() == ModerationAction.HIDE_POST || command.getAction() == ModerationAction.RESTORE_POST)
-                && report.getTargetType() == TargetType.POST) {
-            moderationEventPublisher.publishPostModerated(
-                    report.getTargetId(),
-                    command.getAction().name(),
-                    report.getReason().name(),
-                    command.getModeratorId()
-            );
+        if (report.getTargetType() == TargetType.POST) {
+            if (command.getAction() == ModerationAction.DELETE_POST || command.getAction() == ModerationAction.HIDE_POST) {
+                moderationEventPublisher.publishPostModerated(
+                        report.getTargetId(),
+                        command.getAction().name(),
+                        report.getReason().name(),
+                        command.getModeratorId()
+                );
+            } else if (command.getAction() == ModerationAction.RESTORE_POST || command.getAction() == ModerationAction.DISMISS) {
+                moderationEventPublisher.publishPostModerated(
+                        report.getTargetId(),
+                        "RESTORE_POST",
+                        report.getReason().name(),
+                        command.getModeratorId()
+                );
+            }
         }
         if (command.getAction() == ModerationAction.DELETE_COMMENT && report.getTargetType() == TargetType.COMMENT) {
             moderationEventPublisher.publishCommentModerated(

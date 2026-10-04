@@ -26,4 +26,6 @@ public interface ReportRepository extends BaseJpaRepository<Report, UUID> {
     List<Report> findByReporterIdOrderByCreatedAtDesc(UUID reporterId);
 
     long countByStatus(ReportStatus status);
+
+    long countByTargetTypeAndTargetIdAndStatus(TargetType targetType, UUID targetId, ReportStatus status);
 }

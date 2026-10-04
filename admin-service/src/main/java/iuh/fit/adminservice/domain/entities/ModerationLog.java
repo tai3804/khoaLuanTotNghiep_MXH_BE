@@ -25,8 +25,7 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ModerationLog extends BaseEntity {
 
-    @NotNull(message = "Moderator ID is required")
-    @Column(name = "moderator_id", nullable = false)
+    @Column(name = "moderator_id")
     UUID moderatorId;
 
     @NotNull(message = "Target type is required")

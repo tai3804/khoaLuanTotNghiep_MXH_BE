@@ -10,12 +10,12 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public enum ErrorCode implements BaseError {
 
-    UNCATEGORIZED_EXCEPTION(500, "Uncategorized error", 500),
-    INVALID_KEY(400, "Invalid key", 400),
-    UNAUTHENTICATED(401, "Unauthenticated", 401),
-    UNAUTHORIZED(403, "You do not have permission", 403),
-    NOT_FOUND(404, "Resource not found", 404),
-    INVALID_INPUT(400, "Invalid input data", 400);
+    UNCATEGORIZED_EXCEPTION(500, "Đã có lỗi xảy ra trong hệ thống. Vui lòng thử lại sau.", 500),
+    INVALID_KEY(400, "Khóa hoặc tham số không hợp lệ", 400),
+    UNAUTHENTICATED(401, "Phiên đăng nhập đã hết hạn hoặc chưa xác thực", 401),
+    UNAUTHORIZED(403, "Bạn không có quyền thực hiện thao tác này", 403),
+    NOT_FOUND(404, "Không tìm thấy tài nguyên yêu cầu", 404),
+    INVALID_INPUT(400, "Dữ liệu đầu vào không hợp lệ", 400);
 
     int code;
     String message;

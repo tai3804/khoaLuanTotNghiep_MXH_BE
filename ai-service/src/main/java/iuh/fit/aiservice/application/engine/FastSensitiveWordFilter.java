@@ -99,7 +99,7 @@ public class FastSensitiveWordFilter {
     }
 
     /**
-     * Quét nhanh văn bản qua 3 lớp chuẩn hóa: Gốc, Không dấu, và Xóa ký tự lách luật
+     * Quét nhanh văn bản qua các lớp chuẩn hóa: Gốc và Xóa ký tự lách luật
      */
     public FastScanResult scan(String rawText) {
         if (rawText == null || rawText.isBlank()) {
@@ -112,7 +112,12 @@ public class FastSensitiveWordFilter {
                     .build();
         }
 
-        String normalized = normalizer.normalize(rawText);
+        // Loại bỏ các tag mention @[Tên] hoặc @Tên khỏi chuỗi kiểm duyệt từ khóa thô để tránh chặn tên bạn bè
+        String textWithoutMentions = rawText
+                .replaceAll("@\\[[^\\]]+\\](?:\\([a-zA-Z0-9_\\-]+\\))?", " ")
+                .replaceAll("@[\\p{L}\\p{N}_]+", " ");
+
+        String normalized = normalizer.normalize(textWithoutMentions);
         String deObfuscated = normalizer.removeObfuscation(normalized);
         String noDiacritics = normalizer.removeDiacritics(deObfuscated);
 
@@ -124,13 +129,21 @@ public class FastSensitiveWordFilter {
         int mediumCount = 0;
 
         for (String word : activeWords) {
-            String wordNoDia = normalizer.removeDiacritics(word);
+            String cleanWord = word.toLowerCase().trim();
+            if (cleanWord.isEmpty()) {
+                continue;
+            }
 
-            // Kiểm tra khớp từ nguyên vẹn hoặc từ trong văn bản
-            if (containsWord(normalized, word) || containsWord(deObfuscated, word) || containsWord(noDiacritics, wordNoDia)) {
-                matched.add(word);
-                String severity = wordSeverityMap.getOrDefault(word, "MEDIUM");
-                String category = wordCategoryMap.getOrDefault(word, "PROFANITY");
+            String wordNoDia = normalizer.removeDiacritics(cleanWord);
+
+            // Kiểm tra khớp chính xác từ nguyên vẹn có dấu hoặc không dấu theo ranh giới từ độc lập
+            boolean matchedAccented = containsExactWord(normalized, cleanWord) || containsExactWord(deObfuscated, cleanWord);
+            boolean matchedUnaccented = wordNoDia.length() >= 4 && containsExactWord(noDiacritics, wordNoDia);
+
+            if (matchedAccented || matchedUnaccented) {
+                matched.add(cleanWord);
+                String severity = wordSeverityMap.getOrDefault(cleanWord, "MEDIUM");
+                String category = wordCategoryMap.getOrDefault(cleanWord, "PROFANITY");
 
                 if ("CRITICAL".equalsIgnoreCase(severity)) {
                     criticalCount++;
@@ -167,20 +180,26 @@ public class FastSensitiveWordFilter {
                 .build();
     }
 
-    private boolean containsWord(String text, String word) {
-        if (text == null || word == null || word.isEmpty()) return false;
-        // Kiểm tra chứa chính xác từ hoặc ranh giới từ
-        return text.contains(word) || Pattern.compile("\\b" + Pattern.quote(word) + "\\b", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(text).find();
+    /**
+     * Kiểm tra khớp từ độc lập theo ranh giới từ Unicode (Lookaround boundary)
+     * Tránh lỗi substring matching (ví dụ "điềm", "điểm" bị dính "đĩ", hay "giáo dục" bị dính "đụ").
+     */
+    private boolean containsExactWord(String text, String word) {
+        if (text == null || word == null || word.trim().isEmpty()) return false;
+        try {
+            String escapedWord = Pattern.quote(word.trim());
+            Pattern pattern = Pattern.compile("(?<![\\p{L}\\p{Nd}])" + escapedWord + "(?![\\p{L}\\p{Nd}])", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
+            return pattern.matcher(text).find();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private String determineDefaultSeverity(String word) {
         if (word.contains("giết") || word.contains("bắn") || word.contains("sex") || word.contains("khiêu dâm")) {
             return "CRITICAL";
         }
-        if (word.contains("địt") || word.contains("cặc") || word.contains("lồn") || word.contains("đĩ")) {
-            return "HIGH";
-        }
-        return "MEDIUM";
+        return "HIGH";
     }
 
     @Data

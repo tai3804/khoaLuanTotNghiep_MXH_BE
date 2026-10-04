@@ -10,6 +10,8 @@ import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.chatservice.application.exception.ChatServiceErrorCode;
 import iuh.fit.chatservice.application.features.message.commands.delete_for_me.DeleteMessageForMeCommand;
 import iuh.fit.chatservice.application.features.message.commands.delete_for_me.DeleteMessageForMeHandler;
+import iuh.fit.chatservice.application.features.message.commands.edit_message.EditMessageCommand;
+import iuh.fit.chatservice.application.features.message.commands.edit_message.EditMessageCommandHandler;
 import iuh.fit.chatservice.application.features.message.commands.mark_as_read.MarkAsReadCommand;
 import iuh.fit.chatservice.application.features.message.commands.mark_as_read.MarkAsReadCommandHandler;
 import iuh.fit.chatservice.application.features.message.commands.recall_message.RecallMessageCommand;
@@ -22,9 +24,13 @@ import iuh.fit.chatservice.application.features.message.queries.get_messages.Get
 import iuh.fit.chatservice.application.features.message.queries.get_messages.GetMessagesResult;
 import iuh.fit.chatservice.application.features.message.queries.search_messages.SearchMessagesHandler;
 import iuh.fit.chatservice.application.features.message.queries.search_messages.SearchMessagesQuery;
+import iuh.fit.chatservice.domain.entities.Message;
 import iuh.fit.chatservice.presentation.constants.ApiConstants;
+import iuh.fit.chatservice.presentation.dto.request.EditMessageRequest;
 import iuh.fit.chatservice.presentation.dto.request.SendMessageRequest;
+import iuh.fit.chatservice.presentation.dto.response.EditMessageResponse;
 import iuh.fit.chatservice.presentation.dto.response.MessageResponse;
+import iuh.fit.chatservice.presentation.dto.response.RecallMessageResponse;
 import iuh.fit.chatservice.presentation.mapper.ChatPresentationMapper;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
@@ -49,6 +55,7 @@ import iuh.fit.chatservice.infrastructure.persistence.repository.ConversationMem
 public class MessageController {
 
     SendMessageCommandHandler sendMessageCommandHandler;
+    EditMessageCommandHandler editMessageCommandHandler;
     RecallMessageHandler recallMessageHandler;
     DeleteMessageForMeHandler deleteMessageForMeHandler;
     MarkAsReadCommandHandler markAsReadCommandHandler;
@@ -114,9 +121,54 @@ public class MessageController {
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "Search results retrieved successfully"));
     }
 
+    @PutMapping("/{messageId}")
+    @Operation(summary = "Edit message", description = "Edits the text content of a sent message (Only sender can edit)")
+    public ResponseEntity<ApiResponse<EditMessageResponse>> editMessage(
+            @PathVariable UUID conversationId,
+            @PathVariable UUID messageId,
+            @Valid @RequestBody EditMessageRequest request) {
+        UUID currentUserId = getCurrentUserId();
+        EditMessageCommand command = EditMessageCommand.builder()
+                .conversationId(conversationId)
+                .messageId(messageId)
+                .currentUserId(currentUserId)
+                .newContent(request.getContent())
+                .build();
+        Message updated = editMessageCommandHandler.handle(command);
+
+        EditMessageResponse response = EditMessageResponse.builder()
+                .messageId(updated.getId())
+                .conversationId(updated.getConversationId())
+                .content(updated.getContent())
+                .edited(updated.isEdited())
+                .updatedAt(updated.getUpdatedAt())
+                .build();
+
+        // Real-time broadcast to conversation topic
+        MessageResponse fullMsgResponse = MessageResponse.builder()
+                .messageId(updated.getId())
+                .conversationId(updated.getConversationId())
+                .senderId(updated.getSenderId())
+                .type(updated.getType())
+                .content(updated.getContent())
+                .mediaUrl(updated.getMediaUrl())
+                .replyToMessageId(updated.getReplyToMessageId())
+                .edited(updated.isEdited())
+                .deleted(updated.isDeleted())
+                .pinned(updated.isPinned())
+                .pinnedAt(updated.getPinnedAt())
+                .pinnedById(updated.getPinnedById())
+                .createdAt(updated.getCreatedAt())
+                .build();
+        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, fullMsgResponse);
+        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/edited", response);
+
+        return ResponseEntity.ok(ApiResponse.success(response, "Message edited successfully"));
+    }
+
     @DeleteMapping("/{messageId}/recall")
     @Operation(summary = "Recall message for everyone", description = "Recalls a message for everyone in the conversation (Only the sender can recall)")
-    public ResponseEntity<ApiResponse<Void>> recallMessage(
+    public ResponseEntity<ApiResponse<RecallMessageResponse>> recallMessage(
             @PathVariable UUID conversationId,
             @PathVariable UUID messageId) {
         UUID currentUserId = getCurrentUserId();
@@ -125,12 +177,37 @@ public class MessageController {
                 .messageId(messageId)
                 .currentUserId(currentUserId)
                 .build();
-        recallMessageHandler.handle(command);
+        Message recalled = recallMessageHandler.handle(command);
+
+        RecallMessageResponse response = RecallMessageResponse.builder()
+                .messageId(messageId)
+                .conversationId(conversationId)
+                .recalled(true)
+                .message("Message recalled successfully")
+                .build();
 
         // Broadcast recall event to WebSocket subscribers
         messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/recalled", messageId);
 
-        return ResponseEntity.ok(ApiResponse.success(null, "Message recalled for everyone"));
+        // Also broadcast full message with deleted=true so all clients update immediately
+        MessageResponse fullMsgResponse = MessageResponse.builder()
+                .messageId(recalled.getId())
+                .conversationId(recalled.getConversationId())
+                .senderId(recalled.getSenderId())
+                .type(recalled.getType())
+                .content(recalled.getContent())
+                .mediaUrl(recalled.getMediaUrl())
+                .replyToMessageId(recalled.getReplyToMessageId())
+                .edited(recalled.isEdited())
+                .deleted(true)
+                .pinned(recalled.isPinned())
+                .pinnedAt(recalled.getPinnedAt())
+                .pinnedById(recalled.getPinnedById())
+                .createdAt(recalled.getCreatedAt())
+                .build();
+        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, fullMsgResponse);
+
+        return ResponseEntity.ok(ApiResponse.success(response, "Message recalled for everyone"));
     }
 
     @DeleteMapping("/{messageId}/for-me")
@@ -151,7 +228,7 @@ public class MessageController {
 
     @DeleteMapping("/{messageId}")
     @Operation(summary = "Delete message (Legacy endpoint)", description = "Defaults to recalling message for everyone")
-    public ResponseEntity<ApiResponse<Void>> deleteMessage(
+    public ResponseEntity<ApiResponse<RecallMessageResponse>> deleteMessage(
             @PathVariable UUID conversationId,
             @PathVariable UUID messageId) {
         return recallMessage(conversationId, messageId);

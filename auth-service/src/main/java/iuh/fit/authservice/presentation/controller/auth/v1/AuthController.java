@@ -30,6 +30,8 @@ import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.commonframework.infrastructure.security.OtpUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -69,6 +71,7 @@ public class AuthController {
     OtpUtil otpUtil;
     KafkaTemplate<String, Object> kafkaTemplate;
     JwtUtil jwtUtil;
+    JwtDecoder jwtDecoder;
 
     @NonFinal
     @Value("${app.security.jwt.expiration.refresh-token}")
@@ -154,7 +157,7 @@ public class AuthController {
         LoginUserResult result = loginUserCommandHandler.handle(command);
         LoginUserResponse response = authPresentationMapper.toResponse(result);
 
-        if ("WEB".equalsIgnoreCase(clientType) && response.getRefreshToken() != null) {
+        if (response.getRefreshToken() != null) {
             ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
                     .httpOnly(true)
                     .secure(false)
@@ -178,8 +181,8 @@ public class AuthController {
             HttpServletResponse httpResponse) {
 
         String token = (request != null && request.getRefreshToken() != null && !request.getRefreshToken().isBlank())
-                ? request.getRefreshToken()
-                : cookieRefreshToken;
+                ? request.getRefreshToken().trim()
+                : (cookieRefreshToken != null ? cookieRefreshToken.trim() : null);
 
         RefreshTokenCommand command = RefreshTokenCommand.builder()
                 .refreshToken(token)
@@ -189,7 +192,7 @@ public class AuthController {
         RefreshTokenResult result = refreshTokenCommandHandler.handle(command);
         RefreshTokenResponse response = authPresentationMapper.toResponse(result);
 
-        if ("WEB".equalsIgnoreCase(clientType)) {
+        if (response.getRefreshToken() != null) {
             ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
                     .httpOnly(true)
                     .secure(false)
@@ -204,14 +207,41 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    @Operation(summary = "Logout user", description = "Revokes the current device token and logs the user out", security = @SecurityRequirement(name = "bearerAuth"))
-    public ResponseEntity<ApiResponse<Void>> logout(@Valid @RequestBody LogoutUserRequest request) {
-        LogoutUserCommand command = authPresentationMapper.toCommand(request);
+    @Operation(summary = "Logout user", description = "Revokes the current device token and clears the refresh token cookie")
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @RequestBody(required = false) LogoutUserRequest request,
+            @CookieValue(name = "refreshToken", required = false) String cookieRefreshToken,
+            HttpServletResponse httpResponse) {
+
         String userIdStr = jwtUtil.getCurrentUserId();
-        if (userIdStr != null) {
-            command.setUserId(UUID.fromString(userIdStr));
-            logoutUserCommandHandler.handle(command);
+        if (userIdStr == null && cookieRefreshToken != null && !cookieRefreshToken.isBlank()) {
+            try {
+                Jwt jwt = jwtDecoder.decode(cookieRefreshToken.trim());
+                userIdStr = jwt.getSubject();
+            } catch (Exception ignored) {}
         }
+
+        if (userIdStr != null && request != null && request.getDeviceFingerprint() != null && !request.getDeviceFingerprint().isBlank()) {
+            try {
+                LogoutUserCommand command = new LogoutUserCommand();
+                command.setUserId(UUID.fromString(userIdStr));
+                command.setDeviceFingerprint(request.getDeviceFingerprint());
+                logoutUserCommandHandler.handle(command);
+            } catch (Exception e) {
+                log.warn("Failed to revoke device session on logout: {}", e.getMessage());
+            }
+        }
+
+        // Always clear HttpOnly refreshToken cookie
+        ResponseCookie deleteCookie = ResponseCookie.from("refreshToken", "")
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(0)
+                .sameSite("Lax")
+                .build();
+        httpResponse.addHeader(HttpHeaders.SET_COOKIE, deleteCookie.toString());
+
         return ResponseEntity.ok(ApiResponse.success(null, MessageConstants.USER_LOGGED_OUT_SUCCESSFULLY));
     }
 }

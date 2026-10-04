@@ -13,6 +13,7 @@ public class UserResponse {
     private String id;
     private String userId;
     private String firstName;
+    private String middleName;
     private String lastName;
     private String fullName;
     private String email;

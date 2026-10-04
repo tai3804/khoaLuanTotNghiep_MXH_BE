@@ -19,6 +19,11 @@ public class PostPagedResponse {
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class PostSummary {
+        private String id;
         private String content;
+        private String createdAt;
+        private long likeCount;
+        private long commentCount;
+        private long shareCount;
     }
 }

@@ -32,9 +32,13 @@ public class AdminUserController {
         List<Map<String, Object>> response = profiles.stream().map(p -> {
             Map<String, Object> map = new HashMap<>();
             String uid = p.getUserId() != null ? p.getUserId().toString() : (p.getId() != null ? p.getId().toString() : "");
-            String firstName = p.getFirstName() != null ? p.getFirstName() : "";
-            String lastName = p.getLastName() != null ? p.getLastName() : "";
-            String fullName = (firstName + " " + lastName).trim();
+            String firstName = p.getFirstName() != null ? p.getFirstName().trim() : "";
+            String middleName = p.getMiddleName() != null ? p.getMiddleName().trim() : "";
+            String lastName = p.getLastName() != null ? p.getLastName().trim() : "";
+            List<String> nameParts = java.util.stream.Stream.of(lastName, middleName, firstName)
+                    .filter(s -> !s.isBlank())
+                    .toList();
+            String fullName = String.join(" ", nameParts).trim();
             if (fullName.isEmpty()) {
                 fullName = "Người dùng";
             }
@@ -42,6 +46,7 @@ public class AdminUserController {
             map.put("id", uid);
             map.put("userId", uid);
             map.put("firstName", firstName);
+            map.put("middleName", middleName);
             map.put("lastName", lastName);
             map.put("fullName", fullName);
             map.put("avatarUrl", p.getAvatarUrl());

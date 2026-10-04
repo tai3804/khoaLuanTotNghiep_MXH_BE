@@ -32,8 +32,8 @@ public class AdminPostController {
     private void checkAdminPermission() {
         List<String> roles = jwtUtil.getCurrentUserRoles();
         if (roles != null && !roles.isEmpty()) {
-            boolean isAdmin = roles.contains("ROLE_ADMIN") || roles.contains("ADMIN");
-            if (!isAdmin) {
+            boolean isAdminOrMod = roles.contains("ROLE_ADMIN") || roles.contains("ADMIN") || roles.contains("ROLE_MODERATOR") || roles.contains("MODERATOR");
+            if (!isAdminOrMod) {
                 log.warn("Access denied for non-admin user: {}", jwtUtil.getCurrentUserId());
                 throw new BusinessException(ErrorCode.UNAUTHORIZED);
             }

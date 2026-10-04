@@ -58,7 +58,11 @@ public class RefreshTokenCommandHandler {
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.USER_NOT_FOUND));
 
         if (iuh.fit.authservice.domain.enums.UserStatus.BANNED.equals(user.getStatus())) {
-            throw new BusinessException(AuthErrorCode.UNAUTHORIZED);
+            throw new BusinessException(AuthErrorCode.ACCOUNT_BANNED);
+        }
+
+        if (iuh.fit.authservice.domain.enums.UserStatus.LOCKED.equals(user.getStatus())) {
+            throw new BusinessException(AuthErrorCode.ACCOUNT_LOCKED);
         }
 
         // Validate tokenVersion

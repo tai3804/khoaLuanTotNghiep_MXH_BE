@@ -21,13 +21,16 @@ public class LogoutUserCommandHandler {
 
     @Transactional
     public void handle(LogoutUserCommand command) {
-        Device device = deviceRepository
+        if (command.getUserId() == null || command.getDeviceFingerprint() == null) {
+            return;
+        }
+
+        deviceRepository
                 .findByUserIdAndDeviceFingerprint(command.getUserId(), command.getDeviceFingerprint())
-                .orElseThrow(() -> new BusinessException(AuthErrorCode.DEVICE_NOT_FOUND));
-
-        device.setStatus(DeviceStatus.REVOKED);
-        device.setRefreshTokenHash(null);
-
-        deviceRepository.save(device);
+                .ifPresent(device -> {
+                    device.setStatus(DeviceStatus.REVOKED);
+                    device.setRefreshTokenHash(null);
+                    deviceRepository.save(device);
+                });
     }
 }

@@ -36,6 +36,7 @@ public class SharePostCommandHandler {
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 
         Post sharedPost = postFeatureMapper.toSharedPostEntity(command);
+        sharedPost.setOriginalPostId(originalPost.getId());
         if (sharedPost.getPrivacy() == null) {
             sharedPost.setPrivacy(PostPrivacy.PUBLIC);
         }

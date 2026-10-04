@@ -1,7 +1,9 @@
 package iuh.fit.commonframework.infrastructure.security;
 
+import iuh.fit.commonframework.infrastructure.cache.RedisCacheService;
 import lombok.AccessLevel;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -18,15 +20,17 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
-import java.security.interfaces.RSAPublicKey;
-import java.util.List;
-import java.util.UUID;
-
-import lombok.extern.slf4j.Slf4j;
-
-import iuh.fit.commonframework.infrastructure.cache.RedisCacheService;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
+
+import java.security.interfaces.RSAPublicKey;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Configuration
@@ -45,6 +49,7 @@ public class SecurityConfig {
                         "/api/v1/auth/register",
                         "/api/v1/auth/register/**",
                         "/api/v1/auth/refresh",
+                        "/api/v1/auth/logout",
                         "/api/v1/auth/password/forgot",
                         "/api/v1/auth/password/reset",
                         "/api/v1/auth/mfa/verify",
@@ -55,6 +60,8 @@ public class SecurityConfig {
                         "/api/v1/posts",
                         "/api/v1/posts/**",
                         "/api/v1/media/files/**",
+                        "/api/v1/admin/settings/public",
+                        "/api/v1/admin/settings/public/**",
                         "/api/v1/ai/**",
                         "/ws-chat",
                         "/ws-chat/**",
@@ -125,18 +132,62 @@ public class SecurityConfig {
         }
 
         /**
-         * Cấu hình JwtAuthenticationConverter để map claim "roles" thành các quyền hạn Spring Security
-         * thêm tiền tố "ROLE_".
+         * Cấu hình JwtAuthenticationConverter để map claim "roles" và "permissions"
+         * thành các quyền hạn Spring Security (hỗ trợ cả tiền tố ROLE_ và không có ROLE_).
          */
         @Bean
         @ConditionalOnMissingBean(JwtAuthenticationConverter.class)
         public JwtAuthenticationConverter jwtAuthenticationConverter() {
-                JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
-                grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
-                grantedAuthoritiesConverter.setAuthorityPrefix(""); // Roles trong DB đã có tiền tố ROLE_
-
                 JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
-                jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
+                jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(jwt -> {
+                        Set<GrantedAuthority> authorities = new HashSet<>();
+
+                        // 1. Extract and map "roles" claim
+                        Object rolesObj = jwt.getClaim("roles");
+                        if (rolesObj instanceof Collection<?> rolesList) {
+                                for (Object r : rolesList) {
+                                        if (r != null) {
+                                                String roleStr = r.toString().trim();
+                                                if (!roleStr.isEmpty()) {
+                                                        if (roleStr.startsWith("ROLE_")) {
+                                                                authorities.add(new SimpleGrantedAuthority(roleStr));
+                                                                authorities.add(new SimpleGrantedAuthority(roleStr.substring(5)));
+                                                        } else {
+                                                                authorities.add(new SimpleGrantedAuthority("ROLE_" + roleStr));
+                                                                authorities.add(new SimpleGrantedAuthority(roleStr));
+                                                        }
+                                                }
+                                        }
+                                }
+                        }
+
+                        // 2. Extract and map "permissions" claim
+                        Object permissionsObj = jwt.getClaim("permissions");
+                        if (permissionsObj instanceof Collection<?> permsList) {
+                                for (Object p : permsList) {
+                                        if (p != null) {
+                                                String permStr = p.toString().trim();
+                                                if (!permStr.isEmpty()) {
+                                                        authorities.add(new SimpleGrantedAuthority(permStr));
+                                                }
+                                        }
+                                }
+                        }
+
+                        // 3. Fallback for "scope" or "scp" claim if roles is empty
+                        if (authorities.isEmpty()) {
+                                Object scopeObj = jwt.getClaim("scope");
+                                if (scopeObj instanceof String scopeStr) {
+                                        for (String s : scopeStr.split(" ")) {
+                                                if (!s.isBlank()) {
+                                                        authorities.add(new SimpleGrantedAuthority("SCOPE_" + s));
+                                                }
+                                        }
+                                }
+                        }
+
+                        return authorities;
+                });
                 return jwtAuthenticationConverter;
         }
 }

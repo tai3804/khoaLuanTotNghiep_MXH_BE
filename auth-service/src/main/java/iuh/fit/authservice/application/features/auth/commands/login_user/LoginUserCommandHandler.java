@@ -46,12 +46,16 @@ public class LoginUserCommandHandler {
         User user = userRepository.findByEmail(command.getEmail())
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_CREDENTIALS));
 
-        if (!passwordEncoder.matches(command.getPassword(), user.getPassword())) {
-            throw new BusinessException(AuthErrorCode.INVALID_CREDENTIALS);
-        }
-
         if (UserStatus.BANNED.equals(user.getStatus())) {
             throw new BusinessException(AuthErrorCode.ACCOUNT_BANNED);
+        }
+
+        if (UserStatus.LOCKED.equals(user.getStatus())) {
+            throw new BusinessException(AuthErrorCode.ACCOUNT_LOCKED);
+        }
+
+        if (!passwordEncoder.matches(command.getPassword(), user.getPassword())) {
+            throw new BusinessException(AuthErrorCode.INVALID_CREDENTIALS);
         }
 
         if (user.isMfaEnabled()) {
