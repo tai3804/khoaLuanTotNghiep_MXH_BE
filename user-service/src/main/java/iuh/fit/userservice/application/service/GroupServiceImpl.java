@@ -180,8 +180,10 @@ public class GroupServiceImpl implements GroupService {
 
     @Override @Transactional
     public void removeMember(UUID groupId, UUID memberId, boolean ban, UUID currentUserId) {
-        requireModerator(groupId, currentUserId); Group group = findGroup(groupId); GroupMember member = getMember(groupId, memberId);
+        GroupMember actor = requireModerator(groupId, currentUserId); Group group = findGroup(groupId); GroupMember member = getMember(groupId, memberId);
         if (member.getUserId().equals(group.getCreatorId())) throw new BusinessException(UserServiceErrorCode.UNAUTHORIZED);
+        // A group moderator cannot remove an administrator; this protects the role hierarchy.
+        if (member.getRole() == GroupRole.ADMIN && actor.getRole() != GroupRole.ADMIN) throw new BusinessException(UserServiceErrorCode.UNAUTHORIZED);
         if (member.getStatus() == GroupMemberStatus.APPROVED) increment(group, -1);
         if (ban) {
             member.setStatus(GroupMemberStatus.BANNED);
@@ -257,6 +259,8 @@ public class GroupServiceImpl implements GroupService {
                     .groupId(groupId)
                     .member(memberships.containsKey(groupId))
                     .publicGroup(group != null && group.getPrivacy() == GroupPrivacy.PUBLIC)
+                    .role(memberships.containsKey(groupId) ? memberships.get(groupId).getRole() : null)
+                    .postApprovalRequired(group != null && group.isPostApprovalRequired())
                     .build();
         }).toList();
     }

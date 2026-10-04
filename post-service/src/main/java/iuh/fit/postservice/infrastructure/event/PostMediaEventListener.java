@@ -64,8 +64,12 @@ public class PostMediaEventListener {
             postMediaRepository.save(postMedia);
         }
 
-        post.setStatus(PostStatus.PUBLISHED);
+        // Media processing must not bypass a group's approval queue. A post that
+        // was awaiting review remains there after its files have been uploaded.
+        if (post.getStatus() != PostStatus.PENDING_APPROVAL) {
+            post.setStatus(PostStatus.PUBLISHED);
+        }
         postRepository.save(post);
-        log.info("Post {} successfully updated to PUBLISHED with {} media items", post.getId(), event.getMediaList().size());
+        log.info("Post {} media processing completed with status {} and {} media items", post.getId(), post.getStatus(), event.getMediaList().size());
     }
 }

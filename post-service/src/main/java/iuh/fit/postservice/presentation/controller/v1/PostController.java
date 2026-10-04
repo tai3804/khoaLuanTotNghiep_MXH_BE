@@ -35,6 +35,9 @@ import iuh.fit.postservice.application.features.post.queries.get_post_detail.Get
 import iuh.fit.postservice.application.features.post.queries.get_user_posts.GetUserPostsQuery;
 import iuh.fit.postservice.application.features.post.queries.get_user_posts.GetUserPostsQueryHandler;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
+import iuh.fit.postservice.domain.enums.PostStatus;
+import iuh.fit.postservice.domain.entities.Post;
+import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
 import iuh.fit.postservice.presentation.constants.ApiConstants;
 import iuh.fit.postservice.presentation.constants.MessageConstants;
 import iuh.fit.postservice.presentation.dto.request.CreatePostRequest;
@@ -82,6 +85,7 @@ public class PostController {
     PostPresentationMapper postPresentationMapper;
     JwtUtil jwtUtil;
     iuh.fit.postservice.infrastructure.persistence.repository.PostRepository postRepository;
+    UserConnectionClient userConnectionClient;
     CacheManager cacheManager;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -153,6 +157,41 @@ public class PostController {
         GetAllPostsQuery query = GetAllPostsQuery.builder().filter(groupFilter).viewerId(getOptionalCurrentUserId()).build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(query);
         return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(result), MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+    }
+
+    @GetMapping("/group/{groupId}/pending")
+    @Operation(summary = "Get pending group posts", description = "Only group administrators and moderators can review pending posts")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getPendingGroupPosts(@PathVariable UUID groupId) {
+        UUID viewerId = getCurrentUserId();
+        requireGroupModerator(groupId);
+        List<PostResponse> posts = postRepository
+                .findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(groupId, PostStatus.PENDING_APPROVAL)
+                .stream()
+                .map(post -> getPostDetailQueryHandler.handle(GetPostDetailQuery.builder().postId(post.getId()).viewerId(viewerId).build()))
+                .map(postPresentationMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success(posts, "Pending group posts retrieved successfully"));
+    }
+
+    @PatchMapping("/{postId}/group-review")
+    @Operation(summary = "Approve or reject a pending group post", description = "Only group administrators and moderators can perform this action")
+    public ResponseEntity<ApiResponse<PostResponse>> reviewGroupPost(
+            @PathVariable UUID postId,
+            @RequestParam boolean approved) {
+        UUID viewerId = getCurrentUserId();
+        Post post = postRepository.findByIdAndDeletedFalse(postId)
+                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        if (post.getGroupId() == null) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        requireGroupModerator(post.getGroupId());
+        if (post.getStatus() != PostStatus.PENDING_APPROVAL) throw new BusinessException(ErrorCode.INVALID_INPUT);
+
+        post.setStatus(approved ? PostStatus.PUBLISHED : PostStatus.REJECTED);
+        postRepository.save(post);
+        clearPostCaches();
+        GetPostDetailResult result = getPostDetailQueryHandler.handle(
+                GetPostDetailQuery.builder().postId(postId).viewerId(viewerId).build());
+        return ResponseEntity.ok(ApiResponse.success(postPresentationMapper.toResponse(result),
+                approved ? "Post approved successfully" : "Post rejected successfully"));
     }
 
     @GetMapping("/{postId}")
@@ -303,6 +342,22 @@ public class PostController {
             return UUID.fromString(userIdStr);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private void requireGroupModerator(UUID groupId) {
+        try {
+            var response = userConnectionClient.getGroupFeedVisibility(List.of(groupId));
+            var membership = response == null || response.getData() == null ? null : response.getData().stream()
+                    .filter(item -> groupId.equals(item.groupId()) && item.member())
+                    .findFirst().orElse(null);
+            if (membership == null || !("ADMIN".equals(membership.role()) || "MODERATOR".equals(membership.role()))) {
+                throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+            }
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
     }
 
