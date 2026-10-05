@@ -3,6 +3,7 @@ package iuh.fit.postservice.domain.entities;
 import iuh.fit.commonframework.domain.entity.BaseEntity;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.domain.enums.PostStatus;
+import iuh.fit.postservice.domain.enums.ModerationAppealStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -84,4 +85,23 @@ public class Post extends BaseEntity {
     @Column(name = "is_archived", columnDefinition = "boolean default false")
     @Builder.Default
     boolean isArchived = false;
+
+    @Column(name = "moderation_action", length = 30)
+    String moderationAction;
+
+    @Column(name = "moderation_reason", length = 1000)
+    String moderationReason;
+
+    @Column(name = "moderated_by")
+    UUID moderatedBy;
+
+    @Column(name = "appeal_message", columnDefinition = "TEXT")
+    String appealMessage;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "appeal_status", length = 20)
+    ModerationAppealStatus appealStatus;
+
+    @Column(name = "appeal_review_note", columnDefinition = "TEXT")
+    String appealReviewNote;
 }

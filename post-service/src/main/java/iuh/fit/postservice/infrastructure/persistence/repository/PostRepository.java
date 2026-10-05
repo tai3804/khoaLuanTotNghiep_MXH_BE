@@ -22,9 +22,11 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     Page<Post> findByAuthorIdAndDeletedFalse(UUID authorId, Pageable pageable);
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedFalse(UUID authorId, Pageable pageable);
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedTrue(UUID authorId, Pageable pageable);
+    List<Post> findByGroupIdAndAppealStatusOrderByUpdatedAtDesc(UUID groupId, iuh.fit.postservice.domain.enums.ModerationAppealStatus appealStatus);
     Page<Post> findByDeletedFalse(Pageable pageable);
     Optional<Post> findByIdAndDeletedFalse(UUID id);
     List<Post> findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, PostStatus status);
+    List<Post> findByAppealStatusOrderByUpdatedAtDesc(iuh.fit.postservice.domain.enums.ModerationAppealStatus status);
 
     @Query("SELECT p FROM Post p JOIN p.hashtags h WHERE LOWER(h) = LOWER(:hashtag) AND p.deleted = false AND p.status = 'PUBLISHED' ORDER BY p.createdAt DESC")
     Page<Post> findByHashtag(@Param("hashtag") String hashtag, Pageable pageable);

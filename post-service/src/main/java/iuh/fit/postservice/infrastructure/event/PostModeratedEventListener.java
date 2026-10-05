@@ -9,7 +9,6 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
-
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.HashMap;
@@ -45,6 +44,11 @@ public class PostModeratedEventListener {
             } else {
                 post.setDeleted(true);
             }
+            if ("HIDE_POST".equals(event.getAction()) || "DELETE_POST".equals(event.getAction())) {
+                post.setModerationAction(event.getAction());
+                post.setModerationReason(event.getReason());
+                post.setModeratedBy(event.getModeratorId());
+            }
             postRepository.save(post);
             log.info("Successfully applied {} to moderated post: {}", event.getAction(), event.getPostId());
 
@@ -57,26 +61,35 @@ public class PostModeratedEventListener {
                     return;
                 }
 
+                String appealUrl = "/support-inbox?postId=" + post.getId();
+                String actorId = event.getModeratorId() == null ? null : event.getModeratorId().toString();
+
                 if ("HIDE_POST".equals(event.getAction()) && !wasArchived) {
                     sendModerationNotification(
                             post.getAuthorId(),
+                            actorId,
                             "Bài viết của bạn đã bị tạm ẩn",
-                            "Bài viết của bạn đã bị tạm ẩn: " + (event.getReason() != null ? event.getReason() : "Do nhận nhiều báo cáo vi phạm từ cộng đồng."),
-                            post.getId().toString()
+                            "Lý do: " + (event.getReason() != null ? event.getReason() : "Do nhận nhiều báo cáo vi phạm từ cộng đồng.") + ". Bạn có thể gửi kháng nghị để được xem xét lại.",
+                            post.getId().toString(),
+                            appealUrl
                     );
                 } else if ("DELETE_POST".equals(event.getAction()) && !wasDeleted) {
                     sendModerationNotification(
                             post.getAuthorId(),
+                            actorId,
                             "Bài viết của bạn đã bị gỡ bỏ",
-                            "Bài viết của bạn đã bị gỡ bỏ do vi phạm tiêu chuẩn cộng đồng: " + (event.getReason() != null ? event.getReason() : ""),
-                            post.getId().toString()
+                            "Lý do: " + (event.getReason() != null ? event.getReason() : "Vi phạm tiêu chuẩn cộng đồng") + ". Bạn có thể gửi kháng nghị để được xem xét lại.",
+                            post.getId().toString(),
+                            appealUrl
                     );
                 } else if (("RESTORE_POST".equals(event.getAction()) || "UNHIDE_POST".equals(event.getAction())) && (wasArchived || wasDeleted)) {
                     sendModerationNotification(
                             post.getAuthorId(),
+                            null,
                             "Bài viết của bạn đã được hiển thị lại",
                             "Bài viết của bạn đã được quản trị viên khôi phục hiển thị.",
-                            post.getId().toString()
+                            post.getId().toString(),
+                            "/posts/" + post.getId()
                     );
                 }
             }
@@ -85,16 +98,16 @@ public class PostModeratedEventListener {
         }
     }
 
-    private void sendModerationNotification(UUID recipientId, String title, String content, String targetId) {
+    private void sendModerationNotification(UUID recipientId, String actorId, String title, String content, String targetId, String targetUrl) {
         try {
             Map<String, Object> payload = new HashMap<>();
             payload.put("recipientId", recipientId.toString());
-            payload.put("actorId", null);
+            payload.put("actorId", actorId);
             payload.put("type", "SYSTEM");
             payload.put("title", title);
             payload.put("content", content);
             payload.put("targetId", targetId != null ? targetId : "");
-            payload.put("targetUrl", targetId != null ? "/posts/" + targetId : "");
+            payload.put("targetUrl", targetUrl != null ? targetUrl : "");
             payload.put("avatarUrl", "");
 
             kafkaTemplate.send("notification.in-app.send", payload);

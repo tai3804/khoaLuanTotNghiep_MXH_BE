@@ -56,10 +56,14 @@ import org.springframework.cache.CacheManager;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.List;
 import java.util.UUID;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import iuh.fit.postservice.domain.enums.ModerationAppealStatus;
 
 @RestController
 @RequestMapping(ApiConstants.POST_API)
@@ -87,6 +91,7 @@ public class PostController {
     iuh.fit.postservice.infrastructure.persistence.repository.PostRepository postRepository;
     UserConnectionClient userConnectionClient;
     CacheManager cacheManager;
+    KafkaTemplate<String, Object> kafkaTemplate;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(
@@ -193,6 +198,106 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.success(posts, "Pending group posts retrieved successfully"));
     }
 
+    @PostMapping("/{postId}/appeal")
+    @Operation(summary = "Appeal a moderation decision on own post")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> appealModeratedPost(
+            @PathVariable UUID postId, @org.springframework.web.bind.annotation.RequestBody Map<String, String> request) {
+        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        if (!getCurrentUserId().equals(post.getAuthorId())) throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+        if (post.getGroupId() != null) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        String message = request == null ? null : request.get("message");
+        if (message == null || message.isBlank()) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        // Historical moderation records may not have an action value. The post's
+        // hidden/deleted state is still a valid moderation decision to appeal.
+        if ((!post.isArchived() && !post.isDeleted() && post.getModerationAction() == null)
+                || post.getAppealStatus() == ModerationAppealStatus.PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        post.setAppealMessage(message.trim());
+        post.setAppealStatus(ModerationAppealStatus.PENDING);
+        post.setAppealReviewNote(null);
+        postRepository.save(post);
+        return ResponseEntity.ok(ApiResponse.success(appealView(post), "Appeal submitted successfully"));
+    }
+
+    @PostMapping("/{postId}/group-appeal")
+    @Operation(summary = "Appeal a group moderation decision")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> appealGroupPost(
+            @PathVariable UUID postId, @org.springframework.web.bind.annotation.RequestBody Map<String, String> request) {
+        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        if (post.getGroupId() == null || !getCurrentUserId().equals(post.getAuthorId()) || !post.isDeleted()) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        String message = request == null ? null : request.get("message");
+        if (message == null || message.isBlank() || post.getAppealStatus() == ModerationAppealStatus.PENDING) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        post.setAppealMessage(message.trim()); post.setAppealStatus(ModerationAppealStatus.PENDING); post.setAppealReviewNote(null);
+        postRepository.save(post);
+        return ResponseEntity.ok(ApiResponse.success(appealView(post), "Group appeal submitted successfully"));
+    }
+
+    @GetMapping("/group/{groupId}/my-appeals")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> myGroupAppeals(@PathVariable UUID groupId) {
+        UUID userId = getCurrentUserId();
+        List<Map<String, Object>> items = postRepository.findAll().stream().filter(post -> groupId.equals(post.getGroupId()) && userId.equals(post.getAuthorId()) && post.isDeleted() && post.getModerationAction() != null).map(this::appealView).toList();
+        return ResponseEntity.ok(ApiResponse.success(items, "My group appeals retrieved successfully"));
+    }
+
+    @GetMapping("/group/{groupId}/appeals")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> groupAppeals(@PathVariable UUID groupId) {
+        requireGroupModerator(groupId);
+        return ResponseEntity.ok(ApiResponse.success(postRepository.findByGroupIdAndAppealStatusOrderByUpdatedAtDesc(groupId, ModerationAppealStatus.PENDING).stream().map(this::appealView).toList(), "Group appeals retrieved successfully"));
+    }
+
+    @PatchMapping("/{postId}/group-appeal/review")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> reviewGroupAppeal(@PathVariable UUID postId, @RequestParam boolean approved, @org.springframework.web.bind.annotation.RequestBody(required = false) Map<String, String> request) {
+        UUID reviewerId = getCurrentUserId();
+        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        if (post.getGroupId() == null || post.getAppealStatus() != ModerationAppealStatus.PENDING) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        requireGroupModerator(post.getGroupId());
+        post.setAppealStatus(approved ? ModerationAppealStatus.ACCEPTED : ModerationAppealStatus.REJECTED);
+        post.setAppealReviewNote(request == null ? null : request.get("note"));
+        if (approved) { post.setDeleted(false); post.setArchived(false); post.setStatus(PostStatus.PUBLISHED); }
+        postRepository.save(post); clearPostCaches(); sendGroupAppealDecisionNotification(post, reviewerId, approved);
+        return ResponseEntity.ok(ApiResponse.success(appealView(post), approved ? "Group appeal accepted" : "Group appeal rejected"));
+    }
+
+    @GetMapping("/moderation-appeals/mine")
+    @Operation(summary = "Get current user's moderation appeals")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> myModerationAppeals() {
+        UUID userId = getCurrentUserId();
+        List<Map<String, Object>> appeals = postRepository.findAll().stream()
+                // Include historical posts that were hidden/deleted before appeal
+                // metadata was introduced, so their owners can still appeal.
+                .filter(post -> post.getGroupId() == null && userId.equals(post.getAuthorId()) && (post.getModerationAction() != null
+                        || post.isArchived() || post.isDeleted() || post.getAppealStatus() != null))
+                .sorted(java.util.Comparator.comparing(Post::getUpdatedAt, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .map(this::appealView).toList();
+        return ResponseEntity.ok(ApiResponse.success(appeals, "Moderation appeals retrieved successfully"));
+    }
+
+    @GetMapping("/moderation-appeals")
+    @Operation(summary = "Get pending moderation appeals for moderators")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> moderationAppeals() {
+        requireSystemModerator();
+        return ResponseEntity.ok(ApiResponse.success(postRepository.findByAppealStatusOrderByUpdatedAtDesc(ModerationAppealStatus.PENDING)
+                .stream().filter(post -> post.getGroupId() == null).map(this::appealView).toList(), "Pending moderation appeals retrieved successfully"));
+    }
+
+    @PatchMapping("/{postId}/appeal/review")
+    @Operation(summary = "Accept or reject a post moderation appeal")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> reviewModerationAppeal(
+            @PathVariable UUID postId, @RequestParam boolean approved, @org.springframework.web.bind.annotation.RequestBody(required = false) Map<String, String> request) {
+        UUID moderatorId = getCurrentUserId();
+        requireSystemModerator();
+        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        if (post.getAppealStatus() != ModerationAppealStatus.PENDING) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        post.setAppealStatus(approved ? ModerationAppealStatus.ACCEPTED : ModerationAppealStatus.REJECTED);
+        post.setAppealReviewNote(request == null ? null : request.get("note"));
+        if (approved) { post.setDeleted(false); post.setArchived(false); post.setStatus(PostStatus.PUBLISHED); }
+        postRepository.save(post);
+        clearPostCaches();
+        sendAppealDecisionNotification(post, moderatorId, approved);
+        return ResponseEntity.ok(ApiResponse.success(appealView(post), approved ? "Appeal accepted and post restored" : "Appeal rejected"));
+    }
+
     @PatchMapping("/{postId}/group-review")
     @Operation(summary = "Approve or reject a pending group post", description = "Only group administrators and moderators can perform this action")
     public ResponseEntity<ApiResponse<PostResponse>> reviewGroupPost(
@@ -212,6 +317,34 @@ public class PostController {
                 GetPostDetailQuery.builder().postId(postId).viewerId(viewerId).build());
         return ResponseEntity.ok(ApiResponse.success(postPresentationMapper.toResponse(result),
                 approved ? "Post approved successfully" : "Post rejected successfully"));
+    }
+
+    @DeleteMapping("/{postId}/group-moderation")
+    @Operation(summary = "Remove a group post", description = "Only an administrator or moderator of that group can remove a group post")
+    public ResponseEntity<ApiResponse<Void>> removeGroupPost(
+            @PathVariable UUID postId,
+            @RequestParam(required = false) String reason) {
+        UUID moderatorId = getCurrentUserId();
+        Post post = postRepository.findByIdAndDeletedFalse(postId)
+                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        if (post.getGroupId() == null) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        requireGroupModerator(post.getGroupId());
+
+        post.setDeleted(true);
+        post.setArchived(true);
+        post.setStatus(PostStatus.REJECTED);
+        post.setModeratedBy(moderatorId);
+        post.setModerationAction("DELETE_POST");
+        post.setModerationReason(reason == null || reason.isBlank()
+                ? "Bài viết không phù hợp với quy định của nhóm."
+                : reason.trim());
+        post.setAppealStatus(null);
+        post.setAppealMessage(null);
+        post.setAppealReviewNote(null);
+        postRepository.save(post);
+        clearPostCaches();
+        sendGroupPostRemovalNotification(post, moderatorId);
+        return ResponseEntity.ok(ApiResponse.success(null, "Group post removed successfully"));
     }
 
     @GetMapping("/{postId}")
@@ -379,6 +512,56 @@ public class PostController {
         } catch (Exception exception) {
             throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
+    }
+
+    private void requireSystemModerator() {
+        List<String> roles = jwtUtil.getCurrentUserRoles();
+        boolean allowed = roles != null && roles.stream().anyMatch(role -> "ADMIN".equalsIgnoreCase(role) || "ROLE_ADMIN".equalsIgnoreCase(role)
+                || "MODERATOR".equalsIgnoreCase(role) || "ROLE_MODERATOR".equalsIgnoreCase(role));
+        if (!allowed) throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+    }
+
+    private Map<String, Object> appealView(Post post) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("postId", post.getId()); view.put("authorId", post.getAuthorId()); view.put("content", post.getContent());
+        view.put("createdAt", post.getCreatedAt()); view.put("likeCount", post.getLikeCount());
+        view.put("commentCount", post.getCommentCount()); view.put("shareCount", post.getShareCount());
+        view.put("action", post.getModerationAction() == null ? (post.isArchived() ? "HIDE_POST" : "DELETE_POST") : post.getModerationAction());
+        view.put("reason", post.getModerationReason() == null ? "Nội dung đã bị kiểm duyệt" : post.getModerationReason());
+        view.put("appealMessage", post.getAppealMessage()); view.put("appealStatus", post.getAppealStatus());
+        view.put("reviewNote", post.getAppealReviewNote()); view.put("updatedAt", post.getUpdatedAt());
+        return view;
+    }
+
+    private void sendAppealDecisionNotification(Post post, UUID moderatorId, boolean approved) {
+        Map<String, Object> notification = new HashMap<>();
+        notification.put("recipientId", post.getAuthorId().toString()); notification.put("actorId", moderatorId.toString());
+        notification.put("type", "SYSTEM"); notification.put("title", approved ? "Kháng nghị đã được chấp nhận" : "Kháng nghị đã được xem xét");
+        notification.put("content", approved ? "Bài viết của bạn đã được khôi phục." : "Kháng nghị không được chấp nhận" + (post.getAppealReviewNote() == null ? "." : ": " + post.getAppealReviewNote()));
+        notification.put("targetId", post.getId().toString()); notification.put("targetUrl", "/support-inbox?postId=" + post.getId()); notification.put("avatarUrl", null);
+        kafkaTemplate.send("notification.in-app.send", notification);
+    }
+
+    private void sendGroupPostRemovalNotification(Post post, UUID moderatorId) {
+        Map<String, Object> notification = new HashMap<>();
+        notification.put("recipientId", post.getAuthorId().toString());
+        notification.put("actorId", moderatorId.toString());
+        notification.put("type", "SYSTEM");
+        notification.put("title", "Bài viết trong nhóm đã bị gỡ");
+        notification.put("content", "Lý do: " + post.getModerationReason());
+        notification.put("targetId", post.getId().toString());
+        notification.put("targetUrl", "/groups/" + post.getGroupId() + "?tab=appeals");
+        notification.put("avatarUrl", null);
+        kafkaTemplate.send("notification.in-app.send", notification);
+    }
+
+    private void sendGroupAppealDecisionNotification(Post post, UUID reviewerId, boolean approved) {
+        Map<String, Object> notification = new HashMap<>();
+        notification.put("recipientId", post.getAuthorId().toString()); notification.put("actorId", reviewerId.toString());
+        notification.put("type", "SYSTEM"); notification.put("title", approved ? "Kháng nghị nhóm đã được chấp nhận" : "Kháng nghị nhóm đã được xem xét");
+        notification.put("content", approved ? "Bài viết của bạn trong nhóm đã được khôi phục." : "Kháng nghị không được chấp nhận" + (post.getAppealReviewNote() == null ? "." : ": " + post.getAppealReviewNote()));
+        notification.put("targetId", post.getId().toString()); notification.put("targetUrl", "/groups/" + post.getGroupId() + "?tab=appeals"); notification.put("avatarUrl", null);
+        kafkaTemplate.send("notification.in-app.send", notification);
     }
 
     private void clearPostCaches() {
