@@ -16,9 +16,11 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     Page<Post> findByAuthorIdAndDeletedFalse(UUID authorId, Pageable pageable);
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedFalse(UUID authorId, Pageable pageable);
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedTrue(UUID authorId, Pageable pageable);
+    List<Post> findByGroupIdAndAppealStatusOrderByUpdatedAtDesc(UUID groupId, iuh.fit.postservice.domain.enums.ModerationAppealStatus appealStatus);
     Page<Post> findByDeletedFalse(Pageable pageable);
     Optional<Post> findByIdAndDeletedFalse(UUID id);
     List<Post> findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, iuh.fit.postservice.domain.enums.PostStatus status);
+    List<Post> findByAppealStatusOrderByUpdatedAtDesc(iuh.fit.postservice.domain.enums.ModerationAppealStatus status);
 
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.transaction.annotation.Transactional
