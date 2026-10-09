@@ -21,4 +21,5 @@ public interface SavedPostRepository extends BaseJpaRepository<SavedPost, UUID> 
     Page<SavedPost> findByUserIdAndCollectionNameOrderByCreatedAtDesc(UUID userId, String collectionName, Pageable pageable);
 
     void deleteByUserIdAndPostId(UUID userId, UUID postId);
+    long countByPostId(UUID postId);
 }

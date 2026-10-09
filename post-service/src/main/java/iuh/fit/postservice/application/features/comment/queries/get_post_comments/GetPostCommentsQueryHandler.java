@@ -36,8 +36,19 @@ public class GetPostCommentsQueryHandler {
             commentsPage = commentRepository.findByPostIdAndParentCommentIdIsNullAndDeletedFalse(query.getPostId(), pageable);
         }
 
+        java.util.Map<java.util.UUID, Long> authorCounts = commentsPage.getContent().stream()
+                .filter(c -> c.getAuthorId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(Comment::getAuthorId, java.util.stream.Collectors.counting()));
+
         List<CreateCommentResult> content = commentsPage.getContent().stream()
-                .map(commentFeatureMapper::toCreateResult)
+                .map(comment -> {
+                    CreateCommentResult res = commentFeatureMapper.toCreateResult(comment);
+                    if (res != null) {
+                        boolean topFan = (comment.getLikeCount() >= 2) || (authorCounts.getOrDefault(comment.getAuthorId(), 0L) >= 2);
+                        res.setTopFan(topFan);
+                    }
+                    return res;
+                })
                 .toList();
 
         return commentFeatureMapper.toPagedResponse(commentsPage, content);

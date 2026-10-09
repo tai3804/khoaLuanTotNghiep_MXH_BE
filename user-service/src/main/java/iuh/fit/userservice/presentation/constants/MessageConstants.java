@@ -15,4 +15,9 @@ public final class MessageConstants {
     public static final String USER_UNFOLLOWED = "User unfollowed successfully";
     public static final String UNFRIENDED = "Unfriended successfully";
     public static final String CONNECTIONS_RETRIEVED = "Connections retrieved successfully";
+
+    public static final String PROFILE_VIEW_RECORDED_SUCCESSFULLY = "Profile view recorded successfully";
+    public static final String PROFESSIONAL_MODE_UPDATED_SUCCESSFULLY = "Professional mode updated successfully";
+    public static final String PROFILE_VISITORS_RETRIEVED_SUCCESSFULLY = "Profile visitors retrieved successfully";
+    public static final String AUDIENCE_INSIGHTS_RETRIEVED_SUCCESSFULLY = "Audience insights retrieved successfully";
 }

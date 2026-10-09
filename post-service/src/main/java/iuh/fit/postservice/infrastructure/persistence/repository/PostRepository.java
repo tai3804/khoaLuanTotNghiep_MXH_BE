@@ -43,4 +43,15 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
             @Param("postId") UUID postId,
             @Param("authorId") UUID authorId,
             @Param("createdAt") LocalDateTime createdAt);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Post p SET p.viewCount = p.viewCount + 1 WHERE p.id = :postId AND p.deleted = false")
+    int incrementViewCount(@Param("postId") UUID postId);
+
+    List<Post> findByAuthorIdAndDeletedFalseOrderByCreatedAtDesc(UUID authorId);
+
+    List<Post> findByStatusAndScheduledPublishAtLessThanEqualAndDeletedFalse(PostStatus status, java.time.Instant now);
+
+    Page<Post> findByAuthorIdAndStatusAndDeletedFalseOrderByScheduledPublishAtAsc(UUID authorId, PostStatus status, Pageable pageable);
 }

@@ -77,6 +77,10 @@ public class Post extends BaseEntity {
     @Builder.Default
     long shareCount = 0;
 
+    @Column(name = "view_count", nullable = false)
+    @Builder.Default
+    long viewCount = 0;
+
     @Column(name = "is_pinned", columnDefinition = "boolean default false")
     @Builder.Default
     boolean isPinned = false;
@@ -84,4 +88,7 @@ public class Post extends BaseEntity {
     @Column(name = "is_archived", columnDefinition = "boolean default false")
     @Builder.Default
     boolean isArchived = false;
+
+    @Column(name = "scheduled_publish_at")
+    java.time.Instant scheduledPublishAt;
 }

@@ -81,4 +81,7 @@ public interface UserConnectionRepository extends JpaRepository<UserConnection, 
 
     @Query("SELECT c FROM UserConnection c WHERE (c.requesterId IN :userIds OR c.targetId IN :userIds) AND c.type = 'FRIEND' AND c.status = 'ACCEPTED'")
     List<UserConnection> findAllAcceptedFriendshipsForUserIds(@Param("userIds") java.util.Collection<UUID> userIds);
+
+    @Query("SELECT c FROM UserConnection c WHERE c.targetId = :userId AND c.type = 'FOLLOW' AND c.status = 'ACCEPTED'")
+    List<UserConnection> findAllAcceptedFollowers(@Param("userId") UUID userId);
 }

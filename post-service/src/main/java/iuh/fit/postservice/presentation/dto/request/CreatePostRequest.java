@@ -20,4 +20,5 @@ public class CreatePostRequest {
     UUID groupId;
     List<String> mediaUrls;
     Set<UUID> taggedUserIds;
+    java.time.Instant scheduledPublishAt;
 }

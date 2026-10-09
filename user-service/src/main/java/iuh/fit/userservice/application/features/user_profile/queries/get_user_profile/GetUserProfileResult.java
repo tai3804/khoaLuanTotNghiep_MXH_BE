@@ -36,6 +36,9 @@ public class GetUserProfileResult {
     Long friendCount;
     Boolean isOnline;
     Instant lastActiveAt;
+    Boolean isProfessionalMode;
+    String creatorCategory;
+    Long profileViewCount;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
 }

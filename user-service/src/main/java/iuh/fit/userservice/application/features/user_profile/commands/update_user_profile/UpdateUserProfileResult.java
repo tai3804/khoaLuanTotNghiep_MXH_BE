@@ -33,6 +33,9 @@ public class UpdateUserProfileResult {
     Long followerCount;
     Long followingCount;
     Long friendCount;
+    Boolean isProfessionalMode;
+    String creatorCategory;
+    Long profileViewCount;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
 }

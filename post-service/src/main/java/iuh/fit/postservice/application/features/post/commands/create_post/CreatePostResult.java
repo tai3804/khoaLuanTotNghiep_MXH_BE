@@ -29,10 +29,13 @@ public class CreatePostResult {
     long likeCount;
     long commentCount;
     long shareCount;
+    long viewCount;
     List<PostMedia> mediaList;
     Set<UUID> taggedUserIds;
     Set<String> hashtags;
     boolean isPinned;
     boolean isArchived;
+    boolean isTrending;
+    java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;
 }

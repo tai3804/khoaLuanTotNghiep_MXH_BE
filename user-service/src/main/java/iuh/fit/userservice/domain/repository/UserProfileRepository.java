@@ -26,4 +26,9 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> 
            "LOWER(COALESCE(p.middleName, '')) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(CONCAT(COALESCE(p.lastName, ''), ' ', COALESCE(p.middleName, ''), ' ', COALESCE(p.firstName, ''))) LIKE LOWER(CONCAT('%', :query, '%'))")
     Page<UserProfile> searchUsers(@Param("query") String query, Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("UPDATE UserProfile p SET p.profileViewCount = COALESCE(p.profileViewCount, 0) + 1 WHERE p.userId = :userId AND p.deleted = false")
+    int incrementProfileViewCount(@Param("userId") UUID userId);
 }

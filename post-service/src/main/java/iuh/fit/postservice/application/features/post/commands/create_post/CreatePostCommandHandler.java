@@ -107,6 +107,9 @@ public class CreatePostCommandHandler {
 
         if (requiresGroupApproval) {
             post.setStatus(PostStatus.PENDING_APPROVAL);
+        } else if (command.getScheduledPublishAt() != null && command.getScheduledPublishAt().isAfter(java.time.Instant.now())) {
+            post.setStatus(PostStatus.SCHEDULED);
+            post.setScheduledPublishAt(command.getScheduledPublishAt());
         } else if (hasFiles) {
             post.setStatus(PostStatus.PROCESSING);
         } else {

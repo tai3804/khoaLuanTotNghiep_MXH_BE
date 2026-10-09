@@ -10,6 +10,7 @@ import org.springframework.cache.annotation.EnableCaching;
 @EnableDiscoveryClient
 @EnableFeignClients
 @EnableCaching
+@org.springframework.scheduling.annotation.EnableScheduling
 public class PostServiceApplication {
 
     public static void main(String[] args) {

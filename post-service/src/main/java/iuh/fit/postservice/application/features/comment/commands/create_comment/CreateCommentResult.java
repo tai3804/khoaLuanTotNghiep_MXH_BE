@@ -24,5 +24,6 @@ public class CreateCommentResult {
     long likeCount;
     long replyCount;
     Set<UUID> taggedUserIds;
+    boolean isTopFan;
     LocalDateTime createdAt;
 }

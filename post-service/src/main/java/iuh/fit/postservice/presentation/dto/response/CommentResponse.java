@@ -23,5 +23,6 @@ public class CommentResponse {
     long likeCount;
     long replyCount;
     Set<UUID> taggedUserIds;
+    boolean isTopFan;
     LocalDateTime createdAt;
 }

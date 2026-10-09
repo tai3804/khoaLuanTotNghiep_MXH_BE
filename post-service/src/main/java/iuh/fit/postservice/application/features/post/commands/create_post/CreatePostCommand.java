@@ -24,4 +24,5 @@ public class CreatePostCommand {
     List<MultipartFile> files;
     List<String> mediaUrls;
     Set<UUID> taggedUserIds;
+    java.time.Instant scheduledPublishAt;
 }

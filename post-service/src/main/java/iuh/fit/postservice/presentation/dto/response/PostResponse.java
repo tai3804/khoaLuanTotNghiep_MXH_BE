@@ -27,11 +27,14 @@ public class PostResponse {
     long likeCount;
     long commentCount;
     long shareCount;
+    long viewCount;
     List<PostMediaResponse> mediaList;
     Set<UUID> taggedUserIds;
     Set<String> hashtags;
     boolean isPinned;
     boolean isArchived;
+    boolean isTrending;
+    java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
 }

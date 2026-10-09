@@ -92,4 +92,15 @@ public class UserProfile extends BaseEntity {
 
     @Column(name = "last_active_at")
     Instant lastActiveAt;
+
+    @Column(name = "is_professional_mode")
+    @Builder.Default
+    Boolean isProfessionalMode = false;
+
+    @Column(name = "creator_category", length = 100)
+    String creatorCategory;
+
+    @Column(name = "profile_view_count")
+    @Builder.Default
+    Long profileViewCount = 0L;
 }
