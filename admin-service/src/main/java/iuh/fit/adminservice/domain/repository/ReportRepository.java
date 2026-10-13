@@ -1,6 +1,7 @@
 package iuh.fit.adminservice.domain.repository;
 
 import iuh.fit.adminservice.domain.entities.Report;
+import iuh.fit.adminservice.domain.enums.ReportSource;
 import iuh.fit.adminservice.domain.enums.ReportStatus;
 import iuh.fit.adminservice.domain.enums.TargetType;
 import iuh.fit.commonframework.infrastructure.persistence.jpa.BaseJpaRepository;
@@ -19,11 +20,15 @@ public interface ReportRepository extends BaseJpaRepository<Report, UUID> {
 
     boolean existsByReporterIdAndTargetTypeAndTargetIdAndStatusIn(UUID reporterId, TargetType targetType, UUID targetId, Collection<ReportStatus> statuses);
 
+    boolean existsByTargetTypeAndTargetIdAndSourceAndStatusIn(TargetType targetType, UUID targetId, ReportSource source, Collection<ReportStatus> statuses);
+
     Page<Report> findByStatus(ReportStatus status, Pageable pageable);
 
     Page<Report> findByTargetTypeAndTargetId(TargetType targetType, UUID targetId, Pageable pageable);
 
     List<Report> findByReporterIdOrderByCreatedAtDesc(UUID reporterId);
+
+    boolean existsByTargetTypeAndTargetIdAndStatusInAndIdNot(TargetType targetType, UUID targetId, Collection<ReportStatus> statuses, UUID excludedReportId);
 
     long countByStatus(ReportStatus status);
 

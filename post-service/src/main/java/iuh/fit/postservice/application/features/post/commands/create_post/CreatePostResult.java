@@ -32,7 +32,7 @@ public class CreatePostResult {
     List<PostMedia> mediaList;
     Set<UUID> taggedUserIds;
     Set<String> hashtags;
-    boolean isPinned;
-    boolean isArchived;
+    boolean pinned;
+    boolean archived;
     LocalDateTime createdAt;
 }

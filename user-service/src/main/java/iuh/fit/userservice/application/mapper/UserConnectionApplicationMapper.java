@@ -45,11 +45,13 @@ public interface UserConnectionApplicationMapper {
                 .build();
     }
 
-    default FriendSuggestionResult toSuggestionResult(UUID userId, UserProfile profile, long mutualCount) {
+    default FriendSuggestionResult toSuggestionResult(UUID userId, UserProfile profile, long mutualCount, double score, java.util.List<String> reasons) {
         if (profile == null) {
             return FriendSuggestionResult.builder()
                     .userId(userId)
                     .mutualFriendsCount(mutualCount)
+                    .score(score)
+                    .reasons(reasons)
                     .build();
         }
         String fullName = Stream.of(profile.getLastName(), profile.getMiddleName(), profile.getFirstName())
@@ -60,6 +62,8 @@ public interface UserConnectionApplicationMapper {
                 .fullName(fullName)
                 .avatarUrl(profile.getAvatarUrl())
                 .mutualFriendsCount(mutualCount)
+                .score(score)
+                .reasons(reasons)
                 .build();
     }
 

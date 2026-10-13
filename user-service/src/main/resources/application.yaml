@@ -39,3 +39,12 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
   instance:
     prefer-ip-address: true
+
+# Điểm uy tín: bắt đầu ở mức tối đa, bị trừ theo từng loại vi phạm (xem ReputationService)
+reputation:
+  initial-score: 100
+  penalty:
+    warn: 5        # kiểm duyệt viên cảnh cáo
+    auto-hide: 5   # bài tự bị ẩn vì nhiều báo cáo của cộng đồng
+    hide: 10       # kiểm duyệt viên ẩn bài
+    delete: 20     # kiểm duyệt viên gỡ bài

@@ -15,6 +15,8 @@ public enum ErrorCode implements BaseError {
     UNAUTHENTICATED(401, "Phiên đăng nhập đã hết hạn hoặc chưa xác thực", 401),
     UNAUTHORIZED(403, "Bạn không có quyền thực hiện thao tác này", 403),
     NOT_FOUND(404, "Không tìm thấy tài nguyên yêu cầu", 404),
+    METHOD_NOT_ALLOWED(405, "Phương thức yêu cầu không được hỗ trợ", 405),
+    UNSUPPORTED_MEDIA_TYPE(415, "Định dạng dữ liệu gửi lên không được hỗ trợ", 415),
     INVALID_INPUT(400, "Dữ liệu đầu vào không hợp lệ", 400);
 
     int code;

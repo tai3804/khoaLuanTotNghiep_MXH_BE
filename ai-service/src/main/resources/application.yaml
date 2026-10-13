@@ -40,6 +40,9 @@ ai:
     api-key: ${GEMINI_API_KEY:}
     model: ${GEMINI_MODEL:gemini-2.0-flash}
     api-url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models}
+  summary:
+    enabled: ${AI_SUMMARY_ENABLED:true}
+    min-length: ${AI_SUMMARY_MIN_LENGTH:1000}
   moderation:
     enabled: ${AI_MODERATION_ENABLED:true}
     auto-learn-enabled: ${AI_AUTO_LEARN_ENABLED:true}

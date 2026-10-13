@@ -1,6 +1,7 @@
 package iuh.fit.adminservice.domain.entities;
 
 import iuh.fit.adminservice.domain.enums.ReportReason;
+import iuh.fit.adminservice.domain.enums.ReportSource;
 import iuh.fit.adminservice.domain.enums.ReportStatus;
 import iuh.fit.adminservice.domain.enums.TargetType;
 import iuh.fit.commonframework.domain.entity.BaseEntity;
@@ -67,4 +68,21 @@ public class Report extends BaseEntity {
 
     @Column(name = "appealed_at")
     LocalDateTime appealedAt;
+
+    // Báo cáo do AI tự động gắn cờ. Các cột nullable để dữ liệu cũ (báo cáo của người dùng) vẫn hợp lệ: source null = USER.
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    ReportSource source;
+
+    @Column(name = "ai_score")
+    Double aiScore;
+
+    @Column(name = "ai_category", length = 50)
+    String aiCategory;
+
+    @Column(name = "ai_severity", length = 20)
+    String aiSeverity;
+
+    @Column(name = "ai_reason", columnDefinition = "TEXT")
+    String aiReason;
 }

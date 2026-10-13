@@ -1,6 +1,7 @@
 package iuh.fit.adminservice.application.dto.response;
 
 import iuh.fit.adminservice.domain.enums.ReportReason;
+import iuh.fit.adminservice.domain.enums.ReportSource;
 import iuh.fit.adminservice.domain.enums.ReportStatus;
 import iuh.fit.adminservice.domain.enums.TargetType;
 import lombok.*;
@@ -27,4 +28,9 @@ public class ReportResponse {
     UUID resolvedBy;
     String appealMessage;
     LocalDateTime appealedAt;
+    ReportSource source;
+    Double aiScore;
+    String aiCategory;
+    String aiSeverity;
+    String aiReason;
 }

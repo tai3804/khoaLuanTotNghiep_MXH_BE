@@ -17,6 +17,7 @@ public class PostResponseDto {
     UUID id;
     UUID authorId;
     String content;
+    String summary;
     String privacy;
     String status;
     Set<UUID> allowedUserIds;

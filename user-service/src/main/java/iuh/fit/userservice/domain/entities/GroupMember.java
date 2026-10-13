@@ -20,7 +20,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
-@EntityListeners(AuditingEntityListener.class)
+@EntityListeners({AuditingEntityListener.class, iuh.fit.userservice.infrastructure.persistence.SuggestionCacheEvictionListener.class})
 public class GroupMember {
 
     @Id

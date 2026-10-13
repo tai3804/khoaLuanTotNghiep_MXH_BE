@@ -109,6 +109,15 @@ public class PostVisibilityService {
         return visible;
     }
 
+    /** Mã các nhóm mà người xem là thành viên trong số các bài đã cho (dùng để cộng điểm bài của nhóm mình tham gia). */
+    public Set<UUID> memberGroupIds(Collection<Post> posts) {
+        Set<UUID> ids = new HashSet<>();
+        loadGroupVisibility(posts).forEach((groupId, visibility) -> {
+            if (visibility.member()) ids.add(groupId);
+        });
+        return ids;
+    }
+
     private Map<UUID, UserConnectionClient.GroupFeedVisibility> loadGroupVisibility(Collection<Post> posts) {
         List<UUID> groupIds = posts.stream().filter(post -> post != null && post.getGroupId() != null)
                 .map(Post::getGroupId).distinct().toList();
