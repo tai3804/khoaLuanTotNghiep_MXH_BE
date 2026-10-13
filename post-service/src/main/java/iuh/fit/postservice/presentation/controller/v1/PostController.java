@@ -37,6 +37,7 @@ import iuh.fit.postservice.application.features.post.queries.get_user_posts.GetU
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.domain.entities.Post;
+import iuh.fit.postservice.domain.entities.PostMedia;
 import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
 import iuh.fit.postservice.infrastructure.event.ModerationAuditPublisher;
 import iuh.fit.postservice.infrastructure.event.ReputationEventPublisher;
