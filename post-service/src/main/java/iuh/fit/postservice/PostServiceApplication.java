@@ -6,7 +6,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.cache.annotation.EnableCaching;
 
-@SpringBootApplication(scanBasePackages = {"iuh.fit.commonframework", "iuh.fit.postservice"})
+@SpringBootApplication(scanBasePackages = { "iuh.fit.commonframework", "iuh.fit.postservice" })
 @EnableDiscoveryClient
 @EnableFeignClients
 @EnableCaching

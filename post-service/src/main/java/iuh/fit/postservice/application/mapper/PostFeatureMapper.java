@@ -29,13 +29,22 @@ public interface PostFeatureMapper {
 
     PostMedia toPostMedia(MediaClientResponse clientResp, UUID postId, int sortOrder);
 
-    @Mapping(target = "isTrending", expression = "java(post != null && (post.getViewCount() >= 50 || (post.getLikeCount() + post.getCommentCount() + post.getShareCount()) >= 10))")
+    @Mapping(target = "isTrending", expression = "java(calculateIsTrending(post))")
     CreatePostResult toCreateResult(Post post, List<PostMedia> mediaList);
 
     UpdatePostResult toUpdateResult(Post post, List<PostMedia> mediaList);
 
-    @Mapping(target = "isTrending", expression = "java(post != null && (post.getViewCount() >= 50 || (post.getLikeCount() + post.getCommentCount() + post.getShareCount()) >= 10))")
+    @Mapping(target = "isTrending", expression = "java(calculateIsTrending(post))")
     GetPostDetailResult toGetDetailResult(Post post, List<PostMedia> mediaList);
+
+    default boolean calculateIsTrending(Post post) {
+        if (post == null) return false;
+        long views = post.getViewCount();
+        long likes = post.getLikeCount();
+        long comments = post.getCommentCount();
+        long shares = post.getShareCount();
+        return views >= 50 || (likes + comments + shares) >= 10;
+    }
 
     SharePostResult toShareResult(Post post);
 

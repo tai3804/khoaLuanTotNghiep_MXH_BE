@@ -269,8 +269,30 @@ public class PostController {
                 .isArchived(isArchived != null ? isArchived : true)
                 .build();
         UpdatePostResult result = updatePostCommandHandler.handle(command);
+        clearPostCaches();
         PostResponse response = postPresentationMapper.toResponse(result);
         return ResponseEntity.ok(ApiResponse.success(response, "Post archive status updated successfully"));
+    }
+
+    @GetMapping("/user/{userId}/archived")
+    @Operation(summary = "Get user archived posts", description = "Retrieves paginated list of archived posts for the owner")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getUserArchivedPosts(
+            @PathVariable("userId") UUID userId,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size) {
+        UUID currentUserId = getCurrentUserId();
+        if (!currentUserId.equals(userId)) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+        }
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Order.desc("createdAt")));
+        org.springframework.data.domain.Page<Post> postsPage = postRepository.findByAuthorIdAndDeletedFalseAndIsArchivedTrue(userId, pageable);
+        List<GetPostDetailResult> content = postsPage.getContent().stream().map(post -> {
+            List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
+            return postFeatureMapper.toGetDetailResult(post, mediaList);
+        }).toList();
+        PagedResponse<GetPostDetailResult> pagedResult = postFeatureMapper.toPagedResponse(postsPage, content);
+        PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(pagedResult);
+        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "Archived posts retrieved successfully"));
     }
 
     @PatchMapping("/{postId}/privacy")

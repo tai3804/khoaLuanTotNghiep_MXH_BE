@@ -41,12 +41,12 @@ public class UpdateUserProfileCommandHandler {
         if ((newAvatar != null && !newAvatar.equals(oldAvatar)) || (newCover != null && !newCover.equals(oldCover))) {
             try {
                 UserAvatarUpdatedEvent event = userProfileApplicationMapper.toAvatarUpdatedEvent(
-                        command.getUserId(), oldAvatar, newAvatar, oldCover, newCover
-                );
+                        command.getUserId(), oldAvatar, newAvatar, oldCover, newCover);
                 kafkaTemplate.send("user.avatar.updated", event);
                 log.info("Published UserAvatarUpdatedEvent for userId: {}", command.getUserId());
             } catch (Exception e) {
-                log.error("Failed to publish UserAvatarUpdatedEvent for userId {}: {}", command.getUserId(), e.getMessage());
+                log.error("Failed to publish UserAvatarUpdatedEvent for userId {}: {}", command.getUserId(),
+                        e.getMessage());
             }
         }
 

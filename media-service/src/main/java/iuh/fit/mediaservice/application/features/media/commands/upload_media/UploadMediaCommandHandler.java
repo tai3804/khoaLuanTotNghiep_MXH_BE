@@ -1,5 +1,6 @@
 package iuh.fit.mediaservice.application.features.media.commands.upload_media;
 
+import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.mediaservice.application.mapper.MediaApplicationMapper;
 import iuh.fit.mediaservice.domain.entities.Media;
 import iuh.fit.mediaservice.domain.enums.MediaType;
@@ -24,6 +25,7 @@ public class UploadMediaCommandHandler {
     AwsS3StorageService awsS3StorageService;
     MediaRepository mediaRepository;
     MediaApplicationMapper mediaApplicationMapper;
+    JwtUtil jwtUtil;
 
     @Transactional
     public UploadMediaResult handle(UploadMediaCommand command) {
@@ -33,16 +35,29 @@ public class UploadMediaCommandHandler {
         MediaType mediaType = awsS3StorageService.determineMediaType(file.getContentType());
 
         UUID userId = command.getUserId();
+        if (userId == null) {
+            try {
+                String currentUserIdStr = jwtUtil.getCurrentUserId();
+                if (currentUserIdStr != null && !currentUserIdStr.isBlank()) {
+                    userId = UUID.fromString(currentUserIdStr);
+                }
+            } catch (Exception e) {
+                log.warn("Could not extract current userId from JwtUtil in UploadMediaCommandHandler: {}", e.getMessage());
+            }
+        }
+
         if (userId != null) {
             try {
                 Media mediaEntity = mediaApplicationMapper.toEntity(
                         userId, fileKey, fileUrl, file.getOriginalFilename(), file.getSize(), mediaType, command.getFolder()
                 );
                 mediaRepository.save(mediaEntity);
-                log.info("Saved Media metadata to media_db for fileKey: {}, userId: {}", fileKey, userId);
+                log.info("Saved Media metadata to media_db for fileKey: {}, userId: {}, size: {}", fileKey, userId, file.getSize());
             } catch (Exception e) {
                 log.error("Failed to save Media metadata to DB for fileKey {}: {}", fileKey, e.getMessage());
             }
+        } else {
+            log.warn("Upload completed for fileKey {} but userId is null, media metadata was not linked to a user", fileKey);
         }
 
         return mediaApplicationMapper.toResult(

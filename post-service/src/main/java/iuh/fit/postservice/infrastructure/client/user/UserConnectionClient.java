@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.List;
 
-@FeignClient(name = "user-service", url = "${USER_SERVICE_URL:http://localhost:8085}", configuration = UserConnectionFeignConfig.class)
+@FeignClient(name = "user-service", url = "${USER_SERVICE_URL:http://localhost:8082}", configuration = UserConnectionFeignConfig.class)
 public interface UserConnectionClient {
     @GetMapping("/api/v1/users/connections/status/{targetId}")
     ApiResponse<Map<String, Object>> getConnectionStatus(@PathVariable("targetId") UUID targetId);
@@ -23,5 +23,7 @@ public interface UserConnectionClient {
     @PostMapping("/api/v1/groups/feed-visibility")
     ApiResponse<List<GroupFeedVisibility>> getGroupFeedVisibility(@RequestBody List<UUID> groupIds);
 
-    record GroupFeedVisibility(UUID groupId, boolean member, boolean publicGroup, String role, boolean postApprovalRequired) { }
+    record GroupFeedVisibility(UUID groupId, boolean member, boolean publicGroup, String role,
+            boolean postApprovalRequired) {
+    }
 }

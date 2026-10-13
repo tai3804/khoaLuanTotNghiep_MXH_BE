@@ -3,7 +3,9 @@ package iuh.fit.mediaservice.presentation.mapper;
 import iuh.fit.mediaservice.application.features.media.commands.delete_media.DeleteMediaCommand;
 import iuh.fit.mediaservice.application.features.media.commands.upload_media.UploadMediaCommand;
 import iuh.fit.mediaservice.application.features.media.commands.upload_media.UploadMediaResult;
+import iuh.fit.mediaservice.application.features.media.commands.upload_multiple_media.UploadMultipleMediaCommand;
 import iuh.fit.mediaservice.presentation.dto.request.UploadMediaRequest;
+import iuh.fit.mediaservice.presentation.dto.request.UploadMultipleMediaRequest;
 import iuh.fit.mediaservice.presentation.dto.response.MediaResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -17,8 +19,13 @@ import java.util.UUID;
 @Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
 public interface MediaPresentationMapper {
 
+    @Mapping(target = "userId", ignore = true)
     UploadMediaCommand toUploadCommand(UploadMediaRequest request);
 
+    @Mapping(target = "userId", ignore = true)
+    UploadMultipleMediaCommand toUploadMultipleCommand(UploadMultipleMediaRequest request);
+
+    @Mapping(target = "userId", ignore = true)
     @Mapping(target = "folder", source = "folder")
     @Mapping(target = "file", source = "file")
     UploadMediaCommand toUploadCommand(MultipartFile file, String folder);
@@ -27,6 +34,8 @@ public interface MediaPresentationMapper {
 
     MediaResponse toResponse(UploadMediaResult result);
 
+    @Mapping(target = "fileName", source = "originalFilename")
+    @Mapping(target = "contentType", ignore = true)
     MediaResponse toResponse(Media media);
 
     default UserStorageQuotaResponse toQuotaResponse(UUID userId, long usedBytes, long maxQuotaBytes) {

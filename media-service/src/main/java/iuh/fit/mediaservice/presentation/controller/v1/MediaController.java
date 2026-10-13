@@ -6,42 +6,39 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import iuh.fit.commonframework.application.dto.ApiResponse;
+import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.mediaservice.application.features.media.commands.delete_media.DeleteMediaCommand;
 import iuh.fit.mediaservice.application.features.media.commands.delete_media.DeleteMediaCommandHandler;
 import iuh.fit.mediaservice.application.features.media.commands.upload_media.UploadMediaCommand;
 import iuh.fit.mediaservice.application.features.media.commands.upload_media.UploadMediaCommandHandler;
 import iuh.fit.mediaservice.application.features.media.commands.upload_media.UploadMediaResult;
+import iuh.fit.mediaservice.application.features.media.commands.upload_multiple_media.UploadMultipleMediaCommand;
+import iuh.fit.mediaservice.application.features.media.commands.upload_multiple_media.UploadMultipleMediaCommandHandler;
+import iuh.fit.mediaservice.application.features.media.queries.get_presigned_url.GetPresignedUrlQuery;
+import iuh.fit.mediaservice.application.features.media.queries.get_presigned_url.GetPresignedUrlQueryHandler;
+import iuh.fit.mediaservice.application.features.media.queries.get_user_media_gallery.GetUserMediaGalleryQuery;
+import iuh.fit.mediaservice.application.features.media.queries.get_user_media_gallery.GetUserMediaGalleryQueryHandler;
+import iuh.fit.mediaservice.application.features.media.queries.get_user_quota.GetUserQuotaQueryHandler;
+import iuh.fit.mediaservice.application.features.media.queries.stream_media_file.StreamMediaFileQueryHandler;
 import iuh.fit.mediaservice.presentation.constants.ApiConstants;
 import iuh.fit.mediaservice.presentation.constants.MessageConstants;
 import iuh.fit.mediaservice.presentation.dto.request.UploadMediaRequest;
 import iuh.fit.mediaservice.presentation.dto.request.UploadMultipleMediaRequest;
 import iuh.fit.mediaservice.presentation.dto.response.MediaResponse;
+import iuh.fit.mediaservice.presentation.dto.response.PresignedUrlResponse;
+import iuh.fit.mediaservice.presentation.dto.response.UserStorageQuotaResponse;
 import iuh.fit.mediaservice.presentation.mapper.MediaPresentationMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
-
-import iuh.fit.commonframework.application.dto.PagedResponse;
-import iuh.fit.commonframework.infrastructure.security.JwtUtil;
-import iuh.fit.mediaservice.domain.entities.Media;
-import iuh.fit.mediaservice.domain.repository.MediaRepository;
-import iuh.fit.mediaservice.infrastructure.storage.AwsS3StorageService;
-import iuh.fit.mediaservice.presentation.dto.response.PresignedUrlResponse;
-import iuh.fit.mediaservice.presentation.dto.response.UserStorageQuotaResponse;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-
-import org.springframework.core.io.Resource;
-import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping(ApiConstants.MEDIA_API)
@@ -57,52 +54,37 @@ import jakarta.servlet.http.HttpServletRequest;
 @SecurityRequirement(name = "bearerAuth")
 public class MediaController {
 
-    AwsS3StorageService awsS3StorageService;
-    MediaRepository mediaRepository;
     UploadMediaCommandHandler uploadMediaCommandHandler;
+    UploadMultipleMediaCommandHandler uploadMultipleMediaCommandHandler;
     DeleteMediaCommandHandler deleteMediaCommandHandler;
+    GetUserQuotaQueryHandler getUserQuotaQueryHandler;
+    GetUserMediaGalleryQueryHandler getUserMediaGalleryQueryHandler;
+    GetPresignedUrlQueryHandler getPresignedUrlQueryHandler;
+    StreamMediaFileQueryHandler streamMediaFileQueryHandler;
     MediaPresentationMapper mediaPresentationMapper;
-    JwtUtil jwtUtil;
 
     @GetMapping("/files/**")
     @Operation(summary = "Get or stream media file by key", description = "Streams a media file from S3 bucket via Java Spring Boot backend", security = {})
     public ResponseEntity<Resource> getFile(HttpServletRequest request) {
-        String requestPath = request.getRequestURI();
-        String prefix = "/api/v1/media/files/";
-        String fileKey = "";
-        int index = requestPath.indexOf(prefix);
-        if (index != -1) {
-            fileKey = requestPath.substring(index + prefix.length());
-        }
-        return awsS3StorageService.streamFile(fileKey);
+        return streamMediaFileQueryHandler.handle(request.getRequestURI());
     }
 
     @GetMapping("/quota")
     @Operation(summary = "Get user storage quota", description = "Retrieves current authenticated user's storage quota details", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<ApiResponse<UserStorageQuotaResponse>> getUserQuota() {
-        String userIdStr = jwtUtil.getCurrentUserId();
-        UUID userId = userIdStr != null ? UUID.fromString(userIdStr) : null;
-        long usedBytes = userId != null ? mediaRepository.sumFileSizeByUserId(userId) : 0;
-        long maxQuotaBytes = 1073741824L; // 1 GB Quota
-
-        UserStorageQuotaResponse response = mediaPresentationMapper.toQuotaResponse(userId, usedBytes, maxQuotaBytes);
+        UserStorageQuotaResponse response = getUserQuotaQueryHandler.handle();
         return ResponseEntity.ok(ApiResponse.success(response, "Storage quota retrieved successfully"));
     }
 
     @GetMapping("/user/{userId}")
     @Operation(summary = "Get user media gallery", description = "Retrieves paginated list of media files uploaded by user", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<ApiResponse<List<MediaResponse>>> getUserMediaGallery(
-            @PathVariable UUID userId,
+            @PathVariable String userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<Media> mediaPage = mediaRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(page, size));
-        List<MediaResponse> responseList = mediaPage.getContent().stream()
-                .map(mediaPresentationMapper::toResponse)
-                .toList();
-
-        PagedResponse<MediaResponse> pagedResponse = PagedResponse.from(mediaPage, responseList);
-
-        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, "User media gallery retrieved successfully"));
+        GetUserMediaGalleryQuery query = new GetUserMediaGalleryQuery(userId, page, size);
+        PagedResponse<MediaResponse> response = getUserMediaGalleryQueryHandler.handle(query);
+        return ResponseEntity.ok(ApiResponse.paged(response, "User media gallery retrieved successfully"));
     }
 
     @GetMapping("/presigned-url")
@@ -112,7 +94,8 @@ public class MediaController {
             @RequestParam String fileName,
             @RequestParam(required = false, defaultValue = "application/octet-stream") String contentType,
             @RequestParam(required = false, defaultValue = "15") int durationMinutes) {
-        PresignedUrlResponse response = awsS3StorageService.generatePresignedUploadUrl(folder, fileName, contentType, durationMinutes);
+        GetPresignedUrlQuery query = new GetPresignedUrlQuery(folder, fileName, contentType, durationMinutes);
+        PresignedUrlResponse response = getPresignedUrlQueryHandler.handle(query);
         return ResponseEntity.ok(ApiResponse.success(response, "Presigned URL generated successfully"));
     }
 
@@ -128,12 +111,11 @@ public class MediaController {
     @PostMapping(value = "/upload-multiple", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload multiple media files to S3", description = "Uploads multiple image or video files to AWS S3 bucket", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<ApiResponse<List<MediaResponse>>> uploadMultipleFiles(@Valid @ModelAttribute UploadMultipleMediaRequest request) {
-        List<MediaResponse> responseList = new ArrayList<>();
-        for (MultipartFile file : request.getFiles()) {
-            UploadMediaCommand command = mediaPresentationMapper.toUploadCommand(file, request.getFolder());
-            UploadMediaResult result = uploadMediaCommandHandler.handle(command);
-            responseList.add(mediaPresentationMapper.toResponse(result));
-        }
+        UploadMultipleMediaCommand command = mediaPresentationMapper.toUploadMultipleCommand(request);
+        List<UploadMediaResult> results = uploadMultipleMediaCommandHandler.handle(command);
+        List<MediaResponse> responseList = results.stream()
+                .map(mediaPresentationMapper::toResponse)
+                .toList();
         return ResponseEntity.ok(ApiResponse.success(responseList, MessageConstants.FILES_UPLOADED_SUCCESSFULLY));
     }
 

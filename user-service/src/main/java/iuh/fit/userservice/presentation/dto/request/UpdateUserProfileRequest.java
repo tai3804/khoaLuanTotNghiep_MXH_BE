@@ -20,11 +20,9 @@ import java.time.LocalDate;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class UpdateUserProfileRequest {
 
-    @NotBlank(message = "{userProfile.firstName.required}")
     @Size(max = 50, message = "{userProfile.firstName.size}")
     String firstName;
 
-    @NotBlank(message = "{userProfile.lastName.required}")
     @Size(max = 50, message = "{userProfile.lastName.size}")
     String lastName;
 

@@ -114,7 +114,8 @@ public class UserProfileController {
 
     @PutMapping("/me")
     @Operation(summary = "Update current user profile", description = "Updates profile details of the authenticated user", security = @SecurityRequirement(name = "bearerAuth"))
-    public ResponseEntity<ApiResponse<UserProfileResponse>> updateMyProfile(@Valid @RequestBody UpdateUserProfileRequest request) {
+    public ResponseEntity<ApiResponse<UserProfileResponse>> updateMyProfile(
+            @Valid @RequestBody UpdateUserProfileRequest request) {
         String userIdStr = jwtUtil.getCurrentUserId();
         if (userIdStr == null) {
             throw new BusinessException(UserServiceErrorCode.RESOURCE_NOT_FOUND);
@@ -126,6 +127,42 @@ public class UserProfileController {
         UpdateUserProfileResult result = updateUserProfileCommandHandler.handle(command);
         UserProfileResponse response = userProfilePresentationMapper.toResponse(result);
 
+        return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.USER_PROFILE_UPDATED_SUCCESSFULLY));
+    }
+
+    @PatchMapping("/avatar")
+    @Operation(summary = "Update user avatar", description = "Updates avatarUrl for the current user", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<UserProfileResponse>> updateAvatar(
+            @RequestBody Map<String, String> request) {
+        String userIdStr = jwtUtil.getCurrentUserId();
+        if (userIdStr == null) {
+            throw new BusinessException(UserServiceErrorCode.RESOURCE_NOT_FOUND);
+        }
+        String avatarUrl = request.get("avatarUrl");
+        UpdateUserProfileCommand command = UpdateUserProfileCommand.builder()
+                .userId(UUID.fromString(userIdStr))
+                .avatarUrl(avatarUrl)
+                .build();
+        UpdateUserProfileResult result = updateUserProfileCommandHandler.handle(command);
+        UserProfileResponse response = userProfilePresentationMapper.toResponse(result);
+        return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.USER_PROFILE_UPDATED_SUCCESSFULLY));
+    }
+
+    @PatchMapping("/cover")
+    @Operation(summary = "Update user cover photo", description = "Updates coverUrl for the current user", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<UserProfileResponse>> updateCover(
+            @RequestBody Map<String, String> request) {
+        String userIdStr = jwtUtil.getCurrentUserId();
+        if (userIdStr == null) {
+            throw new BusinessException(UserServiceErrorCode.RESOURCE_NOT_FOUND);
+        }
+        String coverUrl = request.get("coverUrl");
+        UpdateUserProfileCommand command = UpdateUserProfileCommand.builder()
+                .userId(UUID.fromString(userIdStr))
+                .coverUrl(coverUrl)
+                .build();
+        UpdateUserProfileResult result = updateUserProfileCommandHandler.handle(command);
+        UserProfileResponse response = userProfilePresentationMapper.toResponse(result);
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.USER_PROFILE_UPDATED_SUCCESSFULLY));
     }
 
@@ -167,7 +204,8 @@ public class UserProfileController {
         UserProfile saved = userProfileRepository.save(profile);
         UserProfileResponse response = userProfilePresentationMapper.toResponse(
                 userProfileApplicationMapper.toQueryResult(saved));
-        return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.PROFESSIONAL_MODE_UPDATED_SUCCESSFULLY));
+        return ResponseEntity
+                .ok(ApiResponse.success(response, MessageConstants.PROFESSIONAL_MODE_UPDATED_SUCCESSFULLY));
     }
 
     @PostMapping("/{userId}/view")
@@ -192,7 +230,8 @@ public class UserProfileController {
                     }
                     userProfileRepository.incrementProfileViewCount(userId);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
         Long totalViews = userProfileRepository.findByUserId(userId)
                 .map(UserProfile::getProfileViewCount)
@@ -211,7 +250,8 @@ public class UserProfileController {
         }
         UUID currentUserId = UUID.fromString(userIdStr);
         var pageable = PageRequest.of(page, size);
-        var pageResult = profileViewHistoryRepository.findByTargetUserIdOrderByLastViewedAtDesc(currentUserId, pageable);
+        var pageResult = profileViewHistoryRepository.findByTargetUserIdOrderByLastViewedAtDesc(currentUserId,
+                pageable);
 
         List<ProfileVisitorResponse> visitors = pageResult.getContent().stream()
                 .map(hist -> {
@@ -224,9 +264,12 @@ public class UserProfileController {
                             .filter(s -> s != null && !s.isBlank())
                             .collect(Collectors.joining(" "));
 
-                    boolean isFriend = userConnectionRepository.findAcceptedFriendship(currentUserId, hist.getViewerId()).isPresent();
-                    boolean isFollowing = userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
-                            currentUserId, hist.getViewerId(), ConnectionType.FOLLOW).isPresent();
+                    boolean isFriend = userConnectionRepository
+                            .findAcceptedFriendship(currentUserId, hist.getViewerId()).isPresent();
+                    boolean isFollowing = userConnectionRepository
+                            .findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
+                                    currentUserId, hist.getViewerId(), ConnectionType.FOLLOW)
+                            .isPresent();
 
                     return ProfileVisitorResponse.builder()
                             .viewerId(hist.getViewerId())
@@ -332,11 +375,16 @@ public class UserProfileController {
         for (var p : audienceProfiles) {
             if (p.getDateOfBirth() != null) {
                 int years = Period.between(p.getDateOfBirth(), today).getYears();
-                if (years >= 13 && years <= 17) age13To17++;
-                else if (years >= 18 && years <= 24) age18To24++;
-                else if (years >= 25 && years <= 34) age25To34++;
-                else if (years >= 35 && years <= 44) age35To44++;
-                else if (years >= 45) age45Plus++;
+                if (years >= 13 && years <= 17)
+                    age13To17++;
+                else if (years >= 18 && years <= 24)
+                    age18To24++;
+                else if (years >= 25 && years <= 34)
+                    age25To34++;
+                else if (years >= 35 && years <= 44)
+                    age35To44++;
+                else if (years >= 45)
+                    age45Plus++;
                 ageTotal++;
             }
         }
@@ -352,8 +400,7 @@ public class UserProfileController {
                 new AudienceDemographicsResponse.AgeRangeMetricDto("25-34 tuổi", p25To34),
                 new AudienceDemographicsResponse.AgeRangeMetricDto("35-44 tuổi", p35To44),
                 new AudienceDemographicsResponse.AgeRangeMetricDto("13-17 tuổi", p13To17),
-                new AudienceDemographicsResponse.AgeRangeMetricDto("45+ tuổi", p45Plus)
-        );
+                new AudienceDemographicsResponse.AgeRangeMetricDto("45+ tuổi", p45Plus));
 
         // 5. Compute real dynamic location distribution strictly from user locations
         Map<String, Long> locationCounts = new HashMap<>();
@@ -372,7 +419,8 @@ public class UserProfileController {
                 .sorted((e1, e2) -> Long.compare(e2.getValue(), e1.getValue()))
                 .limit(5)
                 .map(entry -> {
-                    double pct = denomLocation == 0 ? 0.0 : Math.round((entry.getValue() * 1000.0) / denomLocation) / 10.0;
+                    double pct = denomLocation == 0 ? 0.0
+                            : Math.round((entry.getValue() * 1000.0) / denomLocation) / 10.0;
                     return AudienceDemographicsResponse.CityMetricDto.builder()
                             .city(entry.getKey())
                             .percentage(pct)
@@ -380,33 +428,38 @@ public class UserProfileController {
                 })
                 .toList();
 
-        // 6. Compute real dynamic hourly activity distribution from database interaction timestamps
+        // 6. Compute real dynamic hourly activity distribution from database
+        // interaction timestamps
         int[] hourlyCounts = new int[24];
         for (var v : viewHistories) {
             if (v.getLastViewedAt() != null) {
                 int h = v.getLastViewedAt().getHour();
-                if (h >= 0 && h < 24) hourlyCounts[h]++;
+                if (h >= 0 && h < 24)
+                    hourlyCounts[h]++;
             }
         }
         for (var f : friendships) {
             if (f.getCreatedAt() != null) {
                 int h = f.getCreatedAt().getHour();
-                if (h >= 0 && h < 24) hourlyCounts[h]++;
+                if (h >= 0 && h < 24)
+                    hourlyCounts[h]++;
             }
         }
         for (var fl : followers) {
             if (fl.getCreatedAt() != null) {
                 int h = fl.getCreatedAt().getHour();
-                if (h >= 0 && h < 24) hourlyCounts[h]++;
+                if (h >= 0 && h < 24)
+                    hourlyCounts[h]++;
             }
         }
 
         int maxHourCount = 0;
         for (int c : hourlyCounts) {
-            if (c > maxHourCount) maxHourCount = c;
+            if (c > maxHourCount)
+                maxHourCount = c;
         }
 
-        int[] sampleHours = {0, 3, 6, 9, 12, 15, 18, 21};
+        int[] sampleHours = { 0, 3, 6, 9, 12, 15, 18, 21 };
         List<AudienceDemographicsResponse.HourlyMetricDto> hourlyActivity = new ArrayList<>();
         for (int sh : sampleHours) {
             int score = maxHourCount == 0 ? 0 : (int) Math.round((hourlyCounts[sh] * 100.0) / maxHourCount);

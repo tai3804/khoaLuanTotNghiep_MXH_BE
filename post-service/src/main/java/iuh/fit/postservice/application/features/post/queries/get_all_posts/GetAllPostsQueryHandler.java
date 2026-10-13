@@ -41,7 +41,7 @@ public class GetAllPostsQueryHandler {
     PostVisibilityService postVisibilityService;
 
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "post-feed-v2", key = "#query.viewerId + ':' + #query.cursor + ':' + #query.filter.page + ':' + #query.filter.size + ':' + #query.filter.keyword + ':' + #query.filter.sortBy + ':' + #query.filter.sortDirection + ':' + #query.filter.filters")
+    @Cacheable(cacheNames = "post-feed-v2", key = "#query.toString()", unless = "#result == null")
     public PagedResponse<GetPostDetailResult> handle(GetAllPostsQuery query) {
         BaseFilter filter = query.getFilter() != null ? query.getFilter() : new BaseFilter();
 
