@@ -38,6 +38,7 @@ public class PostResponse {
     boolean pinned;
     @JsonProperty("isArchived")
     boolean archived;
+    @JsonProperty("isTrending")
     boolean isTrending;
     java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;

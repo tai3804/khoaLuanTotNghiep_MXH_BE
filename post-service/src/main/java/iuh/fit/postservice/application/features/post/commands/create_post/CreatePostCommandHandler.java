@@ -107,13 +107,16 @@ public class CreatePostCommandHandler {
         allTaggedUserIds.addAll(TagAndHashtagHelper.extractMentions(command.getContent()));
         post.setTaggedUserIds(allTaggedUserIds);
 
+        if (command.getScheduledPublishAt() != null && command.getScheduledPublishAt().isAfter(java.time.Instant.now())) {
+            post.setScheduledPublishAt(command.getScheduledPublishAt());
+        }
+
         if (requiresGroupApproval) {
             post.setStatus(PostStatus.PENDING_APPROVAL);
-        } else if (command.getScheduledPublishAt() != null && command.getScheduledPublishAt().isAfter(java.time.Instant.now())) {
-            post.setStatus(PostStatus.SCHEDULED);
-            post.setScheduledPublishAt(command.getScheduledPublishAt());
         } else if (hasFiles) {
             post.setStatus(PostStatus.PROCESSING);
+        } else if (post.getScheduledPublishAt() != null) {
+            post.setStatus(PostStatus.SCHEDULED);
         } else {
             post.setStatus(PostStatus.PUBLISHED);
         }

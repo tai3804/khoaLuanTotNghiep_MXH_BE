@@ -27,7 +27,7 @@ public class PostStatusConstraintMigration implements ApplicationRunner {
             jdbcTemplate.execute("""
                     ALTER TABLE posts
                     ADD CONSTRAINT posts_status_check
-                    CHECK (status IN ('PUBLISHED', 'PENDING_APPROVAL', 'REJECTED', 'PROCESSING', 'FAILED'))
+                    CHECK (status IN ('PUBLISHED', 'SCHEDULED', 'PENDING_APPROVAL', 'REJECTED', 'PROCESSING', 'FAILED'))
                     """);
             log.info("Updated posts_status_check with group post approval statuses");
         } catch (Exception exception) {

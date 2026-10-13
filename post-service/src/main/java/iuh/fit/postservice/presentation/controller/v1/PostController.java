@@ -324,7 +324,10 @@ public class PostController {
         requireGroupModerator(post.getGroupId());
         if (post.getStatus() != PostStatus.PENDING_APPROVAL) throw new BusinessException(ErrorCode.INVALID_INPUT);
 
-        post.setStatus(approved ? PostStatus.PUBLISHED : PostStatus.REJECTED);
+        PostStatus targetStatus = (post.getScheduledPublishAt() != null && post.getScheduledPublishAt().isAfter(java.time.Instant.now()))
+                ? PostStatus.SCHEDULED
+                : PostStatus.PUBLISHED;
+        post.setStatus(approved ? targetStatus : PostStatus.REJECTED);
         postRepository.save(post);
         clearPostCaches();
         GetPostDetailResult result = getPostDetailQueryHandler.handle(
