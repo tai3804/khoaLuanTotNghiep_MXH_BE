@@ -46,6 +46,10 @@ public class UpdatePostCommandHandler {
         }
 
         if (command.getContent() != null) {
+            // Nội dung đã đổi thì bản tóm tắt AI cũ không còn đúng nữa
+            if (!command.getContent().equals(post.getContent())) {
+                post.setSummary(null);
+            }
             post.setContent(command.getContent());
         }
         if (command.getPrivacy() != null) {

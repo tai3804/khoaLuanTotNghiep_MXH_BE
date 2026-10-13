@@ -79,6 +79,14 @@ public interface UserConnectionRepository extends JpaRepository<UserConnection, 
     @Query("SELECT c FROM UserConnection c WHERE (c.requesterId = :userId OR c.targetId = :userId) AND c.type = 'FRIEND' AND c.status = 'ACCEPTED'")
     List<UserConnection> findAllAcceptedFriendships(@Param("userId") UUID userId);
 
+    /** Mọi quan hệ KẾT BẠN của một người ở các trạng thái cho trước (dùng để loại lời mời đang chờ / đã từ chối khỏi gợi ý). */
+    @Query("SELECT c FROM UserConnection c WHERE (c.requesterId = :userId OR c.targetId = :userId) AND c.type = 'FRIEND' AND c.status IN :statuses")
+    List<UserConnection> findAllFriendConnectionsInStatuses(@Param("userId") UUID userId, @Param("statuses") java.util.Collection<ConnectionStatus> statuses);
+
+    /** Mọi quan hệ THEO DÕI đã chấp nhận liên quan tới một người (cả hai chiều). */
+    @Query("SELECT c FROM UserConnection c WHERE (c.requesterId = :userId OR c.targetId = :userId) AND c.type = 'FOLLOW' AND c.status = 'ACCEPTED'")
+    List<UserConnection> findAllAcceptedFollowConnections(@Param("userId") UUID userId);
+
     @Query("SELECT c FROM UserConnection c WHERE (c.requesterId IN :userIds OR c.targetId IN :userIds) AND c.type = 'FRIEND' AND c.status = 'ACCEPTED'")
     List<UserConnection> findAllAcceptedFriendshipsForUserIds(@Param("userIds") java.util.Collection<UUID> userIds);
 

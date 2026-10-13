@@ -2,6 +2,7 @@ package iuh.fit.aiservice.presentation.controller;
 
 import iuh.fit.aiservice.application.dto.MessageSummaryDto;
 import iuh.fit.aiservice.application.engine.SmartAssistantEngine;
+import iuh.fit.aiservice.application.service.PostSummaryService;
 import iuh.fit.aiservice.infrastructure.gemini.GeminiApiClient;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import lombok.AllArgsConstructor;
@@ -24,6 +25,7 @@ public class AiAssistantController {
 
     private final GeminiApiClient geminiApiClient;
     private final SmartAssistantEngine smartAssistantEngine;
+    private final PostSummaryService postSummaryService;
 
     @PostMapping("/suggest-caption")
     public ResponseEntity<ApiResponse<CaptionSuggestionResponse>> suggestCaption(@RequestBody CaptionRequest request) {
@@ -156,22 +158,7 @@ public class AiAssistantController {
         }
 
         String fallback = smartAssistantEngine.summarizeText(content);
-        String prompt = String.format("""
-                Bạn là một trợ lý AI thông minh tóm tắt nội dung bài viết mạng xã hội.
-                Nhiệm vụ: Hãy tóm tắt văn bản sau thành một đoạn ngắn gọn (1-2 câu súc tích) hoặc 2-3 gạch đầu dòng nêu bật ý chính quan trọng nhất:
-                - Ngắn gọn, dễ hiểu, ngôn từ tự nhiên bằng Tiếng Việt.
-                - BẮT BUỘC: Chỉ trả về nội dung tóm tắt hoàn chỉnh, không thêm lời chào, không thêm 'Tóm tắt bài viết:'.
-                
-                Nội dung bài viết:
-                %s
-                """, content);
-
-        String summary = geminiApiClient.generateText(prompt, fallback);
-        if (summary != null) {
-            summary = summary.trim();
-        } else {
-            summary = fallback;
-        }
+        String summary = postSummaryService.generate(content, fallback);
 
         return ResponseEntity.ok(ApiResponse.success(new SummarizeResponse(content, summary), "Tóm tắt bài viết thành công"));
     }

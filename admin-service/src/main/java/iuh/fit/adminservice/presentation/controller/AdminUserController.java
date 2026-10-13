@@ -40,7 +40,7 @@ public class AdminUserController {
     }
 
     @PutMapping("/{userId}/ban")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> banUser(
             @PathVariable String userId,
             @RequestBody(required = false) Map<String, String> body) {
@@ -50,14 +50,14 @@ public class AdminUserController {
     }
 
     @PutMapping("/{userId}/unban")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> unbanUser(@PathVariable String userId) {
         banUserCommandHandler.handleUnban(userId);
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/{userId}/role")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> updateUserRole(
             @PathVariable String userId,
             @RequestBody Map<String, String> body) {
@@ -67,7 +67,7 @@ public class AdminUserController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> createUser(@RequestBody Map<String, Object> request) {
         try {
             UserInfoResponse response = createUserCommandHandler.handle(request);
@@ -78,7 +78,7 @@ public class AdminUserController {
     }
 
     @PutMapping("/{userId}/reset-password")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> resetPassword(
             @PathVariable String userId,
             @RequestBody Map<String, String> body) {
@@ -91,7 +91,7 @@ public class AdminUserController {
     }
 
     @PutMapping("/{userId}/revoke-sessions")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> revokeSessions(@PathVariable String userId) {
         revokeSessionsCommandHandler.handle(userId);
         return ResponseEntity.ok().build();

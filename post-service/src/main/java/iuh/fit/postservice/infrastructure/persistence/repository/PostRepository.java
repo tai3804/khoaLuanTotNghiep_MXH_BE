@@ -22,9 +22,11 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     Page<Post> findByAuthorIdAndDeletedFalse(UUID authorId, Pageable pageable);
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedFalse(UUID authorId, Pageable pageable);
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedTrue(UUID authorId, Pageable pageable);
+    List<Post> findByGroupIdAndAppealStatusOrderByUpdatedAtDesc(UUID groupId, iuh.fit.postservice.domain.enums.ModerationAppealStatus appealStatus);
     Page<Post> findByDeletedFalse(Pageable pageable);
     Optional<Post> findByIdAndDeletedFalse(UUID id);
     List<Post> findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, PostStatus status);
+    List<Post> findByAppealStatusOrderByUpdatedAtDesc(iuh.fit.postservice.domain.enums.ModerationAppealStatus status);
 
     @Query("SELECT p FROM Post p JOIN p.hashtags h WHERE LOWER(h) = LOWER(:hashtag) AND p.deleted = false AND p.status = 'PUBLISHED' ORDER BY p.createdAt DESC")
     Page<Post> findByHashtag(@Param("hashtag") String hashtag, Pageable pageable);
@@ -54,4 +56,12 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     List<Post> findByStatusAndScheduledPublishAtLessThanEqualAndDeletedFalse(PostStatus status, java.time.Instant now);
 
     Page<Post> findByAuthorIdAndStatusAndDeletedFalseOrderByScheduledPublishAtAsc(UUID authorId, PostStatus status, Pageable pageable);
+
+    /** Tập bài viết ứng viên để xếp hạng bảng tin: bài đã đăng, chưa xoá, chưa ẩn, mới nhất trước. */
+    @Query("SELECT p FROM Post p WHERE p.deleted = false AND p.status = 'PUBLISHED' AND p.isArchived = false AND p.createdAt >= :cutoff ORDER BY p.createdAt DESC")
+    List<Post> findRankingCandidates(@Param("cutoff") java.time.LocalDateTime cutoff, org.springframework.data.domain.Pageable pageable);
+
+    /** Số lần mình chia sẻ bài của từng tác giả gốc kể từ mốc `since`. */
+    @Query("SELECT o.authorId, COUNT(s) FROM Post s, Post o WHERE s.originalPostId = o.id AND s.authorId = :userId AND s.deleted = false AND s.createdAt >= :since GROUP BY o.authorId")
+    List<Object[]> countSharesByOriginalAuthor(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
 }

@@ -20,6 +20,14 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> 
 
     List<UserProfile> findByUserIdIn(List<UUID> userIds);
 
+    /** Nhóm ứng viên "khám phá" cho người dùng ít quan hệ: ưu tiên người hoạt động gần đây và có nhiều bạn. */
+    @Query("SELECT p FROM UserProfile p WHERE p.userId NOT IN :excluded ORDER BY p.lastActiveAt DESC NULLS LAST, p.friendCount DESC")
+    List<UserProfile> findDiscoveryCandidates(@Param("excluded") java.util.Collection<UUID> excluded, Pageable pageable);
+
+    /** Thành viên mới nhất: chưa có hoạt động nào nên không lọt vào nhóm "hoạt động gần đây", nhưng rất đáng được gợi ý. */
+    @Query("SELECT p FROM UserProfile p WHERE p.userId NOT IN :excluded ORDER BY p.createdAt DESC")
+    List<UserProfile> findNewestMembers(@Param("excluded") java.util.Collection<UUID> excluded, Pageable pageable);
+
     @Query("SELECT p FROM UserProfile p WHERE " +
            "LOWER(COALESCE(p.firstName, '')) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(COALESCE(p.lastName, '')) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

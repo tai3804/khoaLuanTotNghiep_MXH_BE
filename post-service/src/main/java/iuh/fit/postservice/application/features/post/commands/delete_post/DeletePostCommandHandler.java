@@ -9,6 +9,7 @@ import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaReposi
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import iuh.fit.postservice.infrastructure.client.media.MediaClient;
 import lombok.AccessLevel;
+import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ public class DeletePostCommandHandler {
     PostMediaRepository postMediaRepository;
     MediaClient mediaClient;
     JwtUtil jwtUtil;
+    RankedFeedCache rankedFeedCache;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -49,6 +51,7 @@ public class DeletePostCommandHandler {
 
         post.setDeleted(true);
         postRepository.save(post);
+        rankedFeedCache.evictViewer(post.getAuthorId());
 
         // Delete associated S3 files via MediaClient
         List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());

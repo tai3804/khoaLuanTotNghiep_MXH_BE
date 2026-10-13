@@ -252,7 +252,8 @@ public class GeminiApiClient {
                         ),
                         "generationConfig", Map.of(
                                 "temperature", 0.7,
-                                "maxOutputTokens", 1024
+                                // Các model Gemini 3.x tính cả token "suy nghĩ" vào giới hạn này, nên 1024 làm câu trả lời bị cụt
+                                "maxOutputTokens", 4096
                         )
                 );
 
@@ -261,7 +262,7 @@ public class GeminiApiClient {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(endpoint))
                         .header("Content-Type", "application/json")
-                        .timeout(Duration.ofSeconds(12))
+                        .timeout(Duration.ofSeconds(25))
                         .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                         .build();
 
@@ -269,7 +270,12 @@ public class GeminiApiClient {
 
                 if (response.statusCode() == 200) {
                     JsonNode rootNode = objectMapper.readTree(response.body());
-                    JsonNode textNode = rootNode.path("candidates").get(0).path("content").path("parts").get(0).path("text");
+                    JsonNode candidate = rootNode.path("candidates").get(0);
+                    if ("MAX_TOKENS".equals(candidate.path("finishReason").asText(""))) {
+                        log.warn("Gemini model {} stopped at MAX_TOKENS (truncated output). Trying next model...", candidateModel);
+                        continue;
+                    }
+                    JsonNode textNode = candidate.path("content").path("parts").get(0).path("text");
                     String text = textNode.asText().trim();
                     if (!text.isBlank()) {
                         return text;

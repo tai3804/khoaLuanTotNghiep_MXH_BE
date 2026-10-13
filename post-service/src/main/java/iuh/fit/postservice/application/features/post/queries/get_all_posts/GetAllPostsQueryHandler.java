@@ -6,6 +6,9 @@ import iuh.fit.commonframework.infrastructure.filter.SortDirection;
 import iuh.fit.postservice.application.features.post.queries.get_post_detail.GetPostDetailResult;
 import iuh.fit.postservice.application.mapper.PostFeatureMapper;
 import iuh.fit.postservice.application.service.PostVisibilityService;
+import iuh.fit.postservice.application.service.ranking.FeedRankingService;
+import iuh.fit.postservice.application.service.ranking.PostRelevanceScorer;
+import iuh.fit.postservice.application.service.ranking.RankedFeedSnapshot;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
 import iuh.fit.postservice.domain.enums.MediaType;
@@ -26,9 +29,12 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Set;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -39,11 +45,18 @@ public class GetAllPostsQueryHandler {
     PostMediaRepository postMediaRepository;
     PostFeatureMapper postFeatureMapper;
     PostVisibilityService postVisibilityService;
+    FeedRankingService feedRankingService;
 
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "post-feed-v2", key = "#query.toString()", unless = "#result == null")
     public PagedResponse<GetPostDetailResult> handle(GetAllPostsQuery query) {
         BaseFilter filter = query.getFilter() != null ? query.getFilter() : new BaseFilter();
+
+        // Bảng tin cá nhân hoá: sortBy=relevance (Tất cả) hoặc sortBy=trending (Nổi bật)
+        PostRelevanceScorer.Mode rankMode = rankModeOf(query, filter);
+        if (rankMode != null) {
+            return handleRanked(query, filter, rankMode);
+        }
 
         Specification<Post> spec = (root, q, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -110,6 +123,8 @@ public class GetAllPostsQueryHandler {
         int pageIndex = hasCursor ? 0 : Math.max(0, filter.getPage() - 1);
         int pageSize = filter.getSize() > 0 ? Math.min(filter.getSize(), 100) : 10;
         String sortBy = (filter.getSortBy() != null && !filter.getSortBy().isBlank()) ? filter.getSortBy() : "createdAt";
+        // "relevance"/"trending" là chế độ xếp hạng, không phải cột: khách chưa đăng nhập, tìm kiếm hoặc lọc thì dùng thứ tự thời gian
+        if ("relevance".equalsIgnoreCase(sortBy) || "trending".equalsIgnoreCase(sortBy)) sortBy = "createdAt";
         Sort.Direction direction = filter.getSortDirection() == SortDirection.DESC ? Sort.Direction.DESC : Sort.Direction.ASC;
         Pageable pageable = PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Order.desc("isPinned"), new Sort.Order(direction, sortBy)));
 
@@ -117,12 +132,69 @@ public class GetAllPostsQueryHandler {
 
         boolean mainFeed = filter.getFilters() == null || !Boolean.TRUE.equals(filter.getFilters().get("_groupFeed"));
         Set<java.util.UUID> visiblePostIds = postVisibilityService.visiblePostIds(postsPage.getContent(), query.getViewerId(), mainFeed);
-        List<GetPostDetailResult> content = postsPage.getContent().stream()
-                .filter(post -> visiblePostIds.contains(post.getId())).map(post -> {
-            List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
-            return postFeatureMapper.toGetDetailResult(post, mediaList);
-        }).toList();
+        List<Post> visiblePosts = postsPage.getContent().stream().filter(post -> visiblePostIds.contains(post.getId())).toList();
+        // Một truy vấn lấy ảnh/video cho cả trang thay vì một truy vấn cho từng bài
+        Map<UUID, List<PostMedia>> mediaByPost = loadMediaByPost(visiblePosts.stream().map(Post::getId).toList());
+        List<GetPostDetailResult> content = visiblePosts.stream()
+                .map(post -> postFeatureMapper.toGetDetailResult(post, mediaByPost.getOrDefault(post.getId(), List.of())))
+                .toList();
 
         return postFeatureMapper.toPagedResponse(postsPage, content);
+    }
+
+    private static PostRelevanceScorer.Mode rankModeOf(GetAllPostsQuery query, BaseFilter filter) {
+        if (query.getViewerId() == null) return null; // khách chưa đăng nhập: không có gì để cá nhân hoá
+        if (query.getCursor() != null && !query.getCursor().isBlank()) return null;
+        if (filter.getKeyword() != null && !filter.getKeyword().isBlank()) return null;
+        if (filter.getFilters() != null && !filter.getFilters().isEmpty()) return null;
+        if ("relevance".equalsIgnoreCase(filter.getSortBy())) return PostRelevanceScorer.Mode.RELEVANCE;
+        if ("trending".equalsIgnoreCase(filter.getSortBy())) return PostRelevanceScorer.Mode.TRENDING;
+        return null;
+    }
+
+    /**
+     * Trang của bảng tin đã xếp hạng: cắt từ bản chụp đã xếp hạng (cache) rồi nạp bài viết theo đúng thứ tự đó.
+     * Phân trang theo số trang (page bắt đầu từ 1), không dùng cursor theo thời gian.
+     */
+    private PagedResponse<GetPostDetailResult> handleRanked(GetAllPostsQuery query, BaseFilter filter, PostRelevanceScorer.Mode mode) {
+        RankedFeedSnapshot snapshot = feedRankingService.snapshot(query.getViewerId(), mode);
+
+        int page = Math.max(1, filter.getPage());
+        int size = filter.getSize() > 0 ? Math.min(filter.getSize(), 50) : 10;
+        int total = snapshot.getPostIds().size();
+        int from = Math.min((page - 1) * size, total);
+        int to = Math.min(from + size, total);
+
+        List<UUID> pageIds = snapshot.getPostIds().subList(from, to).stream().map(UUID::fromString).toList();
+        Map<UUID, Post> postsById = postRepository.findAllById(pageIds).stream()
+                .collect(Collectors.toMap(Post::getId, p -> p));
+        Map<UUID, List<PostMedia>> mediaByPost = loadMediaByPost(pageIds);
+
+        List<GetPostDetailResult> content = new ArrayList<>(pageIds.size());
+        for (int i = 0; i < pageIds.size(); i++) {
+            Post post = postsById.get(pageIds.get(i));
+            // Bản chụp có thể cũ vài chục giây: bỏ bài vừa bị xoá/ẩn
+            if (post == null || post.isDeleted() || post.isArchived()) continue;
+            GetPostDetailResult result = postFeatureMapper.toGetDetailResult(post, mediaByPost.getOrDefault(post.getId(), List.of()));
+            result.setRelevanceScore(snapshot.getScores().get(from + i));
+            result.setRelevanceReason(snapshot.getReasons().get(from + i));
+            content.add(result);
+        }
+
+        int totalPages = (int) Math.ceil((double) total / size);
+        return PagedResponse.<GetPostDetailResult>builder()
+                .content(content)
+                .page(page - 1)
+                .size(size)
+                .totalElements(total)
+                .totalPages(totalPages)
+                .last(to >= total)
+                .build();
+    }
+
+    private Map<UUID, List<PostMedia>> loadMediaByPost(List<UUID> postIds) {
+        if (postIds.isEmpty()) return new HashMap<>();
+        return postMediaRepository.findByPostIdInOrderBySortOrderAsc(postIds).stream()
+                .collect(Collectors.groupingBy(PostMedia::getPostId));
     }
 }

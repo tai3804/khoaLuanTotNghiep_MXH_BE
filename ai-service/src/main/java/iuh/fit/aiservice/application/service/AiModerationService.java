@@ -11,6 +11,7 @@ import iuh.fit.aiservice.infrastructure.feign.PostFeignClient;
 import iuh.fit.aiservice.infrastructure.gemini.GeminiApiClient;
 import iuh.fit.aiservice.infrastructure.gemini.GeminiModerationResult;
 import iuh.fit.commonframework.application.dto.ApiResponse;
+import iuh.fit.commonframework.event.PostFlaggedEvent;
 import iuh.fit.commonframework.event.ReportCreatedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -238,58 +239,72 @@ public class AiModerationService {
     }
 
     /**
-     * Tự động kiểm duyệt bài viết mới tạo qua sự kiện Kafka 'post.created'
+     * Tự động kiểm duyệt bài viết mới tạo qua sự kiện Kafka 'post.created'.
+     * <p>
+     * Bài nghi vấn vi phạm sẽ được tạm ẩn và gắn cờ cho kiểm duyệt viên quyết định (gỡ hẳn hoặc khôi phục),
+     * AI không tự gỡ vĩnh viễn bài viết.
+     *
+     * @return true nếu bài viết an toàn (hoặc kiểm duyệt AI đang tắt) và có thể tiếp tục tóm tắt;
+     *         false nếu bài bị gắn cờ, đã được đánh giá trước đó hoặc không có nội dung.
      */
     @Transactional
-    public void evaluateNewPost(UUID postId, UUID authorId, String content) {
-        if (!isDynamicModerationEnabled()) {
-            log.info("AI Moderation is disabled by System Admin Setting. Skipping auto-moderation for post: {}", postId);
-            return;
+    public boolean evaluateNewPost(UUID postId, UUID authorId, String content) {
+        if (content == null || content.isBlank()) {
+            return false;
         }
 
-        if (content == null || content.isBlank()) {
-            return;
+        if (!isDynamicModerationEnabled()) {
+            log.info("AI Moderation is disabled by System Admin Setting. Skipping auto-moderation for post: {}", postId);
+            return true;
         }
 
         if (postId != null && moderationLogRepository.existsByTargetTypeAndTargetId("POST", postId)) {
             log.info("Post {} has already been evaluated by AI. Skipping duplicate evaluation.", postId);
-            return;
+            return false;
         }
 
         log.info("AI Auto-Evaluating newly created post: {} [Author: {}]", postId, authorId);
         try {
             GeminiModerationResult result = evaluateTextContent(content);
 
-            String action = result.getSuggestedAction();
+            String suggested = result.getSuggestedAction();
             double score = result.getToxicityScore();
 
-            if (score >= thresholdDelete || "DELETE_POST".equalsIgnoreCase(action)) {
-                action = "DELETE_POST";
-                log.warn("AI AUTO-MODERATION [DELETE_POST]: Post {} has high toxicity: {}", postId, score);
+            boolean flagged = score >= thresholdWarn
+                    || result.isToxic()
+                    || "AUTO_HIDE".equalsIgnoreCase(suggested)
+                    || "WARN_USER".equalsIgnoreCase(suggested)
+                    || "DELETE_POST".equalsIgnoreCase(suggested);
 
-                postModerationProducer.publishPostModerated(postId, "DELETE_POST", "AI_AUTO_MODERATION: " + result.getReason());
+            String action;
+            if (flagged) {
+                action = "FLAGGED_FOR_REVIEW";
+                log.warn("AI AUTO-MODERATION [FLAGGED]: Post {} flagged for moderator review (score: {}, category: {}, severity: {})",
+                        postId, score, result.getCategory(), result.getSeverity());
 
-                if (authorId != null) {
-                    aiNotificationProducer.sendWarningNotification(
-                            authorId,
-                            "Bài viết đã bị gỡ bỏ do vi phạm nghiêm trọng",
-                            String.format("Bài viết của bạn đã bị hệ thống AI gỡ bỏ do vi phạm chuẩn mực (%s): %s",
-                                    result.getCategory(), result.getReason()),
-                            postId.toString()
-                    );
-                }
-
-            } else if (score >= thresholdWarn || "AUTO_HIDE".equalsIgnoreCase(action) || "WARN_USER".equalsIgnoreCase(action) || result.isToxic()) {
-                action = "AUTO_HIDE";
-                log.warn("AI AUTO-MODERATION [HIDE_POST]: Post {} has toxicity: {}", postId, score);
-
+                // A. Tạm ẩn bài viết trong lúc chờ kiểm duyệt viên xem xét
                 postModerationProducer.publishPostModerated(postId, "HIDE_POST", "AI_AUTO_MODERATION: " + result.getReason());
 
+                // B. Gắn cờ cho kiểm duyệt viên (admin-service đưa vào hàng chờ kiểm duyệt)
+                postModerationProducer.publishPostFlagged(PostFlaggedEvent.builder()
+                        .postId(postId)
+                        .authorId(authorId)
+                        .score(score)
+                        .category(result.getCategory())
+                        .severity(result.getSeverity())
+                        .suggestedAction(suggested)
+                        .reason(result.getReason())
+                        .keywords(result.getExtractedKeywords() != null ? String.join(", ", result.getExtractedKeywords()) : "")
+                        .contentSnippet(content.length() > 255 ? content.substring(0, 255) + "..." : content)
+                        .fallback(result.isFallback())
+                        .build());
+
+                // C. Báo cho tác giả biết bài đang chờ kiểm duyệt
                 if (authorId != null) {
                     aiNotificationProducer.sendWarningNotification(
                             authorId,
-                            "Bài viết của bạn đã bị tạm ẩn",
-                            String.format("Bài viết của bạn bị ẩn do chứa nội dung không phù hợp (%s): %s. Bạn có thể chỉnh sửa lại bài viết.",
+                            "Bài viết của bạn đang chờ kiểm duyệt",
+                            String.format("Bài viết của bạn bị tạm ẩn vì có dấu hiệu vi phạm (%s): %s. Kiểm duyệt viên sẽ xem xét và phản hồi sớm. Bạn có thể gửi kháng nghị nếu cho rằng đây là nhầm lẫn.",
                                     result.getCategory(), result.getReason()),
                             postId.toString()
                     );
@@ -326,8 +341,10 @@ public class AiModerationService {
             moderationLogRepository.save(logEntry);
             log.info("Successfully recorded AI Moderation Log for new post: {}", postId);
 
+            return !flagged;
         } catch (Exception e) {
             log.error("Error during auto AI evaluation for post {}: {}", postId, e.getMessage(), e);
+            return false;
         }
     }
 }

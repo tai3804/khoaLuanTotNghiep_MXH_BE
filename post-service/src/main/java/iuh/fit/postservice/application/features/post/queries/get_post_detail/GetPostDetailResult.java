@@ -22,6 +22,7 @@ public class GetPostDetailResult {
     UUID authorId;
     UUID groupId;
     String content;
+    String summary;
     PostPrivacy privacy;
     PostStatus status;
     Set<UUID> allowedUserIds;
@@ -33,10 +34,14 @@ public class GetPostDetailResult {
     List<PostMedia> mediaList;
     Set<UUID> taggedUserIds;
     Set<String> hashtags;
-    boolean isPinned;
-    boolean isArchived;
+    // Tên trường không có tiền tố "is": Lombok bỏ tiền tố này khỏi getter/setter nên MapStruct (và builder) mới khớp với Post
+    boolean pinned;
+    boolean archived;
     boolean isTrending;
     java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
+    /** Chỉ có khi bảng tin được xếp hạng (sortBy=relevance|trending): điểm và lý do bài xuất hiện (friend, following, group, interacted, popular, recent, own, trending). */
+    Double relevanceScore;
+    String relevanceReason;
 }

@@ -7,5 +7,9 @@ public enum ModerationAction {
     WARN_USER,
     BAN_USER,
     DISMISS,
-    RESTORE_POST
+    RESTORE_POST,
+    /** Kiểm duyệt viên chấp nhận kháng nghị của tác giả (bài được khôi phục). */
+    APPEAL_ACCEPTED,
+    /** Kiểm duyệt viên bác bỏ kháng nghị, giữ nguyên quyết định. */
+    APPEAL_REJECTED
 }

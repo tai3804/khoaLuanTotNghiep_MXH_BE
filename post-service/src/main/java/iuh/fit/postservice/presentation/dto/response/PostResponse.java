@@ -1,5 +1,6 @@
 package iuh.fit.postservice.presentation.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.domain.enums.PostStatus;
 import lombok.*;
@@ -20,6 +21,7 @@ public class PostResponse {
     UUID authorId;
     UUID groupId;
     String content;
+    String summary;
     PostPrivacy privacy;
     PostStatus status;
     Set<UUID> allowedUserIds;
@@ -31,10 +33,15 @@ public class PostResponse {
     List<PostMediaResponse> mediaList;
     Set<UUID> taggedUserIds;
     Set<String> hashtags;
-    boolean isPinned;
-    boolean isArchived;
+    // Giữ key JSON là isPinned/isArchived (FE và UpdatePostRequest dùng tên này); nếu không Jackson sẽ xuất "pinned"/"archived"
+    @JsonProperty("isPinned")
+    boolean pinned;
+    @JsonProperty("isArchived")
+    boolean archived;
     boolean isTrending;
     java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
+    Double relevanceScore;
+    String relevanceReason;
 }

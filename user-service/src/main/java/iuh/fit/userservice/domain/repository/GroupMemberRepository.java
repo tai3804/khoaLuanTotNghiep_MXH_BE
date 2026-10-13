@@ -16,5 +16,6 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> 
     List<GroupMember> findAllByGroupIdAndStatus(UUID groupId, GroupMemberStatus status);
 
     List<GroupMember> findAllByGroupId(UUID groupId);
+    List<GroupMember> findAllByGroupIdInAndStatus(java.util.Collection<UUID> groupIds, GroupMemberStatus status);
 }
 

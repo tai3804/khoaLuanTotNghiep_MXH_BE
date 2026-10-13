@@ -33,8 +33,8 @@ public class CreatePostResult {
     List<PostMedia> mediaList;
     Set<UUID> taggedUserIds;
     Set<String> hashtags;
-    boolean isPinned;
-    boolean isArchived;
+    boolean pinned;
+    boolean archived;
     boolean isTrending;
     java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;
