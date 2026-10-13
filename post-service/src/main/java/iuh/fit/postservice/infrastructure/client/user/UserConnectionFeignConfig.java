@@ -18,8 +18,14 @@ public class UserConnectionFeignConfig {
             }
             if (authorization == null || authorization.isBlank()) {
                 var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-                if (auth != null && auth.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
-                    authorization = "Bearer " + jwt.getTokenValue();
+                if (auth != null) {
+                    if (auth.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
+                        authorization = "Bearer " + jwt.getTokenValue();
+                    } else if (auth.getCredentials() instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
+                        authorization = "Bearer " + jwt.getTokenValue();
+                    } else if (auth.getCredentials() instanceof String creds && !creds.isBlank()) {
+                        authorization = creds.startsWith("Bearer ") ? creds : "Bearer " + creds;
+                    }
                 }
             }
             if (authorization != null && !authorization.isBlank()) {
