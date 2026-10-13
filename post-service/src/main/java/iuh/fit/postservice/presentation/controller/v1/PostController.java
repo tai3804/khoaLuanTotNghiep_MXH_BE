@@ -38,6 +38,8 @@ import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
+import iuh.fit.postservice.infrastructure.event.ModerationAuditPublisher;
+import iuh.fit.postservice.infrastructure.event.ReputationEventPublisher;
 import iuh.fit.postservice.presentation.constants.ApiConstants;
 import iuh.fit.postservice.presentation.constants.MessageConstants;
 import iuh.fit.postservice.presentation.dto.request.CreatePostRequest;
@@ -92,6 +94,8 @@ public class PostController {
     UserConnectionClient userConnectionClient;
     CacheManager cacheManager;
     KafkaTemplate<String, Object> kafkaTemplate;
+    ReputationEventPublisher reputationEventPublisher;
+    ModerationAuditPublisher moderationAuditPublisher;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(
@@ -208,8 +212,9 @@ public class PostController {
         String message = request == null ? null : request.get("message");
         if (message == null || message.isBlank()) throw new BusinessException(ErrorCode.INVALID_INPUT);
         // Historical moderation records may not have an action value. The post's
-        // hidden/deleted state is still a valid moderation decision to appeal.
-        if ((!post.isArchived() && !post.isDeleted() && post.getModerationAction() == null)
+        // hidden/deleted state is still a valid moderation decision to appeal; a post that is
+        // visible again (restored / appeal accepted) has nothing left to appeal.
+        if ((!post.isArchived() && !post.isDeleted())
                 || post.getAppealStatus() == ModerationAppealStatus.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
@@ -294,6 +299,8 @@ public class PostController {
         if (approved) { post.setDeleted(false); post.setArchived(false); post.setStatus(PostStatus.PUBLISHED); }
         postRepository.save(post);
         clearPostCaches();
+        if (approved) reputationEventPublisher.revert(post.getAuthorId(), post.getId(), "Kháng nghị được chấp nhận");
+        moderationAuditPublisher.publishAppealReviewed(post.getId(), moderatorId, approved, post.getAppealReviewNote());
         sendAppealDecisionNotification(post, moderatorId, approved);
         return ResponseEntity.ok(ApiResponse.success(appealView(post), approved ? "Appeal accepted and post restored" : "Appeal rejected"));
     }

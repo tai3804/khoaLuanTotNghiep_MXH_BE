@@ -188,6 +188,28 @@ public class UserConnectionController {
         return getPagedConnectionsResponse(targetUserId, "FRIENDS", page, size);
     }
 
+    /**
+     * Danh sách mã bạn bè và mã người đang theo dõi của người dùng hiện tại, một lần gọi duy nhất.
+     * post-service dùng để tính độ thân thiết khi xếp hạng bảng tin (giới hạn 5000 mã mỗi loại).
+     */
+    @GetMapping("/graph")
+    @Operation(summary = "Get my social graph", description = "Returns friend ids and following ids of the current user (used for feed ranking)", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<java.util.Map<String, List<UUID>>>> getSocialGraph() {
+        UUID me = getCurrentUserId();
+        java.util.Set<UUID> friendIds = new java.util.LinkedHashSet<>();
+        for (iuh.fit.userservice.domain.entities.UserConnection c : userConnectionRepository.findAllAcceptedFriendships(me)) {
+            friendIds.add(c.getRequesterId().equals(me) ? c.getTargetId() : c.getRequesterId());
+        }
+        java.util.Set<UUID> followingIds = new java.util.LinkedHashSet<>();
+        for (iuh.fit.userservice.domain.entities.UserConnection c : userConnectionRepository.findAllAcceptedFollowConnections(me)) {
+            if (c.getRequesterId().equals(me)) followingIds.add(c.getTargetId());
+        }
+        java.util.Map<String, List<UUID>> graph = new java.util.LinkedHashMap<>();
+        graph.put("friendIds", friendIds.stream().limit(5000).toList());
+        graph.put("followingIds", followingIds.stream().limit(5000).toList());
+        return ResponseEntity.ok(ApiResponse.success(graph, "Social graph retrieved successfully"));
+    }
+
     @GetMapping("/mutual-friends/{targetId}")
     @Operation(summary = "Get mutual friends list", description = "Retrieves paginated list of mutual friends between current user and target user", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<ApiResponse<List<UserConnectionResponse>>> getMutualFriends(

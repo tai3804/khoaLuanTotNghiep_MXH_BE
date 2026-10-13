@@ -23,7 +23,7 @@ public class UpdatePostResult {
     PostPrivacy privacy;
     Set<UUID> allowedUserIds;
     List<PostMedia> mediaList;
-    boolean isPinned;
-    boolean isArchived;
+    boolean pinned;
+    boolean archived;
     LocalDateTime updatedAt;
 }

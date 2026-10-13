@@ -17,4 +17,7 @@ public class FriendSuggestionResponse {
     String fullName;
     String avatarUrl;
     long mutualFriendsCount;
+    /** Điểm phù hợp (càng cao càng nên gợi ý) và lý do gợi ý để hiển thị cho người dùng, vd "3 bạn chung". */
+    double score;
+    java.util.List<String> reasons;
 }

@@ -35,6 +35,10 @@ public class Post extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     String content;
 
+    // Bản tóm tắt do AI tạo cho bài viết dài (null nếu bài ngắn hoặc chưa có)
+    @Column(name = "summary", columnDefinition = "TEXT")
+    String summary;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default

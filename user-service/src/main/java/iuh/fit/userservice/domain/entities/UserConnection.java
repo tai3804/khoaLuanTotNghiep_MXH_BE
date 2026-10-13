@@ -12,6 +12,7 @@ import lombok.experimental.SuperBuilder;
 import java.util.UUID;
 
 @Entity
+@jakarta.persistence.EntityListeners(iuh.fit.userservice.infrastructure.persistence.SuggestionCacheEvictionListener.class)
 @Table(name = "user_connections")
 @Getter
 @Setter

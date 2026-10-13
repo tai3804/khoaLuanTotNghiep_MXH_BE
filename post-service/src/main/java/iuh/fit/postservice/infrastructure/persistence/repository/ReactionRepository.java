@@ -36,4 +36,8 @@ public interface ReactionRepository extends BaseJpaRepository<Reaction, UUID> {
     }
 
     void deleteByPostIdAndUserId(UUID postId, UUID userId);
+
+    /** Số lượt mình thả cảm xúc cho bài của từng tác giả kể từ mốc `since` (dùng tính độ thân thiết khi xếp hạng bảng tin). */
+    @Query("SELECT p.authorId, COUNT(r) FROM Reaction r, Post p WHERE r.postId = p.id AND r.userId = :userId AND r.createdAt >= :since GROUP BY p.authorId")
+    List<Object[]> countInteractionsByAuthor(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
 }

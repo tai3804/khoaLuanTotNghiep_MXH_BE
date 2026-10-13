@@ -3,9 +3,16 @@ package iuh.fit.commonframework.application.exception;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -61,6 +68,34 @@ public class GlobalExceptionHandler {
                                 ApiResponse.error(404, "Resource not found: " + exception.getResourcePath()));
         }
 
+
+        /**
+         * Lỗi do dữ liệu client gửi lên (JSON sai định dạng, giá trị enum không tồn tại, thiếu/sai kiểu tham số,
+         * sortBy trỏ tới trường không có) phải là 400 chứ không phải lỗi hệ thống 500.
+         */
+        @ExceptionHandler(value = { HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
+                        MissingServletRequestParameterException.class, MissingServletRequestPartException.class,
+                        PropertyReferenceException.class })
+        public ResponseEntity<ApiResponse<Void>> handlingBadRequest(Exception exception) {
+                log.warn("Bad request: {}", exception.getMessage());
+                ErrorCode errorCode = ErrorCode.INVALID_INPUT;
+                return ResponseEntity.status(errorCode.getStatusCode()).body(
+                                ApiResponse.error(errorCode.getCode(), errorCode.getMessage()));
+        }
+
+        @ExceptionHandler(value = HttpMediaTypeNotSupportedException.class)
+        public ResponseEntity<ApiResponse<Void>> handlingUnsupportedMediaType(HttpMediaTypeNotSupportedException exception) {
+                ErrorCode errorCode = ErrorCode.UNSUPPORTED_MEDIA_TYPE;
+                return ResponseEntity.status(errorCode.getStatusCode()).body(
+                                ApiResponse.error(errorCode.getCode(), errorCode.getMessage()));
+        }
+
+        @ExceptionHandler(value = HttpRequestMethodNotSupportedException.class)
+        public ResponseEntity<ApiResponse<Void>> handlingMethodNotSupported(HttpRequestMethodNotSupportedException exception) {
+                ErrorCode errorCode = ErrorCode.METHOD_NOT_ALLOWED;
+                return ResponseEntity.status(errorCode.getStatusCode()).body(
+                                ApiResponse.error(errorCode.getCode(), errorCode.getMessage()));
+        }
 
         @ExceptionHandler(value = ConstraintViolationException.class)
         public ResponseEntity<ApiResponse<Map<String, String>>> handlingConstraintViolation(

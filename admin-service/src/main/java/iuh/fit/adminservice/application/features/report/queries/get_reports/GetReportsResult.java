@@ -1,6 +1,7 @@
 package iuh.fit.adminservice.application.features.report.queries.get_reports;
 
 import iuh.fit.adminservice.domain.enums.ReportReason;
+import iuh.fit.adminservice.domain.enums.ReportSource;
 import iuh.fit.adminservice.domain.enums.ReportStatus;
 import iuh.fit.adminservice.domain.enums.TargetType;
 import lombok.*;
@@ -25,4 +26,9 @@ public class GetReportsResult {
     LocalDateTime createdAt;
     LocalDateTime resolvedAt;
     UUID resolvedBy;
+    ReportSource source;
+    Double aiScore;
+    String aiCategory;
+    String aiSeverity;
+    String aiReason;
 }

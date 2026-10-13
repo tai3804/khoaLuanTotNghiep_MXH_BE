@@ -45,4 +45,12 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
             @Param("postId") UUID postId,
             @Param("authorId") UUID authorId,
             @Param("createdAt") LocalDateTime createdAt);
+
+    /** Tập bài viết ứng viên để xếp hạng bảng tin: bài đã đăng, chưa xoá, chưa ẩn, mới nhất trước. */
+    @Query("SELECT p FROM Post p WHERE p.deleted = false AND p.status = 'PUBLISHED' AND p.isArchived = false AND p.createdAt >= :cutoff ORDER BY p.createdAt DESC")
+    List<Post> findRankingCandidates(@Param("cutoff") java.time.LocalDateTime cutoff, org.springframework.data.domain.Pageable pageable);
+
+    /** Số lần mình chia sẻ bài của từng tác giả gốc kể từ mốc `since`. */
+    @Query("SELECT o.authorId, COUNT(s) FROM Post s, Post o WHERE s.originalPostId = o.id AND s.authorId = :userId AND s.deleted = false AND s.createdAt >= :since GROUP BY o.authorId")
+    List<Object[]> countSharesByOriginalAuthor(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
 }

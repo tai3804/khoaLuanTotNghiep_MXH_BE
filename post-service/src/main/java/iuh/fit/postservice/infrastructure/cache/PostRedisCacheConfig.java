@@ -32,6 +32,9 @@ public class PostRedisCacheConfig implements CachingConfigurer {
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(configuration)
+                // Bản chụp bảng tin đã xếp hạng sống lâu hơn để phân trang ổn định khi cuộn
+                .withCacheConfiguration(iuh.fit.postservice.application.service.ranking.RankedFeedCache.CACHE_NAME,
+                        configuration.entryTtl(Duration.ofSeconds(90)))
                 .build();
     }
 

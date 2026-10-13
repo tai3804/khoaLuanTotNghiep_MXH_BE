@@ -15,6 +15,7 @@ import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import lombok.AccessLevel;
+import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class CreatePostCommandHandler {
     PostFeatureMapper postFeatureMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
     UserConnectionClient userConnectionClient;
+    RankedFeedCache rankedFeedCache;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -114,6 +116,8 @@ public class CreatePostCommandHandler {
         }
 
         Post savedPost = postRepository.save(post);
+        // Tác giả vừa đăng: bỏ bản chụp bảng tin đã xếp hạng của họ để thấy ngay bài mới
+        rankedFeedCache.evictViewer(savedPost.getAuthorId());
         List<PostMedia> savedMediaList = new ArrayList<>();
 
         if (hasMediaUrls) {

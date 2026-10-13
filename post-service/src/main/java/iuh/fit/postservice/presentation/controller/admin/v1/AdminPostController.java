@@ -1,9 +1,7 @@
 package iuh.fit.postservice.presentation.controller.admin.v1;
 
-import iuh.fit.commonframework.application.exception.BusinessException;
-import iuh.fit.commonframework.application.exception.ErrorCode;
-import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.infrastructure.cache.PostCacheEvictor;
 import iuh.fit.postservice.infrastructure.client.media.MediaClient;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
@@ -12,43 +10,36 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * /api/v1/posts/** là đường dẫn công khai ở tầng filter nên quyền phải được kiểm tra bằng @PreAuthorize;
+ * kiểm tra thủ công trước đây bỏ qua khi danh sách role rỗng (request chưa đăng nhập) nên ai cũng xoá được bài.
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/posts/admin")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
+@PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
 public class AdminPostController {
 
     PostRepository postRepository;
     PostMediaRepository postMediaRepository;
     MediaClient mediaClient;
-    JwtUtil jwtUtil;
-
-    private void checkAdminPermission() {
-        List<String> roles = jwtUtil.getCurrentUserRoles();
-        if (roles != null && !roles.isEmpty()) {
-            boolean isAdminOrMod = roles.contains("ROLE_ADMIN") || roles.contains("ADMIN") || roles.contains("ROLE_MODERATOR") || roles.contains("MODERATOR");
-            if (!isAdminOrMod) {
-                log.warn("Access denied for non-admin user: {}", jwtUtil.getCurrentUserId());
-                throw new BusinessException(ErrorCode.UNAUTHORIZED);
-            }
-        }
-    }
+    PostCacheEvictor postCacheEvictor;
 
     @GetMapping("/count")
     public ResponseEntity<Long> countPosts() {
-        checkAdminPermission();
         return ResponseEntity.ok(postRepository.count());
     }
 
     @DeleteMapping("/{postId}")
     public ResponseEntity<Void> deletePost(@PathVariable UUID postId) {
-        checkAdminPermission();
         log.info("Admin requested delete for post: {}", postId);
         try {
             List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(postId);
@@ -66,6 +57,7 @@ public class AdminPostController {
             }
             postMediaRepository.deleteByPostId(postId);
             postRepository.deleteById(postId);
+            postCacheEvictor.evictAllWithRecheck();
         } catch (Exception e) {
             log.warn("Failed to delete post {}: {}", postId, e.getMessage());
         }

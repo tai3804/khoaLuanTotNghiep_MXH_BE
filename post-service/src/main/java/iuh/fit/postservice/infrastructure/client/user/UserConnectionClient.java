@@ -20,6 +20,10 @@ public interface UserConnectionClient {
     @GetMapping("/api/v1/users/connections/friends")
     ApiResponse<Map<String, Object>> getFriends(@RequestParam("page") int page, @RequestParam("size") int size);
 
+    /** Mã bạn bè và mã người đang theo dõi của người dùng hiện tại ({"friendIds": [...], "followingIds": [...]}). */
+    @GetMapping("/api/v1/users/connections/graph")
+    ApiResponse<Map<String, List<UUID>>> getSocialGraph();
+
     @PostMapping("/api/v1/groups/feed-visibility")
     ApiResponse<List<GroupFeedVisibility>> getGroupFeedVisibility(@RequestBody List<UUID> groupIds);
 
