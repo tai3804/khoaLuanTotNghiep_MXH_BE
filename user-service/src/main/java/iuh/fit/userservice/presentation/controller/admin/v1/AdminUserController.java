@@ -26,7 +26,7 @@ public class AdminUserController {
     JwtUtil jwtUtil;
 
     @GetMapping("/all")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<List<Map<String, Object>>> getAllUsers() {
         List<UserProfile> profiles = userProfileRepository.findAll();
         List<Map<String, Object>> response = profiles.stream().map(p -> {
@@ -72,7 +72,7 @@ public class AdminUserController {
     }
 
     @GetMapping("/count")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<Long> countUsers() {
         return ResponseEntity.ok(userProfileRepository.count());
     }

@@ -2,6 +2,7 @@ package iuh.fit.aiservice.infrastructure.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -18,6 +19,7 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class AiSecurityConfig {
 
         @Bean
@@ -38,6 +40,7 @@ public class AiSecurityConfig {
                                                                 "/actuator/**")
                                                 .permitAll()
                                                 .requestMatchers(
+                                                                "/api/v1/ai/keywords",
                                                                 "/api/v1/ai/keywords/**",
                                                                 "/api/v1/ai/moderation/logs",
                                                                 "/api/v1/ai/moderation/stats")

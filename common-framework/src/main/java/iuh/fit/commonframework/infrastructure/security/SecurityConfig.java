@@ -62,7 +62,6 @@ public class SecurityConfig {
                         "/api/v1/media/files/**",
                         "/api/v1/admin/settings/public",
                         "/api/v1/admin/settings/public/**",
-                        "/api/v1/ai/**",
                         "/ws-chat",
                         "/ws-chat/**",
                         "/ws-notifications",
@@ -85,6 +84,7 @@ public class SecurityConfig {
                                 .sessionManagement(session -> session
                                                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                                 .authorizeHttpRequests(auth -> auth
+                                                .requestMatchers("/api/v1/posts/admin/**", "/api/v1/groups/admin/**").authenticated()
                                                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                                                 .anyRequest().authenticated())
                                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(

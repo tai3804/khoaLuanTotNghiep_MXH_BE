@@ -35,6 +35,7 @@ public class AiModerationController {
     }
 
     @GetMapping("/logs")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<ApiResponse<List<AiModerationLog>>> getModerationLogs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
@@ -46,6 +47,7 @@ public class AiModerationController {
     }
 
     @GetMapping("/stats")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getAiStats() {
         long totalLogs = logRepository.count();
         long totalFlagged = logRepository.countFlaggedContent();
