@@ -14,7 +14,8 @@ import java.util.UUID;
 @Table(name = "stories", indexes = {
         @Index(name = "idx_story_user_id", columnList = "user_id"),
         @Index(name = "idx_story_expires_at", columnList = "expires_at"),
-        @Index(name = "idx_story_is_deleted", columnList = "is_deleted")
+        @Index(name = "idx_story_is_deleted", columnList = "is_deleted"),
+        @Index(name = "idx_story_is_archived", columnList = "is_archived")
 })
 @Getter
 @Setter
@@ -53,12 +54,18 @@ public class Story {
     @Builder.Default
     boolean isDeleted = false;
 
+    @Column(name = "is_archived", nullable = false)
+    @Builder.Default
+    boolean isArchived = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     Instant createdAt;
 
     @PrePersist
     protected void onCreate() {
-        createdAt = Instant.now();
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
         if (expiresAt == null) {
             expiresAt = createdAt.plus(24, ChronoUnit.HOURS);
         }

@@ -44,4 +44,18 @@ public interface StoryPresentationMapper {
                 .last(pagedResult.isLast())
                 .build();
     }
+
+    default PagedResponse<StoryResponse> toPagedStoryResponse(PagedResponse<StoryResult> pagedResult) {
+        if (pagedResult == null) return null;
+        List<StoryResponse> content = pagedResult.getContent() == null ? Collections.emptyList() :
+                pagedResult.getContent().stream().map(this::toResponse).toList();
+        return PagedResponse.<StoryResponse>builder()
+                .content(content)
+                .page(pagedResult.getPage())
+                .size(pagedResult.getSize())
+                .totalElements(pagedResult.getTotalElements())
+                .totalPages(pagedResult.getTotalPages())
+                .last(pagedResult.isLast())
+                .build();
+    }
 }

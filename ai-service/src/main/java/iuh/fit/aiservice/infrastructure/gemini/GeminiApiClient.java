@@ -127,8 +127,8 @@ public class GeminiApiClient {
     private GeminiModerationResult parseGeminiResponse(String responseBody) {
         try {
             JsonNode rootNode = objectMapper.readTree(responseBody);
-            JsonNode textNode = rootNode.path("candidates").get(0).path("content").path("parts").get(0).path("text");
-            String rawJsonText = textNode.asText().trim();
+            JsonNode candidate = rootNode.path("candidates").get(0);
+            String rawJsonText = extractTextFromCandidate(candidate);
 
             // Xóa markdown nếu có
             if (rawJsonText.startsWith("```json")) {
@@ -221,16 +221,44 @@ public class GeminiApiClient {
         return apiKey != null && !apiKey.trim().isEmpty() && !apiKey.contains("your-gemini-api-key");
     }
 
+    private String extractTextFromCandidate(JsonNode candidate) {
+        if (candidate == null) return "";
+        JsonNode parts = candidate.path("content").path("parts");
+        if (!parts.isArray() || parts.isEmpty()) {
+            return candidate.path("content").path("text").asText("");
+        }
+
+        StringBuilder sb = new StringBuilder();
+        // Bỏ qua các part "thought" (suy nghĩ nội bộ của thinking models như Gemini 2.5/3.x)
+        for (JsonNode part : parts) {
+            if (part.has("thought") && part.get("thought").asBoolean(false)) {
+                continue;
+            }
+            if (part.has("text")) {
+                sb.append(part.get("text").asText());
+            }
+        }
+        if (sb.isEmpty()) {
+            for (JsonNode part : parts) {
+                if (part.has("text")) {
+                    sb.append(part.get("text").asText());
+                }
+            }
+        }
+        return sb.toString().trim();
+    }
+
     private List<String> getCandidateModels() {
         Set<String> models = new LinkedHashSet<>();
-        models.add("gemini-3.5-flash");
-        models.add("gemini-flash-latest");
-        models.add("gemini-3.8-flash");
-        models.add("gemini-3.5-flash-lite");
-        models.add("gemini-flash-lite-latest");
         if (modelName != null && !modelName.isBlank()) {
             models.add(modelName.trim());
         }
+        models.add("gemini-3.5-flash-lite");
+        models.add("gemini-flash-lite-latest");
+        models.add("gemini-3.1-flash-lite");
+        models.add("gemini-3.5-flash");
+        models.add("gemini-flash-latest");
+        models.add("gemini-3.8-flash");
         return new ArrayList<>(models);
     }
 
@@ -262,7 +290,7 @@ public class GeminiApiClient {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(endpoint))
                         .header("Content-Type", "application/json")
-                        .timeout(Duration.ofSeconds(25))
+                        .timeout(Duration.ofSeconds(12))
                         .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                         .build();
 
@@ -275,8 +303,7 @@ public class GeminiApiClient {
                         log.warn("Gemini model {} stopped at MAX_TOKENS (truncated output). Trying next model...", candidateModel);
                         continue;
                     }
-                    JsonNode textNode = candidate.path("content").path("parts").get(0).path("text");
-                    String text = textNode.asText().trim();
+                    String text = extractTextFromCandidate(candidate);
                     if (!text.isBlank()) {
                         return text;
                     }
@@ -375,8 +402,8 @@ public class GeminiApiClient {
 
                 if (response.statusCode() == 200) {
                     JsonNode rootNode = objectMapper.readTree(response.body());
-                    JsonNode textNode = rootNode.path("candidates").get(0).path("content").path("parts").get(0).path("text");
-                    String text = textNode.asText().trim();
+                    JsonNode candidate = rootNode.path("candidates").get(0);
+                    String text = extractTextFromCandidate(candidate);
                     if (!text.isBlank()) {
                         return text;
                     }
@@ -527,8 +554,8 @@ public class GeminiApiClient {
 
                 if (response.statusCode() == 200) {
                     JsonNode rootNode = objectMapper.readTree(response.body());
-                    JsonNode textNode = rootNode.path("candidates").get(0).path("content").path("parts").get(0).path("text");
-                    String rawJsonText = textNode.asText().trim();
+                    JsonNode candidate = rootNode.path("candidates").get(0);
+                    String rawJsonText = extractTextFromCandidate(candidate);
 
                     if (rawJsonText.startsWith("```json")) rawJsonText = rawJsonText.substring(7);
                     if (rawJsonText.startsWith("```")) rawJsonText = rawJsonText.substring(3);

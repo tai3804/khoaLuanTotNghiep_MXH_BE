@@ -42,7 +42,7 @@ aws:
     secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
     bucket-name: ${AWS_S3_BUCKET_NAME:}
     custom-domain: ${AWS_S3_CUSTOM_DOMAIN:}
-    max-file-size-bytes: ${AWS_S3_MAX_FILE_SIZE_BYTES:104857600}
+    max-file-size-bytes: ${AWS_S3_MAX_FILE_SIZE_BYTES:157286400}
 
 eureka:
   client:

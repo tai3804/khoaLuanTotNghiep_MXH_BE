@@ -24,4 +24,5 @@ public class StoryResponse {
     boolean isViewedByMe;
     Instant expiresAt;
     Instant createdAt;
+    boolean isArchived;
 }

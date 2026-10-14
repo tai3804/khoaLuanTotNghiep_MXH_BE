@@ -19,6 +19,8 @@ import iuh.fit.postservice.application.features.story.queries.get_active_stories
 import iuh.fit.postservice.application.features.story.queries.get_active_stories.GetActiveStoriesQuery;
 import iuh.fit.postservice.application.features.story.queries.get_active_stories.StoryResult;
 import iuh.fit.postservice.application.features.story.queries.get_active_stories.UserStoriesResult;
+import iuh.fit.postservice.application.features.story.queries.get_story_archive.GetStoryArchiveHandler;
+import iuh.fit.postservice.application.features.story.queries.get_story_archive.GetStoryArchiveQuery;
 import iuh.fit.postservice.application.features.story.queries.get_story_viewers.GetStoryViewersHandler;
 import iuh.fit.postservice.application.features.story.queries.get_story_viewers.GetStoryViewersQuery;
 import iuh.fit.postservice.application.features.story.queries.get_story_viewers.StoryViewerResult;
@@ -49,6 +51,7 @@ public class StoryController {
 
     CreateStoryHandler createStoryHandler;
     GetActiveStoriesHandler getActiveStoriesHandler;
+    GetStoryArchiveHandler getStoryArchiveHandler;
     ViewStoryHandler viewStoryHandler;
     GetStoryViewersHandler getStoryViewersHandler;
     DeleteStoryHandler deleteStoryHandler;
@@ -75,6 +78,20 @@ public class StoryController {
         List<UserStoriesResult> results = getActiveStoriesHandler.handle(query);
         List<UserStoriesResponse> responses = storyPresentationMapper.toUserStoriesResponseList(results);
         return ResponseEntity.ok(ApiResponse.success(responses, "Active stories retrieved successfully"));
+    }
+
+    @GetMapping("/archive")
+    @Operation(summary = "Get user story archive", description = "Retrieves current user's past archived stories (Facebook-style Kho lưu trữ tin)")
+    public ResponseEntity<ApiResponse<List<StoryResponse>>> getStoryArchive(
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+        UUID currentUserId = getCurrentUserId();
+        GetStoryArchiveQuery query = GetStoryArchiveQuery.builder()
+                .currentUserId(currentUserId)
+                .filter(filter)
+                .build();
+        PagedResponse<StoryResult> result = getStoryArchiveHandler.handle(query);
+        PagedResponse<StoryResponse> response = storyPresentationMapper.toPagedStoryResponse(result);
+        return ResponseEntity.ok(ApiResponse.paged(response, "Story archive retrieved successfully"));
     }
 
     @PostMapping("/{storyId}/view")

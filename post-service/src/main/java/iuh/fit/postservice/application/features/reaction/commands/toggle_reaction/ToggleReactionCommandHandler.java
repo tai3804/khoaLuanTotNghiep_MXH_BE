@@ -72,13 +72,25 @@ public class ToggleReactionCommandHandler {
                 notifEvent.put("actorId", command.getUserId().toString());
                 notifEvent.put("type", "LIKE_POST");
                 notifEvent.put("title", "Tương tác bài viết");
-                notifEvent.put("content", "Một người dùng đã bày tỏ cảm xúc về bài viết của bạn.");
+
+                String reactionAction;
+                switch (activeType) {
+                    case LOVE -> reactionAction = "đã thả tim ❤️ về bài viết của bạn.";
+                    case HAHA -> reactionAction = "đã bày tỏ haha 😆 về bài viết của bạn.";
+                    case WOW -> reactionAction = "đã bày tỏ wow 😮 về bài viết của bạn.";
+                    case SAD -> reactionAction = "đã bày tỏ buồn 😢 về bài viết của bạn.";
+                    case ANGRY -> reactionAction = "đã bày tỏ phẫn nộ 😡 về bài viết của bạn.";
+                    case LIKE -> reactionAction = "đã thích 👍 bài viết của bạn.";
+                    default -> reactionAction = "đã bày tỏ cảm xúc về bài viết của bạn.";
+                }
+
+                notifEvent.put("content", "Một người dùng " + reactionAction);
                 notifEvent.put("targetId", post.getId().toString());
-                notifEvent.put("targetUrl", "/posts/" + post.getId());
+                notifEvent.put("targetUrl", "/posts/" + post.getId() + "?reaction=" + activeType.name());
                 notifEvent.put("avatarUrl", null);
 
                 kafkaTemplate.send("notification.in-app.send", notifEvent);
-                log.info("Published LIKE_POST notification event to Kafka for author: {}", post.getAuthorId());
+                log.info("Published LIKE_POST notification event to Kafka for author: {}, reaction: {}", post.getAuthorId(), activeType);
             } catch (Exception e) {
                 log.warn("Failed to publish LIKE_POST notification event: {}", e.getMessage());
             }

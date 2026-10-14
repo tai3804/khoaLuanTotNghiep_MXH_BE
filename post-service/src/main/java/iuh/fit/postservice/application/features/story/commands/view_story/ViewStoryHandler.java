@@ -27,6 +27,10 @@ public class ViewStoryHandler {
         Story story = storyRepository.findByIdAndIsDeletedFalse(command.getStoryId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
+        if (story.isArchived() || (story.getExpiresAt() != null && story.getExpiresAt().isBefore(java.time.Instant.now()))) {
+            return storyViewerRepository.countByStoryId(story.getId());
+        }
+
         if (!storyViewerRepository.existsByStoryIdAndViewerId(story.getId(), command.getViewerId())) {
             StoryViewer viewer = StoryViewer.builder()
                     .storyId(story.getId())

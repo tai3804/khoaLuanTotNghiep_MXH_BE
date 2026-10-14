@@ -34,6 +34,7 @@ public class CreateStoryHandler {
                 .privacy(command.getPrivacy() != null ? command.getPrivacy() : PostPrivacy.PUBLIC)
                 .expiresAt(Instant.now().plus(24, ChronoUnit.HOURS))
                 .isDeleted(false)
+                .isArchived(false)
                 .build();
 
         Story saved = storyRepository.save(story);
