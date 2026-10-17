@@ -31,6 +31,5 @@ public class GroupResponse {
     boolean isAdmin;
     boolean isModerator;
     GroupMemberStatus joinStatus;
-    List<UUID> memberIds;
 }
 

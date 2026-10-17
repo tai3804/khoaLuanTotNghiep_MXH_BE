@@ -32,9 +32,11 @@ public class PostRedisCacheConfig implements CachingConfigurer {
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(configuration)
-                // Bản chụp bảng tin đã xếp hạng sống lâu hơn để phân trang ổn định khi cuộn
+                // Bản chụp bảng tin đã xếp hạng sống lâu hơn để phân trang ổn định khi cuộn. Bản chụp "chỉ bài chưa xem"
+                // được tính lại ở mỗi lần tải trang 1, nên TTL chỉ cần phủ hết một phiên cuộn (không bị tính lại giữa chừng
+                // làm trang sau nhảy cóc qua các bài vừa xem).
                 .withCacheConfiguration(iuh.fit.postservice.application.service.ranking.RankedFeedCache.CACHE_NAME,
-                        configuration.entryTtl(Duration.ofSeconds(90)))
+                        configuration.entryTtl(Duration.ofMinutes(15)))
                 .build();
     }
 

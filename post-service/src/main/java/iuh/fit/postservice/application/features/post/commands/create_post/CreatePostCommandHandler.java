@@ -15,6 +15,7 @@ import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import lombok.AccessLevel;
+import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -46,6 +47,7 @@ public class CreatePostCommandHandler {
     KafkaTemplate<String, Object> kafkaTemplate;
     UserConnectionClient userConnectionClient;
     RankedFeedCache rankedFeedCache;
+    ReputationGuard reputationGuard;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -53,6 +55,10 @@ public class CreatePostCommandHandler {
         boolean hasContent = command.getContent() != null && !command.getContent().isBlank();
         boolean hasFiles = command.getFiles() != null && !command.getFiles().isEmpty();
         boolean hasMediaUrls = command.getMediaUrls() != null && !command.getMediaUrls().isEmpty();
+
+        // Quyền đăng bài / phát trực tiếp theo bậc điểm uy tín (giãn cách, giới hạn ngày, cấm ở bậc thấp)
+        reputationGuard.checkCanPost(command.getAuthorId(),
+                command.getContent() != null && command.getContent().startsWith(ReputationGuard.LIVE_MARKER));
 
         if (!hasContent && !hasFiles && !hasMediaUrls) {
             throw new BusinessException(PostServiceErrorCode.INVALID_POST_CONTENT);

@@ -4,6 +4,7 @@ import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.CommentFeatureMapper;
+import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.application.util.TagAndHashtagHelper;
 import iuh.fit.postservice.domain.entities.Comment;
 import iuh.fit.postservice.domain.entities.Post;
@@ -37,10 +38,12 @@ public class CreateCommentCommandHandler {
     MediaClient mediaClient;
     CommentFeatureMapper commentFeatureMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
+    ReputationGuard reputationGuard;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
     public CreateCommentResult handle(CreateCommentCommand command) {
+        reputationGuard.checkCanComment(command.getAuthorId()); // quyền bình luận theo bậc điểm uy tín
         Post post = postRepository.findByIdAndDeletedFalse(command.getPostId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 

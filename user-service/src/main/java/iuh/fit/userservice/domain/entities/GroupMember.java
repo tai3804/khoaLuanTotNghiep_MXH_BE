@@ -44,5 +44,9 @@ public class GroupMember {
     @CreatedDate
     @Column(name = "joined_at", updatable = false)
     LocalDateTime joinedAt;
+
+    /** Thời điểm yêu cầu tham gia được duyệt/từ chối (dùng để giới hạn xin lại sau khi bị từ chối). */
+    @Column(name = "reviewed_at")
+    LocalDateTime reviewedAt;
 }
 

@@ -20,15 +20,16 @@ public class RankedFeedCache {
 
     private final CacheManager cacheManager;
 
-    public Optional<RankedFeedSnapshot> get(UUID viewerId, Mode mode) {
+    public Optional<RankedFeedSnapshot> get(UUID viewerId, Mode mode, boolean unseenOnly) {
         Cache cache = cacheManager.getCache(CACHE_NAME);
         if (cache == null) return Optional.empty();
+        String key = key(viewerId, mode, unseenOnly);
         try {
-            return Optional.ofNullable(cache.get(key(viewerId, mode), RankedFeedSnapshot.class));
+            return Optional.ofNullable(cache.get(key, RankedFeedSnapshot.class));
         } catch (Exception e) {
-            log.debug("Ranked feed cache read failed ({}): {}", key(viewerId, mode), e.getMessage());
+            log.debug("Ranked feed cache read failed ({}): {}", key, e.getMessage());
             try {
-                cache.evict(key(viewerId, mode));
+                cache.evict(key);
             } catch (Exception ignored) {
                 // bỏ qua: lần sau sẽ tính lại
             }
@@ -36,13 +37,14 @@ public class RankedFeedCache {
         }
     }
 
-    public void put(UUID viewerId, Mode mode, RankedFeedSnapshot snapshot) {
+    public void put(UUID viewerId, Mode mode, boolean unseenOnly, RankedFeedSnapshot snapshot) {
         Cache cache = cacheManager.getCache(CACHE_NAME);
         if (cache == null) return;
+        String key = key(viewerId, mode, unseenOnly);
         try {
-            cache.put(key(viewerId, mode), snapshot);
+            cache.put(key, snapshot);
         } catch (Exception e) {
-            log.debug("Ranked feed cache write failed ({}): {}", key(viewerId, mode), e.getMessage());
+            log.debug("Ranked feed cache write failed ({}): {}", key, e.getMessage());
         }
     }
 
@@ -52,15 +54,18 @@ public class RankedFeedCache {
         Cache cache = cacheManager.getCache(CACHE_NAME);
         if (cache == null) return;
         for (Mode mode : Mode.values()) {
-            try {
-                cache.evict(key(viewerId, mode));
-            } catch (Exception ignored) {
-                // bỏ qua: bản chụp tự hết hạn sau vài chục giây
+            for (boolean unseenOnly : new boolean[]{false, true}) {
+                try {
+                    cache.evict(key(viewerId, mode, unseenOnly));
+                } catch (Exception ignored) {
+                    // bỏ qua: bản chụp tự hết hạn sau một thời gian
+                }
             }
         }
     }
 
-    private static String key(UUID viewerId, Mode mode) {
-        return viewerId + ":" + mode.name();
+    /** Bản chụp "chỉ bài chưa xem" và bản chụp đầy đủ được lưu tách nhau. */
+    private static String key(UUID viewerId, Mode mode, boolean unseenOnly) {
+        return viewerId + ":" + mode.name() + (unseenOnly ? ":unseen" : "");
     }
 }

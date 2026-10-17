@@ -34,6 +34,7 @@ import iuh.fit.postservice.application.features.post.queries.get_post_detail.Get
 import iuh.fit.postservice.application.features.post.queries.get_post_detail.GetPostDetailResult;
 import iuh.fit.postservice.application.features.post.queries.get_user_posts.GetUserPostsQuery;
 import iuh.fit.postservice.application.features.post.queries.get_user_posts.GetUserPostsQueryHandler;
+import iuh.fit.postservice.application.service.PostSeenService;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.domain.entities.Post;
@@ -44,6 +45,7 @@ import iuh.fit.postservice.presentation.constants.ApiConstants;
 import iuh.fit.postservice.presentation.constants.MessageConstants;
 import iuh.fit.postservice.presentation.dto.request.CreatePostRequest;
 import iuh.fit.postservice.presentation.dto.request.SharePostRequest;
+import iuh.fit.postservice.presentation.dto.request.MarkPostsSeenRequest;
 import iuh.fit.postservice.presentation.dto.request.UpdatePostRequest;
 import iuh.fit.postservice.presentation.dto.request.UpdatePostDateRequest;
 import iuh.fit.postservice.presentation.dto.response.PostResponse;
@@ -88,6 +90,7 @@ public class PostController {
     GetPostDetailQueryHandler getPostDetailQueryHandler;
     GetUserPostsQueryHandler getUserPostsQueryHandler;
     GetAllPostsQueryHandler getAllPostsQueryHandler;
+    PostSeenService postSeenService;
     PostPresentationMapper postPresentationMapper;
     JwtUtil jwtUtil;
     iuh.fit.postservice.infrastructure.persistence.repository.PostRepository postRepository;
@@ -130,15 +133,25 @@ public class PostController {
     @Operation(summary = "Get all posts", description = "Retrieves paginated list of posts using BaseFilter (keyword, filters map, page, size, sortBy, sortDirection) and optional cursor timestamp")
     public ResponseEntity<ApiResponse<List<PostResponse>>> getAllPosts(
             @ParameterObject @Valid @ModelAttribute BaseFilter filter,
-            @RequestParam(value = "cursor", required = false) String cursor) {
+            @RequestParam(value = "cursor", required = false) String cursor,
+            @RequestParam(value = "unseenOnly", required = false, defaultValue = "false") boolean unseenOnly) {
         GetAllPostsQuery query = GetAllPostsQuery.builder()
                 .filter(filter)
                 .cursor(cursor)
                 .viewerId(getOptionalCurrentUserId())
+                .unseenOnly(unseenOnly)
                 .build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(query);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+    }
+
+    @PostMapping("/seen")
+    @Operation(summary = "Mark posts as seen", description = "Records that the authenticated user has viewed these posts on the feed, so GET /posts?unseenOnly=true skips them on later loads. Unknown post ids are ignored.")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> markPostsSeen(
+            @Valid @org.springframework.web.bind.annotation.RequestBody MarkPostsSeenRequest request) {
+        int recorded = postSeenService.markSeen(getCurrentUserId(), request.getPostIds());
+        return ResponseEntity.ok(ApiResponse.success(Map.of("recorded", recorded), "Posts marked as seen"));
     }
 
     @GetMapping("/search")
@@ -200,6 +213,19 @@ public class PostController {
                 .map(postPresentationMapper::toResponse)
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(posts, "Pending group posts retrieved successfully"));
+    }
+
+    @GetMapping("/group/{groupId}/my-pending")
+    @Operation(summary = "Get my own posts in the group that are waiting for approval")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getMyPendingGroupPosts(@PathVariable UUID groupId) {
+        UUID viewerId = getCurrentUserId();
+        List<PostResponse> posts = postRepository
+                .findByGroupIdAndAuthorIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(groupId, viewerId, PostStatus.PENDING_APPROVAL)
+                .stream()
+                .map(post -> getPostDetailQueryHandler.handle(GetPostDetailQuery.builder().postId(post.getId()).viewerId(viewerId).build()))
+                .map(postPresentationMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success(posts, "My pending group posts retrieved successfully"));
     }
 
     @PostMapping("/{postId}/appeal")

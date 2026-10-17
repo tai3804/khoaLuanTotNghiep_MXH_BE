@@ -3,6 +3,7 @@ package iuh.fit.postservice.application.features.post.commands.share_post;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.PostFeatureMapper;
+import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
@@ -28,10 +29,12 @@ public class SharePostCommandHandler {
     PostRepository postRepository;
     PostFeatureMapper postFeatureMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
+    ReputationGuard reputationGuard;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
     public SharePostResult handle(SharePostCommand command) {
+        reputationGuard.checkCanPost(command.getUserId(), false); // chia sẻ cũng là đăng một bài
         Post originalPost = postRepository.findByIdAndDeletedFalse(command.getOriginalPostId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 

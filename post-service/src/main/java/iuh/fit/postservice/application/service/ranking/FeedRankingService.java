@@ -1,6 +1,8 @@
 package iuh.fit.postservice.application.service.ranking;
 
 import iuh.fit.commonframework.application.dto.ApiResponse;
+import iuh.fit.postservice.application.service.PostSeenService;
+import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.application.service.ranking.PostRelevanceScorer.Item;
 import iuh.fit.postservice.application.service.ranking.PostRelevanceScorer.Mode;
@@ -27,6 +29,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -52,16 +55,29 @@ public class FeedRankingService {
     private final PostVisibilityService postVisibilityService;
     private final UserConnectionClient userConnectionClient;
     private final RankedFeedCache rankedFeedCache;
+    private final PostSeenService postSeenService;
+    private final ReputationGuard reputationGuard;
 
     public RankedFeedSnapshot snapshot(UUID viewerId, Mode mode) {
-        return rankedFeedCache.get(viewerId, mode).orElseGet(() -> {
-            RankedFeedSnapshot computed = compute(viewerId, mode);
-            rankedFeedCache.put(viewerId, mode, computed);
-            return computed;
-        });
+        return snapshot(viewerId, mode, false, false);
     }
 
-    RankedFeedSnapshot compute(UUID viewerId, Mode mode) {
+    /**
+     * @param unseenOnly   bỏ các bài người xem đã xem (trừ bài của chính họ); lưu bản chụp riêng với bản đầy đủ
+     * @param forceRefresh bỏ qua bản chụp đang có và tính lại (dùng cho lần tải trang 1 để bài vừa xem biến mất);
+     *                     các trang sau của cùng phiên cuộn vẫn cắt từ bản chụp mới này nên không bị lặp hay nhảy cóc
+     */
+    public RankedFeedSnapshot snapshot(UUID viewerId, Mode mode, boolean unseenOnly, boolean forceRefresh) {
+        if (!forceRefresh) {
+            Optional<RankedFeedSnapshot> cached = rankedFeedCache.get(viewerId, mode, unseenOnly);
+            if (cached.isPresent()) return cached.get();
+        }
+        RankedFeedSnapshot computed = compute(viewerId, mode, unseenOnly);
+        rankedFeedCache.put(viewerId, mode, unseenOnly, computed);
+        return computed;
+    }
+
+    RankedFeedSnapshot compute(UUID viewerId, Mode mode, boolean unseenOnly) {
         LocalDateTime now = LocalDateTime.now();
 
         // 1. Ứng viên: bắt đầu với cửa sổ thời gian hẹp, nới dần nếu có quá ít bài (hệ thống mới / ít người dùng)
@@ -75,6 +91,16 @@ public class FeedRankingService {
         // 2. Quyền xem
         Set<UUID> visibleIds = postVisibilityService.visiblePostIds(candidates, viewerId, true);
         List<Post> visible = candidates.stream().filter(p -> visibleIds.contains(p.getId())).toList();
+
+        // 2b. Bài đã xem rồi thì không đưa lại (bài của chính mình luôn được giữ)
+        if (unseenOnly && !visible.isEmpty()) {
+            Set<UUID> seen = postSeenService.seenAmong(viewerId, visible.stream().map(Post::getId).toList());
+            if (!seen.isEmpty()) {
+                visible = visible.stream()
+                        .filter(p -> !seen.contains(p.getId()) || viewerId.equals(p.getAuthorId()))
+                        .toList();
+            }
+        }
         if (visible.isEmpty()) return new RankedFeedSnapshot();
 
         // 3. Dữ liệu chấm điểm
@@ -86,6 +112,10 @@ public class FeedRankingService {
         Set<UUID> postsWithMedia = postMediaRepository
                 .findByPostIdInOrderBySortOrderAsc(visible.stream().map(Post::getId).toList()).stream()
                 .map(PostMedia::getPostId).collect(Collectors.toSet());
+
+        // 3b. Tác giả có điểm uy tín thấp bị giảm độ ưu tiên (bài của chính người xem không bị ảnh hưởng)
+        Map<UUID, Double> reputationWeights = reputationGuard.feedWeights(
+                visible.stream().map(Post::getAuthorId).filter(a -> !a.equals(viewerId)).distinct().toList());
 
         // 4. Chấm điểm
         List<Item> scored = new ArrayList<>(visible.size());
@@ -102,7 +132,8 @@ public class FeedRankingService {
                     interactions.getOrDefault(p.getAuthorId(), 0),
                     p.isPinned());
             Scored s = PostRelevanceScorer.score(mode, signals);
-            scored.add(new Item(p.getId(), p.getAuthorId(), s.score(), s.reason()));
+            double weight = reputationWeights.getOrDefault(p.getAuthorId(), 1.0);
+            scored.add(new Item(p.getId(), p.getAuthorId(), s.score() * weight, s.reason()));
         }
         // Điểm bằng nhau thì bài mới hơn trước (candidates đã sắp mới nhất trước, sort ổn định)
         scored.sort(Comparator.comparingDouble(Item::score).reversed());

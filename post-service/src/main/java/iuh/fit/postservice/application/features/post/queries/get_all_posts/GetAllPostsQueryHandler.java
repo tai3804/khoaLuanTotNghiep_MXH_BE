@@ -5,12 +5,14 @@ import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.commonframework.infrastructure.filter.SortDirection;
 import iuh.fit.postservice.application.features.post.queries.get_post_detail.GetPostDetailResult;
 import iuh.fit.postservice.application.mapper.PostFeatureMapper;
+import iuh.fit.postservice.application.service.PostSeenService;
 import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.application.service.ranking.FeedRankingService;
 import iuh.fit.postservice.application.service.ranking.PostRelevanceScorer;
 import iuh.fit.postservice.application.service.ranking.RankedFeedSnapshot;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.domain.entities.PostView;
 import iuh.fit.postservice.domain.enums.MediaType;
 import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
@@ -46,9 +48,11 @@ public class GetAllPostsQueryHandler {
     PostFeatureMapper postFeatureMapper;
     PostVisibilityService postVisibilityService;
     FeedRankingService feedRankingService;
+    PostSeenService postSeenService;
 
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "post-feed-v2", key = "#query.viewerId + ':' + #query.cursor + ':' + #query.filter.page + ':' + #query.filter.size + ':' + #query.filter.keyword + ':' + #query.filter.sortBy + ':' + #query.filter.sortDirection + ':' + #query.filter.filters")
+    // Kết quả "chỉ bài chưa xem" phụ thuộc lượt xem vừa ghi nên không cache 30 giây như các truy vấn khác
+    @Cacheable(cacheNames = "post-feed-v2", condition = "!#query.unseenOnly", key = "#query.viewerId + ':' + #query.cursor + ':' + #query.filter.page + ':' + #query.filter.size + ':' + #query.filter.keyword + ':' + #query.filter.sortBy + ':' + #query.filter.sortDirection + ':' + #query.filter.filters")
     public PagedResponse<GetPostDetailResult> handle(GetAllPostsQuery query) {
         BaseFilter filter = query.getFilter() != null ? query.getFilter() : new BaseFilter();
 
@@ -115,6 +119,16 @@ public class GetAllPostsQueryHandler {
             if (filter.getFilters() == null || !filter.getFilters().containsKey("isArchived")) {
                 predicates.add(cb.equal(root.get("isArchived"), false));
             }
+            // Bỏ bài đã xem (còn hiệu lực), nhưng luôn giữ bài của chính người xem
+            if (query.isUnseenOnly() && query.getViewerId() != null) {
+                jakarta.persistence.criteria.Subquery<UUID> seenSub = q.subquery(UUID.class);
+                jakarta.persistence.criteria.Root<PostView> viewRoot = seenSub.from(PostView.class);
+                seenSub.select(viewRoot.get("postId")).where(
+                        cb.equal(viewRoot.get("postId"), root.get("id")),
+                        cb.equal(viewRoot.get("userId"), query.getViewerId()),
+                        cb.greaterThanOrEqualTo(viewRoot.get("seenAt"), postSeenService.retentionCutoff()));
+                predicates.add(cb.or(cb.equal(root.get("authorId"), query.getViewerId()), cb.not(cb.exists(seenSub))));
+            }
 
             return cb.and(predicates.toArray(new Predicate[0]));
         };
@@ -157,9 +171,11 @@ public class GetAllPostsQueryHandler {
      * Phân trang theo số trang (page bắt đầu từ 1), không dùng cursor theo thời gian.
      */
     private PagedResponse<GetPostDetailResult> handleRanked(GetAllPostsQuery query, BaseFilter filter, PostRelevanceScorer.Mode mode) {
-        RankedFeedSnapshot snapshot = feedRankingService.snapshot(query.getViewerId(), mode);
-
         int page = Math.max(1, filter.getPage());
+        // Trang 1 của bảng tin "chưa xem" luôn tính lại để bài vừa xem biến mất sau khi tải lại trang
+        RankedFeedSnapshot snapshot = feedRankingService.snapshot(query.getViewerId(), mode, query.isUnseenOnly(),
+                query.isUnseenOnly() && page == 1);
+
         int size = filter.getSize() > 0 ? Math.min(filter.getSize(), 50) : 10;
         int total = snapshot.getPostIds().size();
         int from = Math.min((page - 1) * size, total);

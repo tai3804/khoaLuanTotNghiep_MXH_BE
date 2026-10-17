@@ -17,5 +17,10 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> 
 
     List<GroupMember> findAllByGroupId(UUID groupId);
     List<GroupMember> findAllByGroupIdInAndStatus(java.util.Collection<UUID> groupIds, GroupMemberStatus status);
+
+    /** Quan hệ của một người dùng với nhiều nhóm trong một truy vấn (tránh N+1 khi liệt kê nhóm). */
+    List<GroupMember> findAllByUserIdAndGroupIdIn(UUID userId, java.util.Collection<UUID> groupIds);
+
+    long countByGroupIdAndStatus(UUID groupId, GroupMemberStatus status);
 }
 

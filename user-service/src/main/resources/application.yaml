@@ -48,3 +48,12 @@ reputation:
     auto-hide: 5   # bài tự bị ẩn vì nhiều báo cáo của cộng đồng
     hide: 10       # kiểm duyệt viên ẩn bài
     delete: 20     # kiểm duyệt viên gỡ bài
+  recovery:
+    points-per-day: 1   # mỗi ngày không bị trừ điểm được hồi phục chừng này điểm
+  lock:
+    days: 30            # điểm xuống dưới 10 (bậc Bị khóa) thì khóa tài khoản chừng này ngày
+    restore-score: 30   # hết hạn khóa thì điểm được đặt lại mức này (bậc Yếu)
+  maintenance:
+    interval-ms: 3600000   # chu kỳ chạy công việc hồi điểm / mở khóa (mặc định mỗi giờ)
+    initial-delay-ms: 120000
+

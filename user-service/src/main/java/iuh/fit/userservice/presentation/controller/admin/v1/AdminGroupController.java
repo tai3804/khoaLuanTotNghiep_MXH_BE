@@ -2,6 +2,7 @@ package iuh.fit.userservice.presentation.controller.admin.v1;
 
 import iuh.fit.userservice.domain.entities.Group;
 import iuh.fit.userservice.domain.repository.GroupRepository;
+import iuh.fit.userservice.infrastructure.kafka.producers.GroupEventPublisher;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -22,6 +23,7 @@ import java.util.UUID;
 public class AdminGroupController {
 
     GroupRepository groupRepository;
+    GroupEventPublisher groupEventPublisher;
 
     @GetMapping("/all")
     public ResponseEntity<List<Group>> getAllGroups() {
@@ -33,6 +35,7 @@ public class AdminGroupController {
         log.info("Admin requested delete for group: {}", groupId);
         try {
             groupRepository.deleteById(groupId);
+            groupEventPublisher.publishGroupDeleted(groupId);
         } catch (Exception e) {
             log.warn("Failed to delete group {}: {}", groupId, e.getMessage());
         }
