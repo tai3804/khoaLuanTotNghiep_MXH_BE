@@ -45,4 +45,5 @@ public class PostResponse {
     LocalDateTime updatedAt;
     Double relevanceScore;
     String relevanceReason;
+    PostPollResponse poll;
 }

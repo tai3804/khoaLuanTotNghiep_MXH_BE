@@ -76,7 +76,7 @@ public class ReactionController {
     private UUID getCurrentUserId() {
         String userIdStr = jwtUtil.getCurrentUserId();
         if (userIdStr == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
         }
         return UUID.fromString(userIdStr);
     }

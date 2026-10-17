@@ -5,6 +5,8 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import org.springframework.web.multipart.MultipartFile;
 
+import iuh.fit.postservice.presentation.dto.request.CreatePollRequest;
+
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -25,4 +27,6 @@ public class CreatePostCommand {
     List<String> mediaUrls;
     Set<UUID> taggedUserIds;
     java.time.Instant scheduledPublishAt;
+    CreatePollRequest poll;
+    String pollJson;
 }

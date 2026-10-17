@@ -40,8 +40,27 @@ public class GetReportsQueryHandler {
         Page<Report> reportPage;
         if (filter.getFilters() != null && filter.getFilters().containsKey("status")) {
             try {
-                ReportStatus status = ReportStatus.valueOf(filter.getFilters().get("status").toString().toUpperCase());
-                reportPage = reportRepository.findByStatus(status, pageRequest);
+                String rawStatus = filter.getFilters().get("status").toString().trim();
+                List<ReportStatus> statuses = java.util.Arrays.stream(rawStatus.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .map(s -> {
+                            try {
+                                return ReportStatus.valueOf(s.toUpperCase());
+                            } catch (Exception ignored) {
+                                return null;
+                            }
+                        })
+                        .filter(java.util.Objects::nonNull)
+                        .toList();
+
+                if (statuses.size() == 1) {
+                    reportPage = reportRepository.findByStatus(statuses.get(0), pageRequest);
+                } else if (!statuses.isEmpty()) {
+                    reportPage = reportRepository.findByStatusIn(statuses, pageRequest);
+                } else {
+                    reportPage = reportRepository.findAll(pageRequest);
+                }
             } catch (Exception e) {
                 reportPage = reportRepository.findAll(pageRequest);
             }

@@ -80,8 +80,9 @@ public class CreateCommentCommandHandler {
 
         Comment savedComment = commentRepository.save(comment);
 
-        // Increment comment count on post
-        post.setCommentCount(post.getCommentCount() + 1);
+        // Synchronize accurate comment count on post
+        long realCommentCount = commentRepository.countByPostIdAndDeletedFalse(post.getId());
+        post.setCommentCount(realCommentCount);
         postRepository.save(post);
 
         // Publish notification event to Kafka (UC-NO01)

@@ -21,4 +21,6 @@ public class CreatePostRequest {
     List<String> mediaUrls;
     Set<UUID> taggedUserIds;
     java.time.Instant scheduledPublishAt;
+    CreatePollRequest poll;
+    String pollJson;
 }

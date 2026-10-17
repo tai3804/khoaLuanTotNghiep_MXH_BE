@@ -1,6 +1,10 @@
 package iuh.fit.adminservice.infrastructure.config;
 
 import iuh.fit.adminservice.domain.enums.ModerationAction;
+import iuh.fit.adminservice.domain.enums.ReportReason;
+import iuh.fit.adminservice.domain.enums.ReportSource;
+import iuh.fit.adminservice.domain.enums.ReportStatus;
+import iuh.fit.adminservice.domain.enums.TargetType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -26,6 +30,10 @@ public class EnumConstraintSynchronizer implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         sync("moderation_logs", "action", "moderation_logs_action_check", ModerationAction.values());
+        sync("reports", "status", "reports_status_check", ReportStatus.values());
+        sync("reports", "source", "reports_source_check", ReportSource.values());
+        sync("reports", "reason", "reports_reason_check", ReportReason.values());
+        sync("reports", "target_type", "reports_target_type_check", TargetType.values());
     }
 
     private void sync(String table, String column, String constraint, Enum<?>[] values) {

@@ -52,6 +52,14 @@ public class DeleteCommentCommandHandler {
         commentsToDelete.forEach(item -> item.setDeleted(true));
         commentRepository.saveAll(commentsToDelete);
 
+        // If a reply comment is deleted, decrement parent replyCount
+        if (comment.getParentCommentId() != null) {
+            commentRepository.findByIdAndDeletedFalse(comment.getParentCommentId()).ifPresent(parent -> {
+                parent.setReplyCount(Math.max(0, parent.getReplyCount() - 1));
+                commentRepository.save(parent);
+            });
+        }
+
         if (comment.getMediaKey() != null && !comment.getMediaKey().isBlank()) {
             try {
                 mediaClient.deleteFile(comment.getMediaKey());
@@ -60,9 +68,10 @@ public class DeleteCommentCommandHandler {
             }
         }
 
-        // Decrement comment count on post
+        // Synchronize real comment count on post from DB to prevent drift
         if (post != null) {
-            post.setCommentCount(Math.max(0, post.getCommentCount() - commentsToDelete.size()));
+            long realCommentCount = commentRepository.countByPostIdAndDeletedFalse(post.getId());
+            post.setCommentCount(realCommentCount);
             postRepository.save(post);
         }
     }

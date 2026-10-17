@@ -53,8 +53,10 @@ public class CreatePostCommandHandler {
         boolean hasContent = command.getContent() != null && !command.getContent().isBlank();
         boolean hasFiles = command.getFiles() != null && !command.getFiles().isEmpty();
         boolean hasMediaUrls = command.getMediaUrls() != null && !command.getMediaUrls().isEmpty();
+        boolean hasPoll = (command.getPoll() != null && command.getPoll().getQuestion() != null && !command.getPoll().getQuestion().isBlank())
+                || (command.getPollJson() != null && !command.getPollJson().isBlank());
 
-        if (!hasContent && !hasFiles && !hasMediaUrls) {
+        if (!hasContent && !hasFiles && !hasMediaUrls && !hasPoll) {
             throw new BusinessException(PostServiceErrorCode.INVALID_POST_CONTENT);
         }
 
@@ -106,6 +108,15 @@ public class CreatePostCommandHandler {
         }
         allTaggedUserIds.addAll(TagAndHashtagHelper.extractMentions(command.getContent()));
         post.setTaggedUserIds(allTaggedUserIds);
+
+        // Assign Poll if present
+        if (hasPoll) {
+            if (command.getPoll() != null) {
+                post.setPollData(iuh.fit.postservice.application.util.PostPollHelper.buildPollJson(command.getPoll()));
+            } else if (command.getPollJson() != null && !command.getPollJson().isBlank()) {
+                post.setPollData(command.getPollJson().trim());
+            }
+        }
 
         if (command.getScheduledPublishAt() != null && command.getScheduledPublishAt().isAfter(java.time.Instant.now())) {
             post.setScheduledPublishAt(command.getScheduledPublishAt());
@@ -203,7 +214,9 @@ public class CreatePostCommandHandler {
             }
         }
 
-        return postFeatureMapper.toCreateResult(savedPost, savedMediaList);
+        CreatePostResult result = postFeatureMapper.toCreateResult(savedPost, savedMediaList);
+        result.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(savedPost.getPollData(), savedPost.getAuthorId()));
+        return result;
     }
 
     private String extractFileKey(String url) {

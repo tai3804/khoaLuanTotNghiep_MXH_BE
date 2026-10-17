@@ -6,6 +6,8 @@ import iuh.fit.postservice.domain.enums.PostStatus;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import iuh.fit.postservice.presentation.dto.response.PostPollResponse;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
@@ -38,4 +40,5 @@ public class CreatePostResult {
     boolean isTrending;
     java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;
+    PostPollResponse poll;
 }

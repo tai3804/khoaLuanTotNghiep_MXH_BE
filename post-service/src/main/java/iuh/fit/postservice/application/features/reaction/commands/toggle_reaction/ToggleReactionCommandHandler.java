@@ -46,7 +46,6 @@ public class ToggleReactionCommandHandler {
             if (reaction.getType() == command.getType()) {
                 // Remove reaction (toggle off)
                 reactionRepository.deleteByPostIdAndUserId(command.getPostId(), command.getUserId());
-                post.setLikeCount(Math.max(0, post.getLikeCount() - 1));
             } else {
                 // Change reaction type
                 reaction.setType(command.getType());
@@ -57,12 +56,12 @@ public class ToggleReactionCommandHandler {
             // Add new reaction
             Reaction newReaction = reactionFeatureMapper.toEntity(command);
             reactionRepository.save(newReaction);
-            post.setLikeCount(post.getLikeCount() + 1);
             activeType = command.getType();
         }
 
-        postRepository.save(post);
         long totalReactions = reactionRepository.countByPostId(command.getPostId());
+        post.setLikeCount(totalReactions);
+        postRepository.save(post);
 
         // Publish notification event to Kafka if not self-reacting (UC-NO01)
         if (activeType != null && post.getAuthorId() != null && !post.getAuthorId().equals(command.getUserId())) {

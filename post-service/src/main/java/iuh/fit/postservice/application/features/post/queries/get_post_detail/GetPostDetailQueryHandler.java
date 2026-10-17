@@ -66,7 +66,9 @@ public class GetPostDetailQueryHandler {
 
         List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
 
-        return postFeatureMapper.toGetDetailResult(post, mediaList);
+        GetPostDetailResult result = postFeatureMapper.toGetDetailResult(post, mediaList);
+        result.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
+        return result;
     }
 
     private boolean canModerateGroup(java.util.UUID groupId) {

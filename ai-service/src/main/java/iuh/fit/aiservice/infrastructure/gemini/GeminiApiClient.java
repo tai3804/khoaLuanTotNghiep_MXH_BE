@@ -593,4 +593,149 @@ public class GeminiApiClient {
 
         return fallback;
     }
+
+    /**
+     * Kiểm duyệt hình ảnh đa phương thức (Multimodal Vision Moderation) bằng Google Gemini Vision
+     */
+    public GeminiModerationResult evaluateImageWithVision(String imageUrl, String caption) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return GeminiModerationResult.builder()
+                    .isToxic(false)
+                    .toxicityScore(0.0)
+                    .category("NONE")
+                    .severity("LOW")
+                    .suggestedAction("ALLOW")
+                    .reason("Không có hình ảnh để phân tích")
+                    .extractedKeywords(Collections.emptyList())
+                    .build();
+        }
+
+        if (!hasValidApiKey()) {
+            log.info("Gemini API key is not configured for Vision Moderation. Allowing image by default.");
+            return GeminiModerationResult.builder()
+                    .isToxic(false)
+                    .toxicityScore(0.0)
+                    .category("NONE")
+                    .severity("LOW")
+                    .suggestedAction("ALLOW")
+                    .reason("Hệ thống kiểm duyệt hình ảnh hoạt động ở chế độ cơ bản (API key chưa cấu hình)")
+                    .extractedKeywords(Collections.emptyList())
+                    .isFallback(true)
+                    .build();
+        }
+
+        Optional<Map<String, Object>> imagePartOpt = fetchImageInlinePart(imageUrl);
+        if (imagePartOpt.isEmpty()) {
+            return GeminiModerationResult.builder()
+                    .isToxic(false)
+                    .toxicityScore(0.0)
+                    .category("NONE")
+                    .severity("LOW")
+                    .suggestedAction("ALLOW")
+                    .reason("Không thể tải hình ảnh từ URL để phân tích")
+                    .extractedKeywords(Collections.emptyList())
+                    .isFallback(true)
+                    .build();
+        }
+
+        String prompt = """
+                Bạn là một chuyên gia AI kiểm duyệt hình ảnh và nội dung đa phương tiện mạng xã hội.
+                Nhiệm vụ của bạn là quan sát trực tiếp bức ảnh được cung cấp cùng chú thích bài viết (nếu có) và đánh giá tính an toàn.
+                
+                Tiêu chuẩn kiểm duyệt vi phạm:
+                1. SEXUAL (18+ / khiêu dâm): Ảnh khỏa thân, lộ bộ phận nhạy cảm, đồ lót khiêu dâm, hành vi tình dục.
+                2. VIOLENCE (bạo lực): Vũ khí nguy hiểm, cảnh tượng máu me, hành vi ngược đãi, tai nạn kinh dị.
+                3. HATE_SPEECH (thù ghét): Biểu tượng phát xít, phân biệt chủng tộc, xúc phạm tôn giáo hoặc văn hóa.
+                4. SPAM_SCAM (lừa đảo): Banner cờ bạc, cá độ bóng đá, thông tin lừa đảo tài chính.
+                
+                Định dạng trả về BẮT BUỘC là JSON thuần túy (không bọc trong markdown ```json):
+                {
+                  "toxicityScore": 0.0,
+                  "category": "NONE",
+                  "severity": "LOW",
+                  "suggestedAction": "ALLOW",
+                  "reason": "Giải thích ngắn gọn 1 câu bằng Tiếng Việt về nội dung bức ảnh và lý do đưa ra đánh giá",
+                  "extractedKeywords": []
+                }
+                """;
+
+        List<Map<String, Object>> parts = new ArrayList<>();
+        parts.add(Map.of("text", prompt + "\n\nChú thích ảnh: " + (caption != null ? caption : "")));
+        parts.add(imagePartOpt.get());
+
+        for (String candidateModel : getCandidateModels()) {
+            try {
+                String endpoint = String.format("%s/%s:generateContent?key=%s", apiUrl, candidateModel, apiKey);
+
+                Map<String, Object> requestBodyMap = Map.of(
+                        "contents", List.of(
+                                Map.of("role", "user", "parts", parts)
+                        ),
+                        "generationConfig", Map.of(
+                                "temperature", 0.1,
+                                "maxOutputTokens", 1024,
+                                "responseMimeType", "application/json"
+                        )
+                );
+
+                String requestJson = objectMapper.writeValueAsString(requestBodyMap);
+
+                HttpRequest httpRequest = HttpRequest.newBuilder()
+                        .uri(URI.create(endpoint))
+                        .header("Content-Type", "application/json")
+                        .timeout(Duration.ofSeconds(15))
+                        .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    JsonNode rootNode = objectMapper.readTree(response.body());
+                    JsonNode candidate = rootNode.path("candidates").get(0);
+                    String rawJsonText = extractTextFromCandidate(candidate);
+
+                    if (rawJsonText.startsWith("```json")) rawJsonText = rawJsonText.substring(7);
+                    if (rawJsonText.startsWith("```")) rawJsonText = rawJsonText.substring(3);
+                    if (rawJsonText.endsWith("```")) rawJsonText = rawJsonText.substring(0, rawJsonText.length() - 3);
+                    rawJsonText = rawJsonText.trim();
+
+                    JsonNode parsed = objectMapper.readTree(rawJsonText);
+                    double toxicityScore = parsed.path("toxicityScore").asDouble(0.0);
+                    String category = parsed.path("category").asText("NONE");
+                    String severity = parsed.path("severity").asText("LOW");
+                    String suggestedAction = parsed.path("suggestedAction").asText("ALLOW");
+                    String reason = parsed.path("reason").asText("Hình ảnh an toàn và phù hợp");
+                    List<String> keywords = new ArrayList<>();
+                    JsonNode kwNode = parsed.path("extractedKeywords");
+                    if (kwNode.isArray()) {
+                        for (JsonNode kn : kwNode) keywords.add(kn.asText());
+                    }
+
+                    return GeminiModerationResult.builder()
+                            .isToxic(toxicityScore >= 0.5)
+                            .toxicityScore(toxicityScore)
+                            .category(category)
+                            .severity(severity)
+                            .suggestedAction(suggestedAction)
+                            .reason(reason)
+                            .extractedKeywords(keywords)
+                            .isFallback(false)
+                            .build();
+                }
+            } catch (Exception e) {
+                log.warn("Gemini vision moderation error with model {}: {}", candidateModel, e.getMessage());
+            }
+        }
+
+        return GeminiModerationResult.builder()
+                .isToxic(false)
+                .toxicityScore(0.0)
+                .category("NONE")
+                .severity("LOW")
+                .suggestedAction("ALLOW")
+                .reason("Hình ảnh an toàn (fallback)")
+                .extractedKeywords(Collections.emptyList())
+                .isFallback(true)
+                .build();
+    }
 }

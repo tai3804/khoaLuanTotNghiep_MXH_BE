@@ -39,6 +39,10 @@ public class Post extends BaseEntity {
     @Column(name = "summary", columnDefinition = "TEXT")
     String summary;
 
+    // Dữ liệu cuộc thăm dò ý kiến / bình chọn (PostPoll JSON)
+    @Column(name = "poll_data", columnDefinition = "TEXT")
+    String pollData;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default

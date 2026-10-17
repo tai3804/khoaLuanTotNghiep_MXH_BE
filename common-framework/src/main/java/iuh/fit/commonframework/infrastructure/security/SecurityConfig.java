@@ -25,6 +25,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
 
+import jakarta.servlet.http.HttpServletResponse;
 import java.security.interfaces.RSAPublicKey;
 import java.util.Collection;
 import java.util.HashSet;
@@ -57,8 +58,6 @@ public class SecurityConfig {
                         "/swagger-ui/**",
                         "/swagger-ui.html",
                         "/actuator/**",
-                        "/api/v1/posts",
-                        "/api/v1/posts/**",
                         "/api/v1/media/files/**",
                         "/api/v1/admin/settings/public",
                         "/api/v1/admin/settings/public/**",
@@ -76,7 +75,10 @@ public class SecurityConfig {
          */
         @Bean
         @ConditionalOnMissingBean(SecurityFilterChain.class)
-        public SecurityFilterChain securityFilterChain(HttpSecurity http, RedisCacheService redisCacheService) throws Exception {
+        public SecurityFilterChain securityFilterChain(
+                        HttpSecurity http,
+                        RedisCacheService redisCacheService,
+                        InternalApiKeyFilter internalApiKeyFilter) throws Exception {
                 http
                                 .csrf(AbstractHttpConfigurer::disable)
                                 .formLogin(AbstractHttpConfigurer::disable)
@@ -85,11 +87,18 @@ public class SecurityConfig {
                                                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                                 .authorizeHttpRequests(auth -> auth
                                                 .requestMatchers("/api/v1/posts/admin/**", "/api/v1/groups/admin/**").authenticated()
+                                                .requestMatchers(HttpMethod.GET, "/api/v1/posts", "/api/v1/posts/**").permitAll()
                                                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                                                 .anyRequest().authenticated())
-                                .oauth2ResourceServer(oauth2 -> oauth2.jwt(
-                                                jwt -> jwt.decoder(jwtDecoder(redisCacheService))
-                                                        .jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                                .oauth2ResourceServer(oauth2 -> oauth2
+                                                .jwt(jwt -> jwt.decoder(jwtDecoder(redisCacheService))
+                                                        .jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                                                .authenticationEntryPoint((request, response, authException) -> {
+                                                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                                                        response.setContentType("application/json;charset=UTF-8");
+                                                        response.getWriter().write("{\"code\":401,\"message\":\"Phiên đăng nhập đã hết hạn hoặc chưa xác thực\"}");
+                                                }))
+                                .addFilterBefore(internalApiKeyFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
                 return http.build();
         }
 

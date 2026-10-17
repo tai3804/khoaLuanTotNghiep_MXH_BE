@@ -97,7 +97,15 @@ public class ModerationReportController {
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     @Operation(summary = "Get list of reports (Moderator only)", description = "Retrieves paginated list of violation reports using BaseFilter (status, targetType)")
-    public ResponseEntity<ApiResponse<List<ReportResponse>>> getReports(@ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+    public ResponseEntity<ApiResponse<List<ReportResponse>>> getReports(
+            @ParameterObject @Valid @ModelAttribute BaseFilter filter,
+            @RequestParam(value = "status", required = false) String status) {
+        if (status != null && !status.isBlank()) {
+            if (filter.getFilters() == null) {
+                filter.setFilters(new java.util.HashMap<>());
+            }
+            filter.getFilters().put("status", status.trim());
+        }
         GetReportsQuery query = GetReportsQuery.builder().filter(filter).build();
         PagedResponse<GetReportsResult> result = getReportsQueryHandler.handle(query);
         PagedResponse<ReportResponse> pagedResponse = moderationPresentationMapper.toPagedReportResponse(result);

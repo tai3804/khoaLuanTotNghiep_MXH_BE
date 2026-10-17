@@ -34,6 +34,12 @@ public class AiModerationController {
         return ResponseEntity.ok(ApiResponse.success(result, "Đánh giá văn bản bằng AI thành công"));
     }
 
+    @PostMapping("/evaluate-image")
+    public ResponseEntity<ApiResponse<GeminiModerationResult>> evaluateImage(@RequestBody EvaluateImageRequest request) {
+        GeminiModerationResult result = aiModerationService.evaluateImageContent(request.getImageUrl(), request.getCaption());
+        return ResponseEntity.ok(ApiResponse.success(result, "Đánh giá hình ảnh bằng Gemini Vision thành công"));
+    }
+
     @GetMapping("/logs")
     @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<ApiResponse<List<AiModerationLog>>> getModerationLogs(
@@ -67,5 +73,11 @@ public class AiModerationController {
     @Data
     public static class EvaluateRequest {
         private String content;
+    }
+
+    @Data
+    public static class EvaluateImageRequest {
+        private String imageUrl;
+        private String caption;
     }
 }

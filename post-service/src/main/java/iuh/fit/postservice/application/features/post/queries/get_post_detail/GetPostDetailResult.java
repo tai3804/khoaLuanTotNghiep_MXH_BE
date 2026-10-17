@@ -6,6 +6,8 @@ import iuh.fit.postservice.domain.enums.PostStatus;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import iuh.fit.postservice.presentation.dto.response.PostPollResponse;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
@@ -44,4 +46,5 @@ public class GetPostDetailResult {
     /** Chỉ có khi bảng tin được xếp hạng (sortBy=relevance|trending): điểm và lý do bài xuất hiện (friend, following, group, interacted, popular, recent, own, trending). */
     Double relevanceScore;
     String relevanceReason;
+    PostPollResponse poll;
 }

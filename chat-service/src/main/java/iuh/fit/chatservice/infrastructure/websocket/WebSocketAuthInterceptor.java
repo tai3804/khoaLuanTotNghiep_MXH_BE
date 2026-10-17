@@ -52,6 +52,20 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                     log.info("WebSocket connection authenticated for user: {}", jwt.getSubject());
                 } catch (Exception e) {
                     log.error("WebSocket JWT Authentication failed: {}", e.getMessage());
+                    throw new org.springframework.messaging.MessageDeliveryException("Unauthorized STOMP connection: invalid or expired token");
+                }
+            } else {
+                log.warn("WebSocket CONNECT attempted without token");
+                throw new org.springframework.messaging.MessageDeliveryException("Unauthorized STOMP connection: token is required");
+            }
+        }
+
+        if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            String destination = accessor.getDestination();
+            if (destination != null && destination.startsWith("/topic/conversations/")) {
+                if (accessor.getUser() == null) {
+                    log.warn("Unauthorized subscription attempt to conversation topic: {}", destination);
+                    throw new org.springframework.messaging.MessageDeliveryException("Unauthorized subscription: authentication required");
                 }
             }
         }

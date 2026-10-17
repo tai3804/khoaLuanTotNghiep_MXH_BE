@@ -136,7 +136,11 @@ public class GetAllPostsQueryHandler {
         // Một truy vấn lấy ảnh/video cho cả trang thay vì một truy vấn cho từng bài
         Map<UUID, List<PostMedia>> mediaByPost = loadMediaByPost(visiblePosts.stream().map(Post::getId).toList());
         List<GetPostDetailResult> content = visiblePosts.stream()
-                .map(post -> postFeatureMapper.toGetDetailResult(post, mediaByPost.getOrDefault(post.getId(), List.of())))
+                .map(post -> {
+                    GetPostDetailResult res = postFeatureMapper.toGetDetailResult(post, mediaByPost.getOrDefault(post.getId(), List.of()));
+                    res.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
+                    return res;
+                })
                 .toList();
 
         return postFeatureMapper.toPagedResponse(postsPage, content);
@@ -178,6 +182,7 @@ public class GetAllPostsQueryHandler {
             GetPostDetailResult result = postFeatureMapper.toGetDetailResult(post, mediaByPost.getOrDefault(post.getId(), List.of()));
             result.setRelevanceScore(snapshot.getScores().get(from + i));
             result.setRelevanceReason(snapshot.getReasons().get(from + i));
+            result.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
             content.add(result);
         }
 

@@ -15,7 +15,8 @@ public enum MediaServiceErrorCode implements BaseError {
     FILE_UPLOAD_FAILED(500, "Failed to upload file to AWS S3", 500),
     FILE_DELETE_FAILED(500, "Failed to delete file from AWS S3", 500),
     FILE_EMPTY(400, "Uploaded file cannot be empty", 400),
-    UNAUTHORIZED(401, "Unauthorized access", 401);
+    UNAUTHORIZED(401, "Unauthorized access", 401),
+    FORBIDDEN_ACTION(403, "You do not have permission to delete this media file", 403);
 
     int code;
     String message;

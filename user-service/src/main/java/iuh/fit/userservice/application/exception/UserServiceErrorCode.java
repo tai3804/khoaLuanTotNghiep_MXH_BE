@@ -16,6 +16,7 @@ public enum UserServiceErrorCode implements BaseError {
     CANNOT_CONNECT_SELF(400, "Cannot connect or follow yourself", 400),
     CONNECTION_ALREADY_EXISTS(400, "Connection or request already exists", 400),
     CONNECTION_NOT_FOUND(404, "Connection or request not found", 404),
+    USER_BLOCKED(400, "Không thể kết nối hoặc tương tác với người dùng này do trạng thái chặn", 400),
     UNAUTHORIZED(401, "Unauthorized access", 401);
 
     int code;

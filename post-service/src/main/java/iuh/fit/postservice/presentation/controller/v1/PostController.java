@@ -62,6 +62,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.HashMap;
 import java.util.Map;
@@ -520,7 +521,7 @@ public class PostController {
     private UUID getCurrentUserId() {
         String userIdStr = jwtUtil.getCurrentUserId();
         if (userIdStr == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
         }
         return UUID.fromString(userIdStr);
     }
@@ -761,5 +762,74 @@ public class PostController {
         var response = postPresentationMapper.toResponse(detail);
 
         return ResponseEntity.ok(ApiResponse.success(response, "Đăng bài viết ngay thành công"));
+    }
+
+    @PostMapping("/{postId}/poll/vote")
+    @Operation(summary = "Vote in a post poll", description = "Cast a vote on one or more options in a post poll")
+    public ResponseEntity<ApiResponse<PostResponse>> votePoll(
+            @PathVariable("postId") UUID postId,
+            @Valid @RequestBody iuh.fit.postservice.presentation.dto.request.VotePollRequest request
+    ) {
+        UUID currentUserId = getCurrentUserId();
+        Post post = postRepository.findByIdAndDeletedFalse(postId)
+                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+
+        if (post.getPollData() == null || post.getPollData().isBlank()) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POLL_NOT_FOUND);
+        }
+
+        iuh.fit.postservice.domain.entities.PostPoll poll = iuh.fit.postservice.application.util.PostPollHelper.fromJson(post.getPollData());
+        if (poll == null) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POLL_NOT_FOUND);
+        }
+
+        boolean isExpired = poll.getClosedAt() != null && java.time.Instant.now().isAfter(poll.getClosedAt());
+        if (poll.isClosed() || isExpired) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POLL_CLOSED);
+        }
+
+        Set<String> validOptionIds = new java.util.HashSet<>();
+        for (var opt : poll.getOptions()) {
+            validOptionIds.add(opt.getId());
+        }
+
+        List<String> selectedOptions = request.getOptionIds().stream()
+                .filter(validOptionIds::contains)
+                .toList();
+
+        if (selectedOptions.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // Single choice check
+        if (!poll.isMultipleChoice() && selectedOptions.size() > 1) {
+            selectedOptions = List.of(selectedOptions.get(0));
+        }
+
+        // Apply votes
+        for (var opt : poll.getOptions()) {
+            if (opt.getVoterIds() == null) {
+                opt.setVoterIds(new java.util.HashSet<>());
+            }
+            if (!poll.isMultipleChoice()) {
+                opt.getVoterIds().remove(currentUserId);
+            }
+            if (selectedOptions.contains(opt.getId())) {
+                opt.getVoterIds().add(currentUserId);
+            }
+            opt.setVoteCount(opt.getVoterIds().size());
+        }
+
+        post.setPollData(iuh.fit.postservice.application.util.PostPollHelper.toJson(poll));
+        postRepository.save(post);
+        clearPostCaches();
+
+        var media = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
+        var detail = postFeatureMapper.toGetDetailResult(post, media);
+        detail.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), currentUserId));
+        var response = postPresentationMapper.toResponse(detail);
+        response.setPoll(detail.getPoll());
+
+        return ResponseEntity.ok(ApiResponse.success(response, "Bình chọn thành công"));
     }
 }

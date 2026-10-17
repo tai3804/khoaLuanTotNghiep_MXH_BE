@@ -24,6 +24,8 @@ public interface ReportRepository extends BaseJpaRepository<Report, UUID> {
 
     Page<Report> findByStatus(ReportStatus status, Pageable pageable);
 
+    Page<Report> findByStatusIn(Collection<ReportStatus> statuses, Pageable pageable);
+
     Page<Report> findByTargetTypeAndTargetId(TargetType targetType, UUID targetId, Pageable pageable);
 
     List<Report> findByReporterIdOrderByCreatedAtDesc(UUID reporterId);

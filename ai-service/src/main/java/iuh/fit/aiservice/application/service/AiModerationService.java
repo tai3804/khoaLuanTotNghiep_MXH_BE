@@ -216,6 +216,13 @@ public class AiModerationService {
         return geminiApiClient.evaluate(content);
     }
 
+    /**
+     * Đánh giá và kiểm duyệt hình ảnh đa phương thức (Multimodal Vision Moderation)
+     */
+    public GeminiModerationResult evaluateImageContent(String imageUrl, String caption) {
+        return geminiApiClient.evaluateImageWithVision(imageUrl, caption);
+    }
+
     private volatile long lastConfigCheck = 0;
     private volatile boolean cachedDynamicEnabled = true;
 

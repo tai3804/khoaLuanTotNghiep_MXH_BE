@@ -6,6 +6,7 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
@@ -52,6 +53,29 @@ public class WebSocketCallAuthInterceptor implements ChannelInterceptor {
                     log.info("WebSocket Call connection authenticated for user: {}", userId);
                 } catch (Exception e) {
                     log.error("WebSocket Call JWT Authentication failed: {}", e.getMessage());
+                    throw new MessageDeliveryException("Unauthorized STOMP connection: invalid or expired token");
+                }
+            } else {
+                log.warn("WebSocket Call CONNECT attempted without token");
+                throw new MessageDeliveryException("Unauthorized STOMP connection: token is required");
+            }
+        }
+
+        if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            String destination = accessor.getDestination();
+            if (destination != null) {
+                if (accessor.getUser() == null) {
+                    log.warn("Unauthorized subscription attempt to call broker: {}", destination);
+                    throw new MessageDeliveryException("Unauthorized subscription: authentication required");
+                }
+
+                String currentUserId = accessor.getUser().getName();
+                if (destination.startsWith("/topic/call-user.")) {
+                    String targetUserId = destination.substring("/topic/call-user.".length());
+                    if (currentUserId == null || !currentUserId.equalsIgnoreCase(targetUserId)) {
+                        log.warn("User {} attempted to subscribe to call signals of user {}", currentUserId, targetUserId);
+                        throw new MessageDeliveryException("Forbidden subscription: cannot subscribe to another user's call signals");
+                    }
                 }
             }
         }

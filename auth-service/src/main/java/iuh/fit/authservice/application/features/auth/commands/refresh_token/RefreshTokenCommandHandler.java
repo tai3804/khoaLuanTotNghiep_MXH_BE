@@ -85,15 +85,25 @@ public class RefreshTokenCommandHandler {
         String newRefreshToken = tokenProvider.generateRefreshToken(user);
 
         if (command.getDeviceFingerprint() != null && !command.getDeviceFingerprint().isBlank()) {
-            deviceRepository.findByUserIdAndDeviceFingerprint(userId, command.getDeviceFingerprint())
-                    .ifPresent(device -> {
-                        if (device.getStatus() == iuh.fit.authservice.domain.enums.DeviceStatus.REVOKED) {
-                            throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
-                        }
-                        device.setRefreshTokenHash(jwtUtil.hashToken(newRefreshToken));
-                        device.setLastActiveAt(java.time.LocalDateTime.now());
-                        deviceRepository.save(device);
-                    });
+            java.util.Optional<iuh.fit.authservice.domain.entities.Device> deviceOpt =
+                    deviceRepository.findByUserIdAndDeviceFingerprint(userId, command.getDeviceFingerprint());
+            if (deviceOpt.isPresent()) {
+                iuh.fit.authservice.domain.entities.Device device = deviceOpt.get();
+                if (device.getStatus() == iuh.fit.authservice.domain.enums.DeviceStatus.REVOKED) {
+                    throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+                }
+                // Token Rotation check: Validate that the incoming refresh token matches the recorded hash
+                String incomingTokenHash = jwtUtil.hashToken(tokenStr);
+                if (device.getRefreshTokenHash() != null && !device.getRefreshTokenHash().equals(incomingTokenHash)) {
+                    // Token reuse / replay attack detected! Revoke device immediately
+                    device.setStatus(iuh.fit.authservice.domain.enums.DeviceStatus.REVOKED);
+                    deviceRepository.save(device);
+                    throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+                }
+                device.setRefreshTokenHash(jwtUtil.hashToken(newRefreshToken));
+                device.setLastActiveAt(java.time.LocalDateTime.now());
+                deviceRepository.save(device);
+            }
         }
 
         return RefreshTokenResult.builder()

@@ -42,7 +42,9 @@ public class GetUserPostsQueryHandler {
         List<GetPostDetailResult> content = postsPage.getContent().stream()
                 .filter(post -> visiblePostIds.contains(post.getId())).map(post -> {
             List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
-            return postFeatureMapper.toGetDetailResult(post, mediaList);
+            GetPostDetailResult res = postFeatureMapper.toGetDetailResult(post, mediaList);
+            res.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
+            return res;
         }).toList();
 
         return postFeatureMapper.toPagedResponse(postsPage, content);

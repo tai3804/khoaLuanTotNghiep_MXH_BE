@@ -6,6 +6,7 @@ import iuh.fit.userservice.application.mapper.UserConnectionApplicationMapper;
 import iuh.fit.userservice.domain.entities.UserConnection;
 import iuh.fit.userservice.domain.enums.ConnectionStatus;
 import iuh.fit.userservice.domain.enums.ConnectionType;
+import iuh.fit.userservice.domain.repository.UserBlockRepository;
 import iuh.fit.userservice.domain.repository.UserConnectionRepository;
 import iuh.fit.userservice.domain.repository.UserProfileRepository;
 import lombok.AccessLevel;
@@ -31,6 +32,7 @@ public class FollowUserCommandHandler {
 
     UserConnectionRepository userConnectionRepository;
     UserProfileRepository userProfileRepository;
+    UserBlockRepository userBlockRepository;
     UserConnectionApplicationMapper userConnectionApplicationMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -51,8 +53,14 @@ public class FollowUserCommandHandler {
             throw new BusinessException(UserServiceErrorCode.CANNOT_CONNECT_SELF);
         }
 
-        // Save or update FOLLOW connection from A to B
         UUID finalTargetUserId = targetUserId;
+
+        if (userBlockRepository.existsByBlockerIdAndBlockedId(command.getFollowerId(), finalTargetUserId)
+                || userBlockRepository.existsByBlockerIdAndBlockedId(finalTargetUserId, command.getFollowerId())) {
+            throw new BusinessException(UserServiceErrorCode.USER_BLOCKED);
+        }
+
+        // Save or update FOLLOW connection from A to B
         userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(command.getFollowerId(), finalTargetUserId, ConnectionType.FOLLOW)
                 .ifPresentOrElse(
                         follow -> {

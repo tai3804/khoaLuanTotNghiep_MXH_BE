@@ -42,7 +42,11 @@ public class WebSocketCallController {
             @Payload WebRtcSignalRequest signalRequest,
             Principal principal) {
 
-        UUID senderId = extractSenderId(principal, signalRequest);
+        UUID senderId = extractSenderId(principal);
+        if (senderId == null) {
+            log.warn("Rejected unauthenticated WebRTC signal for call session {}", callSessionId);
+            return;
+        }
         UUID targetUserId = signalRequest.getTargetUserId();
 
         WebRtcSignalResponse signalResponse = callPresentationMapper.toSignalResponse(
@@ -58,7 +62,7 @@ public class WebSocketCallController {
             }
             try {
                 callParticipantRepository.findByCallSessionId(callSessionId).forEach(p -> {
-                    if (senderId == null || !p.getUserId().equals(senderId)) {
+                    if (!p.getUserId().equals(senderId)) {
                         messagingTemplate.convertAndSendToUser(p.getUserId().toString(), "/queue/call-signal", signalResponse);
                         messagingTemplate.convertAndSend("/topic/call-user." + p.getUserId(), signalResponse);
                     }
@@ -109,7 +113,11 @@ public class WebSocketCallController {
             @Payload WebRtcSignalRequest signalRequest,
             Principal principal) {
 
-        UUID senderId = extractSenderId(principal, signalRequest);
+        UUID senderId = extractSenderId(principal);
+        if (senderId == null) {
+            log.warn("Rejected unauthenticated direct WebRTC signal to target user {}", targetUserId);
+            return;
+        }
         UUID callSessionId = signalRequest.getCallSessionId();
 
         WebRtcSignalResponse signalResponse = callPresentationMapper.toSignalResponse(
@@ -133,7 +141,11 @@ public class WebSocketCallController {
             @Payload WebRtcSignalRequest signalRequest,
             Principal principal) {
 
-        UUID senderId = extractSenderId(principal, signalRequest);
+        UUID senderId = extractSenderId(principal);
+        if (senderId == null) {
+            log.warn("Rejected unauthenticated live stream WebRTC signal for post {}", postId);
+            return;
+        }
         UUID targetUserId = signalRequest.getTargetUserId();
 
         WebRtcSignalResponse signalResponse = callPresentationMapper.toSignalResponse(
@@ -145,7 +157,7 @@ public class WebSocketCallController {
         log.info("Broadcasted Live Stream WebRTC signal [{}] for post {}", signalRequest.getSignalType(), postId);
     }
 
-    private UUID extractSenderId(Principal principal, WebRtcSignalRequest signalRequest) {
+    private UUID extractSenderId(Principal principal) {
         if (principal != null) {
             if (principal instanceof org.springframework.security.authentication.AbstractAuthenticationToken token) {
                 if (token.getPrincipal() instanceof Jwt jwt) {
@@ -162,9 +174,6 @@ public class WebSocketCallController {
             try {
                 return UUID.fromString(principal.getName());
             } catch (Exception ignored) {}
-        }
-        if (signalRequest != null && signalRequest.getSenderId() != null) {
-            return signalRequest.getSenderId();
         }
         return null;
     }

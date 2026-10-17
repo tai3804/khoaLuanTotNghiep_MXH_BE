@@ -54,5 +54,5 @@ public abstract class BaseEntity implements Serializable {
     String updatedBy;
 
     @Column(name = "is_deleted", columnDefinition = "boolean default false")
-    boolean deleted = false;
+    boolean deleted;
 }

@@ -6,6 +6,7 @@ import iuh.fit.userservice.application.mapper.UserConnectionApplicationMapper;
 import iuh.fit.userservice.domain.entities.UserConnection;
 import iuh.fit.userservice.domain.enums.ConnectionStatus;
 import iuh.fit.userservice.domain.enums.ConnectionType;
+import iuh.fit.userservice.domain.repository.UserBlockRepository;
 import iuh.fit.userservice.domain.repository.UserConnectionRepository;
 import iuh.fit.userservice.domain.repository.UserProfileRepository;
 import lombok.AccessLevel;
@@ -31,6 +32,7 @@ public class SendFriendRequestCommandHandler {
 
     UserConnectionRepository userConnectionRepository;
     UserProfileRepository userProfileRepository;
+    UserBlockRepository userBlockRepository;
     UserConnectionApplicationMapper userConnectionApplicationMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -52,8 +54,14 @@ public class SendFriendRequestCommandHandler {
             throw new BusinessException(UserServiceErrorCode.CANNOT_CONNECT_SELF);
         }
 
-        // Rule 1: Sending friend request automatically FOLLOWS the target user
         UUID finalTargetUserId = targetUserId;
+
+        if (userBlockRepository.existsByBlockerIdAndBlockedId(command.getRequesterId(), finalTargetUserId)
+                || userBlockRepository.existsByBlockerIdAndBlockedId(finalTargetUserId, command.getRequesterId())) {
+            throw new BusinessException(UserServiceErrorCode.USER_BLOCKED);
+        }
+
+        // Rule 1: Sending friend request automatically FOLLOWS the target user
         userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(command.getRequesterId(), finalTargetUserId, ConnectionType.FOLLOW)
                 .ifPresentOrElse(
                         follow -> {

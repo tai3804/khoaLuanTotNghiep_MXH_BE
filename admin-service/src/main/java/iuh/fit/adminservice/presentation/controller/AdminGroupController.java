@@ -4,6 +4,7 @@ import iuh.fit.adminservice.application.service.AuditLogService;
 import iuh.fit.adminservice.infrastructure.feign.UserFeignClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin/groups")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminGroupController {
 
     private final UserFeignClient userFeignClient;
