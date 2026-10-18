@@ -27,6 +27,10 @@ public interface UserConnectionClient {
     @PostMapping("/api/v1/groups/feed-visibility")
     ApiResponse<List<GroupFeedVisibility>> getGroupFeedVisibility(@RequestBody List<UUID> groupIds);
 
+    /** Mã mọi nhóm mà người dùng hiện tại là thành viên đã được duyệt. */
+    @GetMapping("/api/v1/groups/mine/ids")
+    ApiResponse<List<UUID>> getJoinedGroupIds();
+
     record GroupFeedVisibility(UUID groupId, boolean member, boolean publicGroup, String role,
             boolean postApprovalRequired) {
     }

@@ -13,6 +13,7 @@ public interface GroupMapper {
     @Mapping(target = "memberCount", ignore = true)
     @Mapping(target = "postApprovalRequired", ignore = true)
     @Mapping(target = "rules", ignore = true)
+    @Mapping(target = "membershipQuestions", ignore = true)
     @Mapping(target = "deleted", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
@@ -20,6 +21,7 @@ public interface GroupMapper {
     @Mapping(target = "updatedBy", ignore = true)
     Group toEntity(CreateGroupRequest request);
 
+    @Mapping(target = "membershipQuestions", ignore = true)
     GroupResponse toResponse(Group group);
 }
 

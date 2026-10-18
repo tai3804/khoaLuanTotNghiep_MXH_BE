@@ -33,12 +33,18 @@ public class ReputationEvent extends BaseEntity {
 
     public static final String PENALTY = "PENALTY";
     public static final String REFUND = "REFUND";
+    /** Điểm tự hồi phục theo thời gian (+1 mỗi ngày không bị trừ điểm). */
+    public static final String RECOVERY = "RECOVERY";
+    /** Điểm xuống dưới ngưỡng nên tài khoản bị khóa. */
+    public static final String LOCK = "LOCK";
+    /** Hết thời gian khóa (hoặc được hoàn điểm vượt ngưỡng): mở khóa tài khoản. */
+    public static final String UNLOCK = "UNLOCK";
 
     @NotNull
     @Column(name = "user_id", nullable = false)
     UUID userId;
 
-    /** PENALTY | REFUND */
+    /** PENALTY | REFUND | RECOVERY | LOCK | UNLOCK */
     @Column(name = "type", nullable = false, length = 20)
     String type;
 

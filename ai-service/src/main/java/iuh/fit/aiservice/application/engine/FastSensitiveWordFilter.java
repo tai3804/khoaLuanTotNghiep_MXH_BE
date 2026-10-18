@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +35,9 @@ public class FastSensitiveWordFilter {
             "chết tiệt", "giết người", "bắn chết", "lừa đảo", "đánh bạc", "kèo bóng",
             "sex", "gái gọi", "khiêu dâm"
     );
+
+    // Từ khóa không dấu ngắn hơn mức này quá mơ hồ ("cac" = "các", "pho" = "phở", "lon" = "lon bia", "du" = "du lịch")
+    private static final int MIN_UNACCENTED_LENGTH = 4;
 
     @PostConstruct
     public void initDictionary() {
@@ -62,9 +66,9 @@ public class FastSensitiveWordFilter {
             log.error("Failed to initialize sensitive word dictionary: {}", e.getMessage());
             // Fallback nạp danh sách hạt giống vào cache
             for (String seed : SEED_PROFANITIES) {
-                activeWords.add(seed.toLowerCase());
-                wordSeverityMap.put(seed.toLowerCase(), "MEDIUM");
-                wordCategoryMap.put(seed.toLowerCase(), "PROFANITY");
+                activeWords.add(canonical(seed));
+                wordSeverityMap.put(canonical(seed), "MEDIUM");
+                wordCategoryMap.put(canonical(seed), "PROFANITY");
             }
         }
     }
@@ -76,7 +80,7 @@ public class FastSensitiveWordFilter {
         wordCategoryMap.clear();
 
         for (SensitiveKeyword kw : keywords) {
-            String word = kw.getKeyword().toLowerCase().trim();
+            String word = canonical(kw.getKeyword());
             activeWords.add(word);
             wordSeverityMap.put(word, kw.getSeverity() != null ? kw.getSeverity() : "MEDIUM");
             wordCategoryMap.put(word, kw.getCategory() != null ? kw.getCategory() : "PROFANITY");
@@ -85,14 +89,14 @@ public class FastSensitiveWordFilter {
     }
 
     public void addOrUpdateWordInCache(String keyword, String category, String severity) {
-        String word = keyword.toLowerCase().trim();
+        String word = canonical(keyword);
         activeWords.add(word);
         wordCategoryMap.put(word, category != null ? category : "PROFANITY");
         wordSeverityMap.put(word, severity != null ? severity : "MEDIUM");
     }
 
     public void removeWordFromCache(String keyword) {
-        String word = keyword.toLowerCase().trim();
+        String word = canonical(keyword);
         activeWords.remove(word);
         wordCategoryMap.remove(word);
         wordSeverityMap.remove(word);
@@ -119,49 +123,53 @@ public class FastSensitiveWordFilter {
 
         String normalized = normalizer.normalize(textWithoutMentions);
         String deObfuscated = normalizer.removeObfuscation(normalized);
-        String noDiacritics = normalizer.removeDiacritics(deObfuscated);
 
-        Set<String> matched = new LinkedHashSet<>();
-        String highestSeverity = "LOW";
-        String primaryCategory = "PROFANITY";
-        int criticalCount = 0;
-        int highCount = 0;
-        int mediumCount = 0;
-
+        // Từ khóa khớp -> mức độ hiệu lực của lần khớp đó (xem weaken)
+        Map<String, String> matched = new LinkedHashMap<>();
         for (String word : activeWords) {
-            String cleanWord = word.toLowerCase().trim();
-            if (cleanWord.isEmpty()) {
+            if (word.isEmpty()) {
+                continue;
+            }
+            String severity = normalizeSeverity(wordSeverityMap.getOrDefault(word, "MEDIUM"));
+
+            // Bằng chứng mạnh: khớp nguyên từ, đúng từng dấu thanh/dấu mũ. "buổi" khác "buồi" nên không khớp nhau.
+            if (containsExactWord(normalized, word) || containsExactWord(deObfuscated, word)) {
+                matched.put(word, severity);
                 continue;
             }
 
-            String wordNoDia = normalizer.removeDiacritics(cleanWord);
-
-            // Kiểm tra khớp chính xác từ nguyên vẹn có dấu hoặc không dấu theo ranh giới từ độc lập
-            boolean matchedAccented = containsExactWord(normalized, cleanWord) || containsExactWord(deObfuscated, cleanWord);
-            boolean matchedUnaccented = wordNoDia.length() >= 4 && containsExactWord(noDiacritics, wordNoDia);
-
-            if (matchedAccented || matchedUnaccented) {
-                matched.add(cleanWord);
-                String severity = wordSeverityMap.getOrDefault(cleanWord, "MEDIUM");
-                String category = wordCategoryMap.getOrDefault(cleanWord, "PROFANITY");
-
-                if ("CRITICAL".equalsIgnoreCase(severity)) {
-                    criticalCount++;
-                    highestSeverity = "CRITICAL";
-                    primaryCategory = category;
-                } else if ("HIGH".equalsIgnoreCase(severity) && !"CRITICAL".equalsIgnoreCase(highestSeverity)) {
-                    highCount++;
-                    highestSeverity = "HIGH";
-                    primaryCategory = category;
-                } else if ("MEDIUM".equalsIgnoreCase(severity) && "LOW".equalsIgnoreCase(highestSeverity)) {
-                    mediumCount++;
-                    highestSeverity = "MEDIUM";
-                    primaryCategory = category;
+            // Bằng chứng yếu: người viết gõ không dấu và đúng dạng không dấu của từ khóa. Không được bỏ dấu cả bài viết rồi so
+            // sánh, vì sẽ bắt nhầm "buổi" thành "buồi", "đang xấu hổ" thành "đáng xấu hổ", "kẹo bông" thành "kèo bóng".
+            String wordNoDia = normalizer.removeDiacritics(word);
+            if (!wordNoDia.equals(word) && wordNoDia.length() >= MIN_UNACCENTED_LENGTH && containsExactWord(deObfuscated, wordNoDia)) {
+                String weakened = weaken(severity);
+                if (weakened != null) {
+                    matched.put(word, weakened);
                 }
             }
         }
 
-        boolean isToxic = !matched.isEmpty();
+        String highestSeverity = "LOW";
+        String primaryCategory = "NONE"; // bài sạch không được mang nhãn PROFANITY
+        int highestRank = -1;
+        int criticalCount = 0;
+        int highCount = 0;
+        int mediumCount = 0;
+        for (Map.Entry<String, String> m : matched.entrySet()) {
+            String severity = m.getValue();
+            if (severityRank(severity) > highestRank) {
+                highestRank = severityRank(severity);
+                highestSeverity = severity;
+                primaryCategory = wordCategoryMap.getOrDefault(m.getKey(), "PROFANITY");
+            }
+            switch (severity) {
+                case "CRITICAL" -> criticalCount++;
+                case "HIGH" -> highCount++;
+                case "MEDIUM" -> mediumCount++;
+                default -> { }
+            }
+        }
+
         double score = 0.0;
         if (criticalCount > 0) {
             score = Math.min(1.0, 0.85 + (criticalCount * 0.05));
@@ -172,12 +180,44 @@ public class FastSensitiveWordFilter {
         }
 
         return FastScanResult.builder()
-                .isToxic(isToxic)
+                .isToxic(!matched.isEmpty())
                 .toxicityScore(score)
-                .matchedKeywords(new ArrayList<>(matched))
+                .matchedKeywords(new ArrayList<>(matched.keySet()))
                 .highestSeverity(highestSeverity)
                 .primaryCategory(primaryCategory)
                 .build();
+    }
+
+    /**
+     * Chữ không dấu là bằng chứng yếu hơn: "buoi" có thể là "buổi", "buồi" hay "buội". Mỗi lần khớp không dấu bị hạ một bậc
+     * (CRITICAL -> HIGH -> MEDIUM), còn MEDIUM thì không đủ để tự nó kết luận gì nên bỏ qua (trả về null).
+     * Lời lăng mạ rõ ràng gõ không dấu vẫn bị bắt vì thường chứa từ khóa CRITICAL/HIGH hoặc nhiều từ khóa cùng lúc.
+     */
+    private static String weaken(String severity) {
+        return switch (severity) {
+            case "CRITICAL" -> "HIGH";
+            case "HIGH" -> "MEDIUM";
+            default -> null;
+        };
+    }
+
+    private static String normalizeSeverity(String severity) {
+        String upper = severity == null ? "" : severity.trim().toUpperCase();
+        return severityRank(upper) > 0 ? upper : "LOW";
+    }
+
+    private static int severityRank(String severity) {
+        return switch (severity) {
+            case "CRITICAL" -> 3;
+            case "HIGH" -> 2;
+            case "MEDIUM" -> 1;
+            default -> 0;
+        };
+    }
+
+    /** Từ khóa luôn ở dạng NFC chữ thường để khớp với văn bản đã chuẩn hóa, kể cả khi quản trị viên gõ dấu kiểu tổ hợp. */
+    private static String canonical(String keyword) {
+        return Normalizer.normalize(keyword, Normalizer.Form.NFC).toLowerCase().trim();
     }
 
     /**

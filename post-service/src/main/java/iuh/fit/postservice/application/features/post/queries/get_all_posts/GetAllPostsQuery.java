@@ -16,4 +16,6 @@ public class GetAllPostsQuery {
     BaseFilter filter;
     String cursor;
     UUID viewerId;
+    /** Chỉ lấy bài người xem chưa xem (bảng tin trang chủ). Mặc định lấy tất cả. */
+    boolean unseenOnly;
 }

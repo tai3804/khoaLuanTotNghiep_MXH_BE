@@ -43,6 +43,8 @@ public class GetPostDetailResult {
     java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
+    /** Thời điểm bài được ghim trong nhóm (null = không ghim). */
+    LocalDateTime groupPinnedAt;
     /** Chỉ có khi bảng tin được xếp hạng (sortBy=relevance|trending): điểm và lý do bài xuất hiện (friend, following, group, interacted, popular, recent, own, trending). */
     Double relevanceScore;
     String relevanceReason;

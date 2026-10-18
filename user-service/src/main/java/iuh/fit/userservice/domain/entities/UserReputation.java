@@ -14,6 +14,7 @@ import lombok.Setter;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 /** Điểm uy tín hiện tại của người dùng. Chưa có bản ghi nghĩa là chưa vi phạm lần nào (điểm tối đa). */
@@ -34,4 +35,12 @@ public class UserReputation extends BaseEntity {
     @Column(name = "score", nullable = false)
     @Builder.Default
     int score = 100;
+
+    /** Mốc tính cho lần hồi điểm kế tiếp (+1 điểm mỗi ngày kể từ mốc này). Đặt lại mỗi khi bị trừ điểm. Null: dùng updated_at. */
+    @Column(name = "recovery_anchor_at")
+    LocalDateTime recoveryAnchorAt;
+
+    /** Tài khoản đang bị khóa tới thời điểm này (điểm xuống dưới ngưỡng); null nếu không bị khóa. Khóa không chặn đăng nhập. */
+    @Column(name = "locked_until")
+    LocalDateTime lockedUntil;
 }

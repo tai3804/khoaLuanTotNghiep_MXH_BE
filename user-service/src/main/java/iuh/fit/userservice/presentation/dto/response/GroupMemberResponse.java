@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -17,4 +18,8 @@ public class GroupMemberResponse {
     GroupRole role;
     GroupMemberStatus status;
     LocalDateTime joinedAt;
+    /** Câu trả lời khi xin vào nhóm: chỉ quản trị/kiểm duyệt viên nhìn thấy, và chỉ ở danh sách chờ duyệt. */
+    List<String> answers;
+    /** Người đã mời (chỉ ở danh sách lời mời đang chờ). */
+    String invitedByName;
 }

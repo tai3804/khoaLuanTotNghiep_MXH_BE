@@ -54,11 +54,11 @@ public class PostVisibilityService {
     }
 
     /**
-     * Main feed only includes joined-group posts plus a small number of public
-     * group recommendations. Group-detail pages opt out of that recommendation cap,
-     * but strictly hide private group posts from non-members.
+     * Bảng tin chính (limitToJoinedGroups = true) chỉ có bài của các nhóm mình đã tham gia, giống Facebook: bài của nhóm
+     * công khai khác xem ở Nhóm > Khám phá, trang nhóm, tìm kiếm hoặc Watch. Các nơi đó (limitToJoinedGroups = false)
+     * vẫn thấy bài nhóm công khai; bài nhóm riêng tư thì chỉ thành viên thấy ở mọi nơi.
      */
-    public Set<UUID> visiblePostIds(Collection<Post> posts, UUID viewerId, boolean limitPublicGroupRecommendations) {
+    public Set<UUID> visiblePostIds(Collection<Post> posts, UUID viewerId, boolean limitToJoinedGroups) {
         Set<UUID> visible = new HashSet<>();
         if (posts == null) return visible;
         if (viewerId == null) {
@@ -74,7 +74,6 @@ public class PostVisibilityService {
                 post != null && post.getGroupId() == null && post.getPrivacy() == PostPrivacy.FRIENDS && !viewerId.equals(post.getAuthorId()));
         Set<UUID> friendIds = requiresFriendLookup ? loadFriendIds() : Set.of();
         Map<UUID, UserConnectionClient.GroupFeedVisibility> groupVisibility = loadGroupVisibility(posts);
-        int publicGroupRecommendations = 0;
 
         for (Post post : posts) {
             if (post == null) continue;
@@ -91,9 +90,8 @@ public class PostVisibilityService {
                     continue;
                 }
 
-                if (limitPublicGroupRecommendations && !group.member()) {
-                    if (publicGroupRecommendations >= 3) continue;
-                    publicGroupRecommendations++;
+                if (limitToJoinedGroups && !group.member()) {
+                    continue;
                 }
 
                 visible.add(post.getId());
@@ -107,6 +105,17 @@ public class PostVisibilityService {
             }
         }
         return visible;
+    }
+
+    /** Mã mọi nhóm mà người xem là thành viên (rỗng nếu không hỏi được user-service). */
+    public Set<UUID> joinedGroupIds() {
+        try {
+            ApiResponse<List<UUID>> response = userConnectionClient.getJoinedGroupIds();
+            return response == null || response.getData() == null ? Set.of() : new HashSet<>(response.getData());
+        } catch (Exception e) {
+            log.warn("Could not load the joined groups of the viewer: {}", e.getMessage());
+            return Set.of();
+        }
     }
 
     /** Mã các nhóm mà người xem là thành viên trong số các bài đã cho (dùng để cộng điểm bài của nhóm mình tham gia). */

@@ -43,7 +43,14 @@ public class PostResponse {
     java.time.Instant scheduledPublishAt;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
+    LocalDateTime groupPinnedAt;
     Double relevanceScore;
     String relevanceReason;
     PostPollResponse poll;
+
+    /** Bài đang được ghim đầu trang của nhóm. */
+    @JsonProperty("groupPinned")
+    public boolean isGroupPinned() {
+        return groupPinnedAt != null;
+    }
 }

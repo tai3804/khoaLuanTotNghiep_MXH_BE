@@ -5,14 +5,17 @@ import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.commonframework.infrastructure.filter.SortDirection;
 import iuh.fit.postservice.application.features.post.queries.get_post_detail.GetPostDetailResult;
 import iuh.fit.postservice.application.mapper.PostFeatureMapper;
+import iuh.fit.postservice.application.service.PostSeenService;
 import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.application.service.ranking.FeedRankingService;
 import iuh.fit.postservice.application.service.ranking.PostRelevanceScorer;
 import iuh.fit.postservice.application.service.ranking.RankedFeedSnapshot;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.domain.entities.PostView;
 import iuh.fit.postservice.domain.enums.MediaType;
 import iuh.fit.postservice.domain.enums.PostStatus;
+import iuh.fit.postservice.infrastructure.persistence.config.PostSearchSupport;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -46,9 +49,12 @@ public class GetAllPostsQueryHandler {
     PostFeatureMapper postFeatureMapper;
     PostVisibilityService postVisibilityService;
     FeedRankingService feedRankingService;
+    PostSeenService postSeenService;
+    PostSearchSupport postSearchSupport;
 
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "post-feed-v2", key = "#query.toString()", unless = "#result == null")
+    // Kết quả "chỉ bài chưa xem" phụ thuộc lượt xem vừa ghi nên không cache 30 giây như các truy vấn khác
+    @Cacheable(cacheNames = "post-feed-v2", condition = "!#query.unseenOnly", key = "#query.viewerId + ':' + #query.cursor + ':' + #query.filter.page + ':' + #query.filter.size + ':' + #query.filter.keyword + ':' + #query.filter.sortBy + ':' + #query.filter.sortDirection + ':' + #query.filter.filters", unless = "#result == null")
     public PagedResponse<GetPostDetailResult> handle(GetAllPostsQuery query) {
         BaseFilter filter = query.getFilter() != null ? query.getFilter() : new BaseFilter();
 
@@ -58,15 +64,31 @@ public class GetAllPostsQueryHandler {
             return handleRanked(query, filter, rankMode);
         }
 
+        // Bảng tin chính thuần (không từ khoá/lọc, không phải trang nhóm): chỉ bài thường và bài của nhóm mình tham gia.
+        // Lọc ngay ở truy vấn để trang không bị "hụt" bài sau khi lọc quyền xem.
+        boolean groupPage = filter.getFilters() != null && Boolean.TRUE.equals(filter.getFilters().get("_groupFeed"));
+        boolean plainFeed = !groupPage && query.getViewerId() != null
+                && (filter.getKeyword() == null || filter.getKeyword().isBlank())
+                && (filter.getFilters() == null || filter.getFilters().isEmpty());
+        Set<UUID> joinedGroups = plainFeed ? postVisibilityService.joinedGroupIds() : Set.of();
+
         Specification<Post> spec = (root, q, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+            if (plainFeed) {
+                Predicate notGroupPost = cb.isNull(root.get("groupId"));
+                predicates.add(joinedGroups.isEmpty() ? notGroupPost : cb.or(notGroupPost, root.get("groupId").in(joinedGroups)));
+            }
             predicates.add(cb.equal(root.get("deleted"), false));
             // Pending/rejected group posts are never exposed through public/group feeds.
             predicates.add(cb.equal(root.get("status"), PostStatus.PUBLISHED));
 
             if (filter.getKeyword() != null && !filter.getKeyword().isBlank()) {
-                String searchPattern = "%" + filter.getKeyword().toLowerCase().trim() + "%";
-                predicates.add(cb.like(cb.lower(root.get("content")), searchPattern));
+                // Không phân biệt hoa/thường và dấu; % _ do người dùng gõ chỉ là ký tự thường
+                jakarta.persistence.criteria.Expression<String> contentText = cb.lower(root.get("content"));
+                if (postSearchSupport.isUnaccentAvailable()) {
+                    contentText = cb.function("unaccent", String.class, contentText);
+                }
+                predicates.add(cb.like(contentText, postSearchSupport.likePattern(filter.getKeyword()), '!'));
             }
 
             // Cursor-based filter: if cursor is provided (ISO LocalDateTime string or epoch millis)
@@ -115,6 +137,16 @@ public class GetAllPostsQueryHandler {
             if (filter.getFilters() == null || !filter.getFilters().containsKey("isArchived")) {
                 predicates.add(cb.equal(root.get("isArchived"), false));
             }
+            // Bỏ bài đã xem (còn hiệu lực), kể cả bài của chính người xem
+            if (query.isUnseenOnly() && query.getViewerId() != null) {
+                jakarta.persistence.criteria.Subquery<UUID> seenSub = q.subquery(UUID.class);
+                jakarta.persistence.criteria.Root<PostView> viewRoot = seenSub.from(PostView.class);
+                seenSub.select(viewRoot.get("postId")).where(
+                        cb.equal(viewRoot.get("postId"), root.get("id")),
+                        cb.equal(viewRoot.get("userId"), query.getViewerId()),
+                        cb.greaterThanOrEqualTo(viewRoot.get("seenAt"), postSeenService.retentionCutoff()));
+                predicates.add(cb.not(cb.exists(seenSub)));
+            }
 
             return cb.and(predicates.toArray(new Predicate[0]));
         };
@@ -126,12 +158,16 @@ public class GetAllPostsQueryHandler {
         // "relevance"/"trending" là chế độ xếp hạng, không phải cột: khách chưa đăng nhập, tìm kiếm hoặc lọc thì dùng thứ tự thời gian
         if ("relevance".equalsIgnoreCase(sortBy) || "trending".equalsIgnoreCase(sortBy)) sortBy = "createdAt";
         Sort.Direction direction = filter.getSortDirection() == SortDirection.DESC ? Sort.Direction.DESC : Sort.Direction.ASC;
-        Pageable pageable = PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Order.desc("isPinned"), new Sort.Order(direction, sortBy)));
+        // Trong nhóm: bài quản trị viên ghim luôn ở đầu (ghim của nhóm, không phải ghim trên trang cá nhân)
+        boolean groupFeed = filter.getFilters() != null && Boolean.TRUE.equals(filter.getFilters().get("_groupFeed"));
+        Sort sort = groupFeed
+                ? Sort.by(new Sort.Order(Sort.Direction.DESC, "groupPinnedAt").nullsLast(), new Sort.Order(direction, sortBy), Sort.Order.desc("id"))
+                : Sort.by(Sort.Order.desc("isPinned"), new Sort.Order(direction, sortBy));
+        Pageable pageable = PageRequest.of(pageIndex, pageSize, sort);
 
         Page<Post> postsPage = postRepository.findAll(spec, pageable);
 
-        boolean mainFeed = filter.getFilters() == null || !Boolean.TRUE.equals(filter.getFilters().get("_groupFeed"));
-        Set<java.util.UUID> visiblePostIds = postVisibilityService.visiblePostIds(postsPage.getContent(), query.getViewerId(), mainFeed);
+        Set<java.util.UUID> visiblePostIds = postVisibilityService.visiblePostIds(postsPage.getContent(), query.getViewerId(), plainFeed);
         List<Post> visiblePosts = postsPage.getContent().stream().filter(post -> visiblePostIds.contains(post.getId())).toList();
         // Một truy vấn lấy ảnh/video cho cả trang thay vì một truy vấn cho từng bài
         Map<UUID, List<PostMedia>> mediaByPost = loadMediaByPost(visiblePosts.stream().map(Post::getId).toList());
@@ -161,9 +197,11 @@ public class GetAllPostsQueryHandler {
      * Phân trang theo số trang (page bắt đầu từ 1), không dùng cursor theo thời gian.
      */
     private PagedResponse<GetPostDetailResult> handleRanked(GetAllPostsQuery query, BaseFilter filter, PostRelevanceScorer.Mode mode) {
-        RankedFeedSnapshot snapshot = feedRankingService.snapshot(query.getViewerId(), mode);
-
         int page = Math.max(1, filter.getPage());
+        // Trang 1 của bảng tin "chưa xem" luôn tính lại để bài vừa xem biến mất sau khi tải lại trang
+        RankedFeedSnapshot snapshot = feedRankingService.snapshot(query.getViewerId(), mode, query.isUnseenOnly(),
+                query.isUnseenOnly() && page == 1);
+
         int size = filter.getSize() > 0 ? Math.min(filter.getSize(), 50) : 10;
         int total = snapshot.getPostIds().size();
         int from = Math.min((page - 1) * size, total);

@@ -3,6 +3,7 @@ package iuh.fit.postservice.application.features.reaction.commands.toggle_reacti
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.ReactionFeatureMapper;
+import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.Reaction;
 import iuh.fit.postservice.domain.enums.ReactionType;
@@ -31,10 +32,12 @@ public class ToggleReactionCommandHandler {
     ReactionRepository reactionRepository;
     ReactionFeatureMapper reactionFeatureMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
+    ReputationGuard reputationGuard;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
     public ToggleReactionResult handle(ToggleReactionCommand command) {
+        reputationGuard.checkNotLocked(command.getUserId()); // tài khoản đang bị khóa không thả cảm xúc được
         Post post = postRepository.findByIdAndDeletedFalse(command.getPostId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 
