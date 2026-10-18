@@ -29,6 +29,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.UUID;
@@ -93,8 +94,20 @@ public class MfaController {
     public ResponseEntity<ApiResponse<LoginUserResponse>> verifyMfa(
             @Valid @RequestBody MfaVerifyRequest request,
             @RequestHeader(value = "X-Client-Type", defaultValue = "WEB") String clientType,
+            @RequestHeader(value = "X-Device-Fingerprint", required = false) String headerFingerprint,
+            HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
-        MfaVerifyResult result = mfaVerifyCommandHandler.handle(mfaPresentationMapper.toMfaVerifyCommand(request));
+
+        var command = mfaPresentationMapper.toMfaVerifyCommand(request);
+        if (command.getDeviceFingerprint() == null || command.getDeviceFingerprint().isBlank()) {
+            command.setDeviceFingerprint(headerFingerprint);
+        }
+        if (command.getDeviceName() == null || command.getDeviceName().isBlank()) {
+            command.setDeviceName(httpRequest.getHeader("User-Agent"));
+        }
+        command.setIpAddress(extractClientIp(httpRequest));
+
+        MfaVerifyResult result = mfaVerifyCommandHandler.handle(command);
         LoginUserResponse response = mfaPresentationMapper.toLoginUserResponse(result);
 
         if (response.getRefreshToken() != null) {
@@ -109,5 +122,13 @@ public class MfaController {
         }
 
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    private String extractClientIp(HttpServletRequest request) {
+        String xf = request.getHeader("X-Forwarded-For");
+        if (xf != null && !xf.isBlank()) {
+            return xf.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

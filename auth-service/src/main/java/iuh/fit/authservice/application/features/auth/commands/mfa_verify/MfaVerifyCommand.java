@@ -12,4 +12,6 @@ public class MfaVerifyCommand {
     String mfaToken;
     String otpCode;
     String deviceFingerprint;
+    String deviceName;
+    String ipAddress;
 }

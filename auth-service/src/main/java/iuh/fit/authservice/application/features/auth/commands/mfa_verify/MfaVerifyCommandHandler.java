@@ -4,6 +4,7 @@ import iuh.fit.authservice.application.exception.AuthErrorCode;
 import iuh.fit.authservice.application.mapper.LoginUserMapper;
 import iuh.fit.authservice.domain.entities.Device;
 import iuh.fit.authservice.domain.entities.User;
+import iuh.fit.authservice.domain.enums.DeviceStatus;
 import iuh.fit.authservice.domain.enums.MfaType;
 import iuh.fit.authservice.domain.repository.DeviceRepository;
 import iuh.fit.authservice.domain.repository.UserRepository;
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Slf4j
@@ -106,7 +108,15 @@ public class MfaVerifyCommandHandler {
                         return newDevice;
                     });
 
+            device.setStatus(DeviceStatus.ACTIVE);
+            device.setLastActiveAt(LocalDateTime.now());
             device.setRefreshTokenHash(jwtUtil.hashToken(refreshToken));
+            if (command.getDeviceName() != null && !command.getDeviceName().isBlank()) {
+                device.setDeviceName(command.getDeviceName());
+            }
+            if (command.getIpAddress() != null && !command.getIpAddress().isBlank()) {
+                device.setIpAddress(command.getIpAddress());
+            }
             deviceRepository.save(device);
         }
 

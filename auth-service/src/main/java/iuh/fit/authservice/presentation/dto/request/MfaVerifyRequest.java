@@ -13,4 +13,5 @@ public class MfaVerifyRequest {
     @NotBlank(message = "{mfa.otpCode.required}")
     String otpCode;
     String deviceFingerprint;
+    String deviceName;
 }
