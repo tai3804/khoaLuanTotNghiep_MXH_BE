@@ -37,11 +37,14 @@ public class UserPresenceService {
         sessionUserMap.put(sessionId, userId);
         userSessionsMap.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet()).add(sessionId);
 
-        // Update Redis key: user:online:{userId} -> "true"
-        redisTemplate.opsForValue().set(ONLINE_KEY_PREFIX + userId, "true");
-
         LocalDateTime now = LocalDateTime.now();
-        redisTemplate.opsForValue().set(LAST_ACTIVE_KEY_PREFIX + userId, now.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        try {
+            // Update Redis key: user:online:{userId} -> "true"
+            redisTemplate.opsForValue().set(ONLINE_KEY_PREFIX + userId, "true");
+            redisTemplate.opsForValue().set(LAST_ACTIVE_KEY_PREFIX + userId, now.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        } catch (Exception e) {
+            log.warn("[UC-CH06][Presence] Redis unavailable on connect: {}", e.getMessage());
+        }
 
         log.info("[UC-CH06][Presence] User {} connected (Session: {}). Marked as ONLINE in Redis.", userId, sessionId);
 
@@ -75,11 +78,14 @@ public class UserPresenceService {
         if (!isStillConnected) {
             userSessionsMap.remove(userId);
 
-            // Update Redis key: user:online:{userId} -> "false"
-            redisTemplate.opsForValue().set(ONLINE_KEY_PREFIX + userId, "false");
-
             LocalDateTime now = LocalDateTime.now();
-            redisTemplate.opsForValue().set(LAST_ACTIVE_KEY_PREFIX + userId, now.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+            try {
+                // Update Redis key: user:online:{userId} -> "false"
+                redisTemplate.opsForValue().set(ONLINE_KEY_PREFIX + userId, "false");
+                redisTemplate.opsForValue().set(LAST_ACTIVE_KEY_PREFIX + userId, now.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+            } catch (Exception e) {
+                log.warn("[UC-CH06][Presence] Redis unavailable on disconnect: {}", e.getMessage());
+            }
 
             log.info("[UC-CH06][Presence] User {} disconnected (Session: {}). Marked as OFFLINE in Redis.", userId, sessionId);
 
@@ -105,18 +111,23 @@ public class UserPresenceService {
         if (userId == null) return null;
         String userIdStr = userId.toString();
 
-        Object onlineObj = redisTemplate.opsForValue().get(ONLINE_KEY_PREFIX + userIdStr);
         boolean isOnline = false;
-        if (onlineObj != null) {
-            isOnline = "true".equalsIgnoreCase(onlineObj.toString()) || Boolean.TRUE.equals(onlineObj);
-        }
-
-        Object lastActiveObj = redisTemplate.opsForValue().get(LAST_ACTIVE_KEY_PREFIX + userIdStr);
         LocalDateTime lastActiveAt = null;
-        if (lastActiveObj != null) {
-            try {
-                lastActiveAt = LocalDateTime.parse(lastActiveObj.toString(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-            } catch (Exception ignored) {}
+
+        try {
+            Object onlineObj = redisTemplate.opsForValue().get(ONLINE_KEY_PREFIX + userIdStr);
+            if (onlineObj != null) {
+                isOnline = "true".equalsIgnoreCase(onlineObj.toString()) || Boolean.TRUE.equals(onlineObj);
+            }
+
+            Object lastActiveObj = redisTemplate.opsForValue().get(LAST_ACTIVE_KEY_PREFIX + userIdStr);
+            if (lastActiveObj != null) {
+                try {
+                    lastActiveAt = LocalDateTime.parse(lastActiveObj.toString(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception e) {
+            log.debug("[UC-CH06][Presence] Redis unavailable when getting presence for user {}: {}", userIdStr, e.getMessage());
         }
 
         return UserPresenceResponse.builder()

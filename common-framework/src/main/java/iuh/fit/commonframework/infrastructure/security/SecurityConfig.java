@@ -23,7 +23,10 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
+
+import java.time.Duration;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.security.interfaces.RSAPublicKey;
@@ -109,6 +112,7 @@ public class SecurityConfig {
         @ConditionalOnMissingBean(JwtDecoder.class)
         public JwtDecoder jwtDecoder(RedisCacheService redisCacheService) {
                 NimbusJwtDecoder defaultDecoder = NimbusJwtDecoder.withPublicKey(publicKey).build();
+                defaultDecoder.setJwtValidator(new JwtTimestampValidator(Duration.ofSeconds(5)));
                 return token -> {
                         Jwt jwt = defaultDecoder.decode(token);
                         
