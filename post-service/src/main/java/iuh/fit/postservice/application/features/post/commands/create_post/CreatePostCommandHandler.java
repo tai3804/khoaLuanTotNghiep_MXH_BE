@@ -15,6 +15,8 @@ import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import lombok.AccessLevel;
+import iuh.fit.postservice.application.service.GroupNotificationPublisher;
+import iuh.fit.postservice.application.service.LiveNotificationPublisher;
 import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,8 @@ public class CreatePostCommandHandler {
     UserConnectionClient userConnectionClient;
     RankedFeedCache rankedFeedCache;
     ReputationGuard reputationGuard;
+    GroupNotificationPublisher groupNotificationPublisher;
+    LiveNotificationPublisher liveNotificationPublisher;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -76,7 +80,8 @@ public class CreatePostCommandHandler {
                 boolean isMember = membership != null;
                 if (!isMember) {
                     log.warn("User {} is not an approved member of group {}", command.getAuthorId(), command.getGroupId());
-                    throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED);
+                    // 403 chứ không phải 401: người dùng vẫn đăng nhập, chỉ là chưa có quyền đăng trong nhóm này
+                    throw new BusinessException(PostServiceErrorCode.GROUP_MEMBERSHIP_REQUIRED);
                 }
                 requiresGroupApproval = membership.postApprovalRequired()
                         && !"ADMIN".equals(membership.role()) && !"MODERATOR".equals(membership.role());
@@ -85,7 +90,7 @@ public class CreatePostCommandHandler {
                 throw exception;
             } catch (Exception exception) {
                 log.error("Failed to check group membership for group {}: {}", command.getGroupId(), exception.getMessage(), exception);
-                throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED);
+                throw new BusinessException(PostServiceErrorCode.GROUP_SERVICE_UNAVAILABLE);
             }
         }
 
@@ -121,6 +126,7 @@ public class CreatePostCommandHandler {
             post.setStatus(PostStatus.PUBLISHED);
         }
 
+        post.setLastActivityAt(java.time.LocalDateTime.now());
         Post savedPost = postRepository.save(post);
         // Tác giả vừa đăng: bỏ bản chụp bảng tin đã xếp hạng của họ để thấy ngay bài mới
         rankedFeedCache.evictViewer(savedPost.getAuthorId());
@@ -202,6 +208,15 @@ public class CreatePostCommandHandler {
                 }
             }
         }
+
+        // Thông báo của nhóm: bài chờ duyệt báo cho quản trị viên, bài đăng thẳng báo cho thành viên chọn "mọi bài viết"
+        if (savedPost.getGroupId() != null) {
+            if (savedPost.getStatus() == PostStatus.PENDING_APPROVAL) groupNotificationPublisher.postPending(savedPost);
+            else groupNotificationPublisher.postPublished(savedPost);
+        }
+
+        // Bài phát trực tiếp: báo cho bạn bè của người phát
+        liveNotificationPublisher.liveStarted(savedPost);
 
         return postFeatureMapper.toCreateResult(savedPost, savedMediaList);
     }

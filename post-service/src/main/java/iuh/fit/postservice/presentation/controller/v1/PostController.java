@@ -96,9 +96,13 @@ public class PostController {
     iuh.fit.postservice.infrastructure.persistence.repository.PostRepository postRepository;
     UserConnectionClient userConnectionClient;
     CacheManager cacheManager;
+    static final int MAX_GROUP_PINNED_POSTS = 5;
     KafkaTemplate<String, Object> kafkaTemplate;
     ReputationEventPublisher reputationEventPublisher;
     ModerationAuditPublisher moderationAuditPublisher;
+    iuh.fit.postservice.application.service.GroupNotificationPublisher groupNotificationPublisher;
+    iuh.fit.postservice.application.service.GroupPostModerationService groupPostModerationService;
+    iuh.fit.postservice.application.features.post.queries.get_groups_feed.GetGroupsFeedQueryHandler getGroupsFeedQueryHandler;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(
@@ -201,6 +205,51 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(result), MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
     }
 
+    @GetMapping("/groups/feed")
+    @Operation(summary = "Feed of the groups I joined", description = "Newest posts of every group the current user belongs to. sort=activity (default) or newest")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getGroupsFeed(
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size,
+            @RequestParam(value = "sort", defaultValue = "activity") String sort) {
+        getCurrentUserId();
+        PagedResponse<GetPostDetailResult> result = getGroupsFeedQueryHandler.handle(page, size, sort);
+        return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(result), MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+    }
+
+    @GetMapping("/group/{groupId}/media")
+    @Operation(summary = "Photos and videos shared in a group", description = "Paged media of published group posts, newest first. type = all | image | video")
+    public ResponseEntity<ApiResponse<List<iuh.fit.postservice.application.features.post.queries.group_media.GroupMediaItem>>> getGroupMedia(
+            @PathVariable UUID groupId,
+            @RequestParam(value = "type", defaultValue = "all") String type,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "size", defaultValue = "24") int size) {
+        List<iuh.fit.postservice.domain.enums.MediaType> types = switch (type.toLowerCase()) {
+            case "all" -> List.of(iuh.fit.postservice.domain.enums.MediaType.IMAGE, iuh.fit.postservice.domain.enums.MediaType.VIDEO);
+            case "image" -> List.of(iuh.fit.postservice.domain.enums.MediaType.IMAGE);
+            case "video" -> List.of(iuh.fit.postservice.domain.enums.MediaType.VIDEO);
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT);
+        };
+        requireGroupReadable(groupId);
+        org.springframework.data.domain.Page<iuh.fit.postservice.application.features.post.queries.group_media.GroupMediaItem> result =
+                postRepository.findGroupMedia(groupId, types,
+                        org.springframework.data.domain.PageRequest.of(Math.max(page, 1) - 1, Math.min(Math.max(size, 1), 60)));
+        return ResponseEntity.ok(ApiResponse.paged(result.getContent(), result, "Group media retrieved successfully"));
+    }
+
+    public record GroupPostStats(long postsToday, long postsThisWeek, long totalPosts) { }
+
+    @GetMapping("/group/{groupId}/stats")
+    @Operation(summary = "Activity numbers of a group", description = "Posts today, posts in the last 7 days and total posts (published only)")
+    public ResponseEntity<ApiResponse<GroupPostStats>> getGroupStats(@PathVariable UUID groupId) {
+        requireGroupReadable(groupId);
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        GroupPostStats stats = new GroupPostStats(
+                postRepository.countByGroupIdAndStatusAndDeletedFalseAndCreatedAtAfter(groupId, PostStatus.PUBLISHED, now.toLocalDate().atStartOfDay()),
+                postRepository.countByGroupIdAndStatusAndDeletedFalseAndCreatedAtAfter(groupId, PostStatus.PUBLISHED, now.minusDays(7)),
+                postRepository.countByGroupIdAndStatusAndDeletedFalse(groupId, PostStatus.PUBLISHED));
+        return ResponseEntity.ok(ApiResponse.success(stats, "Group stats retrieved successfully"));
+    }
+
     @GetMapping("/group/{groupId}/pending")
     @Operation(summary = "Get pending group posts", description = "Only group administrators and moderators can review pending posts")
     public ResponseEntity<ApiResponse<List<PostResponse>>> getPendingGroupPosts(@PathVariable UUID groupId) {
@@ -267,7 +316,8 @@ public class PostController {
     @GetMapping("/group/{groupId}/my-appeals")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> myGroupAppeals(@PathVariable UUID groupId) {
         UUID userId = getCurrentUserId();
-        List<Map<String, Object>> items = postRepository.findAll().stream().filter(post -> groupId.equals(post.getGroupId()) && userId.equals(post.getAuthorId()) && post.isDeleted() && post.getModerationAction() != null).map(this::appealView).toList();
+        List<Map<String, Object>> items = postRepository.findByGroupIdAndAuthorIdAndDeletedTrueAndModerationActionIsNotNullOrderByUpdatedAtDesc(groupId, userId)
+                .stream().map(this::appealView).toList();
         return ResponseEntity.ok(ApiResponse.success(items, "My group appeals retrieved successfully"));
     }
 
@@ -344,12 +394,45 @@ public class PostController {
         if (post.getStatus() != PostStatus.PENDING_APPROVAL) throw new BusinessException(ErrorCode.INVALID_INPUT);
 
         post.setStatus(approved ? PostStatus.PUBLISHED : PostStatus.REJECTED);
+        if (approved) post.setLastActivityAt(java.time.LocalDateTime.now());
         postRepository.save(post);
         clearPostCaches();
-        GetPostDetailResult result = getPostDetailQueryHandler.handle(
-                GetPostDetailQuery.builder().postId(postId).viewerId(viewerId).build());
-        return ResponseEntity.ok(ApiResponse.success(postPresentationMapper.toResponse(result),
-                approved ? "Post approved successfully" : "Post rejected successfully"));
+        groupNotificationPublisher.postReviewed(post, viewerId, approved);
+
+        // Bài bị từ chối không còn xem được qua truy vấn chi tiết (sẽ báo "không tìm thấy"), nên trả về thông tin tối thiểu
+        PostResponse response = approved
+                ? postPresentationMapper.toResponse(getPostDetailQueryHandler.handle(GetPostDetailQuery.builder().postId(postId).viewerId(viewerId).build()))
+                : PostResponse.builder().id(post.getId()).authorId(post.getAuthorId()).groupId(post.getGroupId())
+                .content(post.getContent()).status(post.getStatus()).createdAt(post.getCreatedAt()).build();
+        return ResponseEntity.ok(ApiResponse.success(response, approved ? "Post approved successfully" : "Post rejected successfully"));
+    }
+
+    @PatchMapping("/{postId}/group-pin")
+    @Operation(summary = "Pin or unpin a post at the top of its group", description = "Only group administrators and moderators; at most 5 pinned posts per group")
+    public ResponseEntity<ApiResponse<PostResponse>> pinGroupPost(
+            @PathVariable UUID postId,
+            @RequestParam(value = "pinned", defaultValue = "true") boolean pinned) {
+        UUID viewerId = getCurrentUserId();
+        Post post = postRepository.findByIdAndDeletedFalse(postId)
+                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        if (post.getGroupId() == null || post.getStatus() != PostStatus.PUBLISHED) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.GROUP_POST_NOT_PINNABLE);
+        }
+        requireGroupModerator(post.getGroupId());
+        if (pinned) {
+            if (post.getGroupPinnedAt() == null) {
+                if (postRepository.countByGroupIdAndGroupPinnedAtIsNotNullAndDeletedFalse(post.getGroupId()) >= MAX_GROUP_PINNED_POSTS) {
+                    throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.GROUP_PIN_LIMIT);
+                }
+                post.setGroupPinnedAt(java.time.LocalDateTime.now());
+            }
+        } else {
+            post.setGroupPinnedAt(null);
+        }
+        postRepository.save(post);
+        clearPostCaches();
+        GetPostDetailResult result = getPostDetailQueryHandler.handle(GetPostDetailQuery.builder().postId(postId).viewerId(viewerId).build());
+        return ResponseEntity.ok(ApiResponse.success(postPresentationMapper.toResponse(result), pinned ? "Post pinned to the group" : "Post unpinned"));
     }
 
     @DeleteMapping("/{postId}/group-moderation")
@@ -363,20 +446,7 @@ public class PostController {
         if (post.getGroupId() == null) throw new BusinessException(ErrorCode.INVALID_INPUT);
         requireGroupModerator(post.getGroupId());
 
-        post.setDeleted(true);
-        post.setArchived(true);
-        post.setStatus(PostStatus.REJECTED);
-        post.setModeratedBy(moderatorId);
-        post.setModerationAction("DELETE_POST");
-        post.setModerationReason(reason == null || reason.isBlank()
-                ? "Bài viết không phù hợp với quy định của nhóm."
-                : reason.trim());
-        post.setAppealStatus(null);
-        post.setAppealMessage(null);
-        post.setAppealReviewNote(null);
-        postRepository.save(post);
-        clearPostCaches();
-        sendGroupPostRemovalNotification(post, moderatorId);
+        groupPostModerationService.remove(post, moderatorId, reason);
         return ResponseEntity.ok(ApiResponse.success(null, "Group post removed successfully"));
     }
 
@@ -547,6 +617,21 @@ public class PostController {
         }
     }
 
+    /** Nhóm riêng tư chỉ cho thành viên xem nội dung (nhóm công khai ai cũng xem được). */
+    private void requireGroupReadable(UUID groupId) {
+        UserConnectionClient.GroupFeedVisibility visibility;
+        try {
+            var response = userConnectionClient.getGroupFeedVisibility(List.of(groupId));
+            visibility = response == null || response.getData() == null ? null : response.getData().stream()
+                    .filter(item -> groupId.equals(item.groupId())).findFirst().orElse(null);
+        } catch (Exception exception) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.GROUP_SERVICE_UNAVAILABLE);
+        }
+        if (visibility == null || (!visibility.member() && !visibility.publicGroup())) {
+            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.GROUP_PRIVATE);
+        }
+    }
+
     private void requireSystemModerator() {
         List<String> roles = jwtUtil.getCurrentUserRoles();
         boolean allowed = roles != null && roles.stream().anyMatch(role -> "ADMIN".equalsIgnoreCase(role) || "ROLE_ADMIN".equalsIgnoreCase(role)
@@ -572,19 +657,6 @@ public class PostController {
         notification.put("type", "SYSTEM"); notification.put("title", approved ? "Kháng nghị đã được chấp nhận" : "Kháng nghị đã được xem xét");
         notification.put("content", approved ? "Bài viết của bạn đã được khôi phục." : "Kháng nghị không được chấp nhận" + (post.getAppealReviewNote() == null ? "." : ": " + post.getAppealReviewNote()));
         notification.put("targetId", post.getId().toString()); notification.put("targetUrl", "/support-inbox?postId=" + post.getId()); notification.put("avatarUrl", null);
-        kafkaTemplate.send("notification.in-app.send", notification);
-    }
-
-    private void sendGroupPostRemovalNotification(Post post, UUID moderatorId) {
-        Map<String, Object> notification = new HashMap<>();
-        notification.put("recipientId", post.getAuthorId().toString());
-        notification.put("actorId", moderatorId.toString());
-        notification.put("type", "SYSTEM");
-        notification.put("title", "Bài viết trong nhóm đã bị gỡ");
-        notification.put("content", "Lý do: " + post.getModerationReason());
-        notification.put("targetId", post.getId().toString());
-        notification.put("targetUrl", "/groups/" + post.getGroupId() + "?tab=appeals");
-        notification.put("avatarUrl", null);
         kafkaTemplate.send("notification.in-app.send", notification);
     }
 

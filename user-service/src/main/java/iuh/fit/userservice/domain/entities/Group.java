@@ -48,5 +48,8 @@ public class Group extends BaseEntity {
 
     @Column(name = "rules", length = 3000)
     String rules;
-}
 
+    /** Câu hỏi dành cho người xin vào nhóm riêng tư, mỗi câu một dòng (tối đa 3 câu). */
+    @Column(name = "membership_questions", length = 1000)
+    String membershipQuestions;
+}

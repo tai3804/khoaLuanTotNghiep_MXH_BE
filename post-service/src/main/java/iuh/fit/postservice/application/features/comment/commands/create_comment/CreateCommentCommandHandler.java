@@ -85,6 +85,7 @@ public class CreateCommentCommandHandler {
 
         // Increment comment count on post
         post.setCommentCount(post.getCommentCount() + 1);
+        post.setLastActivityAt(java.time.LocalDateTime.now());
         postRepository.save(post);
 
         // Publish notification event to Kafka (UC-NO01)

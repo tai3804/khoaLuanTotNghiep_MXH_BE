@@ -39,6 +39,13 @@ public class PostResponse {
     boolean archived;
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
+    LocalDateTime groupPinnedAt;
     Double relevanceScore;
     String relevanceReason;
+
+    /** Bài đang được ghim đầu trang của nhóm. */
+    @JsonProperty("groupPinned")
+    public boolean isGroupPinned() {
+        return groupPinnedAt != null;
+    }
 }

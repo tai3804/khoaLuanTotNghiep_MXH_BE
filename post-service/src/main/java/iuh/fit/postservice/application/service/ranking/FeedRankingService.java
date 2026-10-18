@@ -63,7 +63,7 @@ public class FeedRankingService {
     }
 
     /**
-     * @param unseenOnly   bỏ các bài người xem đã xem (trừ bài của chính họ); lưu bản chụp riêng với bản đầy đủ
+     * @param unseenOnly   bỏ các bài người xem đã xem (kể cả bài của chính họ); lưu bản chụp riêng với bản đầy đủ
      * @param forceRefresh bỏ qua bản chụp đang có và tính lại (dùng cho lần tải trang 1 để bài vừa xem biến mất);
      *                     các trang sau của cùng phiên cuộn vẫn cắt từ bản chụp mới này nên không bị lặp hay nhảy cóc
      */
@@ -92,12 +92,12 @@ public class FeedRankingService {
         Set<UUID> visibleIds = postVisibilityService.visiblePostIds(candidates, viewerId, true);
         List<Post> visible = candidates.stream().filter(p -> visibleIds.contains(p.getId())).toList();
 
-        // 2b. Bài đã xem rồi thì không đưa lại (bài của chính mình luôn được giữ)
+        // 2b. Bài đã xem rồi thì không đưa lại (kể cả bài của chính mình)
         if (unseenOnly && !visible.isEmpty()) {
             Set<UUID> seen = postSeenService.seenAmong(viewerId, visible.stream().map(Post::getId).toList());
             if (!seen.isEmpty()) {
                 visible = visible.stream()
-                        .filter(p -> !seen.contains(p.getId()) || viewerId.equals(p.getAuthorId()))
+                        .filter(p -> !seen.contains(p.getId()))
                         .toList();
             }
         }

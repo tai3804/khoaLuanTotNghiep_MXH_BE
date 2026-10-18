@@ -4,6 +4,8 @@ import iuh.fit.userservice.domain.enums.GroupPrivacy;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class UpdateGroupRequest {
     @Size(min = 1, max = 100, message = "Tên nhóm phải từ 1 đến 100 ký tự")
@@ -16,4 +18,6 @@ public class UpdateGroupRequest {
     Boolean postApprovalRequired;
     @Size(max = 3000, message = "Nội quy nhóm tối đa 3000 ký tự")
     String rules;
+    @Size(max = 3, message = "Chỉ được đặt tối đa 3 câu hỏi tham gia")
+    List<@Size(max = 200, message = "Mỗi câu hỏi tối đa 200 ký tự") String> membershipQuestions;
 }

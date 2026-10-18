@@ -62,7 +62,7 @@ public class ReputationService {
     private int autoHidePenalty;
     @Value("${reputation.penalty.hide:10}")
     private int hidePenalty;
-    @Value("${reputation.penalty.delete:20}")
+    @Value("${reputation.penalty.delete:10}")
     private int deletePenalty;
     @Value("${reputation.recovery.points-per-day:1}")
     private int recoveryPerDay;

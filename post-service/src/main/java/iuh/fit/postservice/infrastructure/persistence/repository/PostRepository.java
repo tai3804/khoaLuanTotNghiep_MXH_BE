@@ -27,6 +27,46 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     Optional<Post> findByIdAndDeletedFalse(UUID id);
     List<Post> findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, PostStatus status);
 
+    /** Bài của một người trong nhóm đã bị quản trị viên gỡ (để họ xem và kháng nghị). */
+    List<Post> findByGroupIdAndAuthorIdAndDeletedTrueAndModerationActionIsNotNullOrderByUpdatedAtDesc(UUID groupId, UUID authorId);
+
+    /** Số bài đang chờ duyệt trong nhóm (huy hiệu ở thanh tab của quản trị viên). */
+    long countByGroupIdAndStatusAndDeletedFalse(UUID groupId, PostStatus status);
+
+    /** Số bài đã đăng trong nhóm kể từ một mốc (thẻ "Hoạt động của nhóm"). */
+    long countByGroupIdAndStatusAndDeletedFalseAndCreatedAtAfter(UUID groupId, PostStatus status, LocalDateTime since);
+
+    /** Số kháng nghị đang chờ quản trị viên nhóm xử lý. */
+    long countByGroupIdAndAppealStatus(UUID groupId, iuh.fit.postservice.domain.enums.ModerationAppealStatus appealStatus);
+
+    /** Số bài đang được ghim trong nhóm (giới hạn số bài ghim). */
+    long countByGroupIdAndGroupPinnedAtIsNotNullAndDeletedFalse(UUID groupId);
+
+    /** Bài đã đăng của các nhóm cho trước (bảng tin "Nhóm của bạn"). */
+    Page<Post> findByGroupIdInAndStatusAndDeletedFalseAndIsArchivedFalse(java.util.Collection<UUID> groupIds, PostStatus status, Pageable pageable);
+
+    /** Gỡ bài viết của một thành viên trong nhóm khi họ bị xóa kèm "xóa nội dung". */
+    @Modifying
+    @Query("UPDATE Post p SET p.deleted = true, p.groupPinnedAt = null WHERE p.groupId = :groupId AND p.authorId = :authorId AND p.deleted = false")
+    int softDeleteByGroupIdAndAuthorId(@Param("groupId") UUID groupId, @Param("authorId") UUID authorId);
+
+    /** Ảnh/video của các bài đã đăng trong nhóm, bài mới nhất trước (tab "Ảnh & video"). */
+    @Query(value = "SELECT new iuh.fit.postservice.application.features.post.queries.group_media.GroupMediaItem(m.id, m.postId, m.fileUrl, m.mediaType, p.authorId, p.createdAt) "
+            + "FROM PostMedia m, Post p WHERE p.id = m.postId AND p.groupId = :groupId AND p.deleted = false AND p.status = 'PUBLISHED' "
+            + "AND p.isArchived = false AND m.deleted = false AND m.mediaType IN :types ORDER BY p.createdAt DESC, m.sortOrder ASC",
+            countQuery = "SELECT COUNT(m) FROM PostMedia m, Post p WHERE p.id = m.postId AND p.groupId = :groupId AND p.deleted = false "
+                    + "AND p.status = 'PUBLISHED' AND p.isArchived = false AND m.deleted = false AND m.mediaType IN :types")
+    Page<iuh.fit.postservice.application.features.post.queries.group_media.GroupMediaItem> findGroupMedia(
+            @Param("groupId") UUID groupId,
+            @Param("types") java.util.Collection<iuh.fit.postservice.domain.enums.MediaType> types,
+            Pageable pageable);
+
+    /** Bài chưa có mốc hoạt động (dữ liệu cũ) lấy mốc là lúc đăng, để sắp xếp theo hoạt động không bị lệch. */
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE posts SET last_activity_at = created_at WHERE last_activity_at IS NULL", nativeQuery = true)
+    int backfillLastActivity();
+
     /** Bài của chính tác giả trong nhóm đang chờ duyệt (để họ thấy bài của mình chưa được hiển thị). */
     List<Post> findByGroupIdAndAuthorIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, UUID authorId, PostStatus status);
 
@@ -48,7 +88,7 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
 
     @Modifying
     @Transactional
-    @Query(value = "UPDATE posts SET created_at = :createdAt WHERE id = :postId AND author_id = :authorId AND is_deleted = false", nativeQuery = true)
+    @Query(value = "UPDATE posts SET created_at = :createdAt, last_activity_at = :createdAt WHERE id = :postId AND author_id = :authorId AND is_deleted = false", nativeQuery = true)
     int updateCreatedAtByIdAndAuthorId(
             @Param("postId") UUID postId,
             @Param("authorId") UUID authorId,

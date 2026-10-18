@@ -28,8 +28,13 @@ public enum UserServiceErrorCode implements BaseError {
     GROUP_ADMIN_PROTECTED(403, "Người kiểm duyệt không thể xóa hoặc cấm quản trị viên", 403),
     GROUP_NAME_DUPLICATED(400, "Bạn đã có một nhóm trùng tên này, hãy chọn tên khác", 400),
     GROUP_TRANSFER_TARGET_INVALID(400, "Người nhận quyền chủ nhóm phải là thành viên đã được duyệt của nhóm", 400),
-    GROUP_INVALID_SCOPE(400, "Phạm vi danh sách nhóm không hợp lệ (chỉ nhận: all, discover, joined, pending)", 400),
-    GROUP_JOIN_COOLDOWN(429,"Yêu cầu tham gia của bạn vừa bị từ chối, vui lòng thử lại sau 24 giờ", 429);
+    GROUP_INVALID_SCOPE(400, "Phạm vi danh sách nhóm không hợp lệ (chỉ nhận: all, discover, joined, pending, invited)", 400),
+    GROUP_JOIN_COOLDOWN(429,"Yêu cầu tham gia của bạn vừa bị từ chối, vui lòng thử lại sau 24 giờ", 429),
+    GROUP_NOT_MEMBER(403, "Bạn cần là thành viên của nhóm để thực hiện thao tác này", 403),
+    GROUP_ANSWERS_REQUIRED(400, "Vui lòng trả lời đầy đủ các câu hỏi của nhóm trước khi gửi yêu cầu tham gia", 400),
+    GROUP_INVITATION_NOT_FOUND(404, "Bạn không có lời mời nào đang chờ của nhóm này", 404),
+    GROUP_INVITE_NOT_FRIEND(400, "Bạn chỉ có thể mời bạn bè của mình vào nhóm", 400),
+    GROUP_INVALID_MEMBER_SCOPE(400, "Bộ lọc thành viên không hợp lệ (chỉ nhận: all, members, staff, pending, banned, invited)", 400);
 
     int code;
     String message;

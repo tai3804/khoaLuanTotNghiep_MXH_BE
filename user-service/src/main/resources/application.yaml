@@ -47,7 +47,7 @@ reputation:
     warn: 5        # kiểm duyệt viên cảnh cáo
     auto-hide: 5   # bài tự bị ẩn vì nhiều báo cáo của cộng đồng
     hide: 10       # kiểm duyệt viên ẩn bài
-    delete: 20     # kiểm duyệt viên gỡ bài
+    delete: 10     # kiểm duyệt viên gỡ bài
   recovery:
     points-per-day: 1   # mỗi ngày không bị trừ điểm được hồi phục chừng này điểm
   lock:

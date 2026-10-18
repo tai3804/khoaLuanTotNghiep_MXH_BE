@@ -8,6 +8,7 @@ import lombok.AccessLevel;
 import lombok.Data;
 import lombok.experimental.FieldDefaults;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,6 +33,9 @@ public class CreateGroupRequest {
 
     @Size(max = 3000, message = "Nội quy nhóm tối đa 3000 ký tự")
     String rules;
+
+    @Size(max = 3, message = "Chỉ được đặt tối đa 3 câu hỏi tham gia")
+    List<@Size(max = 200, message = "Mỗi câu hỏi tối đa 200 ký tự") String> membershipQuestions;
 
     Set<UUID> initialMemberIds;
 }

@@ -9,6 +9,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -16,7 +17,10 @@ import java.util.UUID;
 @Entity
 @Table(name = "posts", indexes = {
         @Index(name = "idx_post_author", columnList = "author_id"),
-        @Index(name = "idx_post_created_at", columnList = "created_at")
+        @Index(name = "idx_post_created_at", columnList = "created_at"),
+        // Bảng tin của nhóm: lọc theo nhóm + trạng thái rồi sắp xếp theo thời gian/hoạt động
+        @Index(name = "idx_post_group_status_created", columnList = "group_id, status, created_at"),
+        @Index(name = "idx_post_group_status_activity", columnList = "group_id, status, last_activity_at")
 })
 @Getter
 @Setter
@@ -89,6 +93,14 @@ public class Post extends BaseEntity {
     @Column(name = "is_archived", columnDefinition = "boolean default false")
     @Builder.Default
     boolean isArchived = false;
+
+    /** Thời điểm quản trị viên ghim bài trong nhóm (null = không ghim). Khác isPinned: ghim bài lên trang cá nhân. */
+    @Column(name = "group_pinned_at")
+    LocalDateTime groupPinnedAt;
+
+    /** Lần hoạt động gần nhất của bài (lúc đăng, khi có bình luận mới): cho thứ tự "Hoạt động gần đây" trong nhóm. */
+    @Column(name = "last_activity_at")
+    LocalDateTime lastActivityAt;
 
     @Column(name = "moderation_action", length = 30)
     String moderationAction;
