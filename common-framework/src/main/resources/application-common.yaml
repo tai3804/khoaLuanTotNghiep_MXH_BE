@@ -18,7 +18,7 @@ app:
   security:
     jwt:
       issuer-uri: ${JWT_ISSUER_URI:http://localhost:8080/auth}
-      public-key: "${JWT_PUBLIC_KEY}"
+      public-key: "${JWT_PUBLIC_KEY:-----BEGIN PUBLIC KEY----- MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6DoiuZBhtT3WWNlrMyiBE2DvJK8TiG7XTgQBmWkQ/KxBs6bQO2OUk4vFKJQ3Lbpcqqew8zXTJoqMUcuGcxSoPLCDilEZ3p8NgeJ9sKE6otWCaUIkL6FaptNDE3It88LITZ1m1zJXtR+X8XFndjdrO7SWtjZ9GbKYE48lhaMqzhR1vipXnaTFVxX20oXirMK2ztQ9EwwmS2AvpI9/CaIx7ZEG/gi+YA/+IBWxZkRZCf4u2wUfhDmJz38KQ5TGE7NyvBnCIvrAwCFZGY9RdF8LseKgq0aFbxjIemZBllhNJ8IdaAKanFYkKuO/dY/70Up3hZEZGYr2wTlaJOSQOPAgsQIDAQAB -----END PUBLIC KEY-----}"
     # Khoá dùng chung cho API nội bộ /api/v1/internal/** (service gọi service, không đi qua gateway).
     # Giá trị mặc định chỉ dành cho máy dev: hãy đặt INTERNAL_API_KEY riêng (trong .env) khi triển khai thật.
     internal-api-key: ${INTERNAL_API_KEY:kltn-internal-dev-key}
