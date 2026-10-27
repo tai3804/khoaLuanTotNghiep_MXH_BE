@@ -15,7 +15,7 @@ import java.util.UUID;
 @FeignClient(
         name = "user-service",
         contextId = "reputationPolicyClient",
-        url = "${USER_SERVICE_URL:http://localhost:8085}",
+        url = "${USER_SERVICE_URL:}",
         configuration = ReputationClientConfig.class)
 public interface ReputationPolicyClient {
 

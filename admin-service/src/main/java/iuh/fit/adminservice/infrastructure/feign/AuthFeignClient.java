@@ -12,7 +12,7 @@ import java.util.UUID;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 
-@FeignClient(name = "auth-service")
+@FeignClient(name = "auth-service", url = "${AUTH_SERVICE_URL:}")
 public interface AuthFeignClient {
 
     @PostMapping("/api/v1/internal/users/info")

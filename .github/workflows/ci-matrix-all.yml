@@ -1,0 +1,93 @@
+name: Build & Package All Microservices
+
+on:
+  push:
+    branches: [ "main", "dev", "tai" ]
+  pull_request:
+    branches: [ "main", "dev", "tai" ]
+  workflow_dispatch:
+
+jobs:
+  build-common:
+    name: Build & Cache Common Framework
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build & Install common-framework
+        run: |
+          chmod +x ./common-framework/mvnw
+          ./common-framework/mvnw -f common-framework/pom.xml clean install -DskipTests
+
+  build-services:
+    name: Build Service (${{ matrix.service }})
+    needs: build-common
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: eureka-server
+            port: 8761
+          - service: api-gateway
+            port: 8080
+          - service: auth-service
+            port: 8081
+          - service: post-service
+            port: 8082
+          - service: notification-service
+            port: 8083
+          - service: media-service
+            port: 8084
+          - service: user-service
+            port: 8085
+          - service: call-service
+            port: 8086
+          - service: chat-service
+            port: 8087
+          - service: feed-service
+            port: 8088
+          - service: admin-service
+            port: 8090
+          - service: ai-service
+            port: 8091
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build common-framework dependency
+        if: matrix.service != 'eureka-server' && matrix.service != 'api-gateway'
+        run: |
+          chmod +x ./common-framework/mvnw
+          ./common-framework/mvnw -f common-framework/pom.xml clean install -DskipTests
+
+      - name: Compile & Package Service
+        run: |
+          chmod +x ./${{ matrix.service }}/mvnw
+          ./${{ matrix.service }}/mvnw -f ${{ matrix.service }}/pom.xml clean package -DskipTests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./${{ matrix.service }}/Dockerfile
+          push: false
+          tags: ${{ matrix.service }}:${{ github.sha }}

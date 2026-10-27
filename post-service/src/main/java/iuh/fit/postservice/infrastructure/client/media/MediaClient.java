@@ -9,7 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
-@FeignClient(name = "media-service")
+@FeignClient(name = "media-service", url = "${MEDIA_SERVICE_URL:}")
 public interface MediaClient {
 
     @PostMapping(value = "/api/v1/media/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 
 import java.util.List;
 
-@FeignClient(name = "user-service")
+@FeignClient(name = "user-service", url = "${USER_SERVICE_URL:}")
 public interface UserFeignClient {
     
     @GetMapping("/api/v1/users/admin/all")

@@ -45,6 +45,9 @@ import java.time.Duration;
 import java.util.Iterator;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
+import lombok.experimental.NonFinal;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -54,6 +57,10 @@ public class AwsS3StorageService {
     S3Client s3Client;
     S3Presigner s3Presigner;
     AwsS3Properties awsS3Properties;
+
+    @NonFinal
+    @Value("${MEDIA_PUBLIC_BASE_URL:http://localhost:8080/api/v1/media/files}")
+    String mediaPublicBaseUrl;
 
     // Disallowed executable files for security
     static List<String> DISALLOWED_EXTENSIONS = List.of(
@@ -359,6 +366,12 @@ public class AwsS3StorageService {
             return String.format("%s/%s", baseUrl, fileKey);
         }
 
-        return String.format("http://localhost:8080/api/v1/media/files/%s", fileKey);
+        String base = (mediaPublicBaseUrl != null && !mediaPublicBaseUrl.isBlank())
+                ? mediaPublicBaseUrl.trim()
+                : "http://localhost:8080/api/v1/media/files";
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return String.format("%s/%s", base, fileKey);
     }
 }

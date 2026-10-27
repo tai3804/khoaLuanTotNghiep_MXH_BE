@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.Map;
 
-@FeignClient(name = "admin-service", contextId = "adminServiceClient", configuration = FeignClientConfig.class)
+@FeignClient(name = "admin-service", url = "${ADMIN_SERVICE_URL:}", contextId = "adminServiceClient", configuration = FeignClientConfig.class)
 public interface AdminFeignClient {
 
     @PostMapping("/api/v1/internal/admin/blacklist/learn")
