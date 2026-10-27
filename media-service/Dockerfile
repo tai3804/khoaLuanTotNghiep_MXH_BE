@@ -1,17 +1,15 @@
 FROM eclipse-temurin:21-jdk-alpine AS builder
 WORKDIR /build
 
+RUN apk add --no-cache maven
+
 COPY common-framework/pom.xml common-framework/pom.xml
 COPY common-framework/src common-framework/src
-COPY common-framework/mvnw common-framework/mvnw
-COPY common-framework/.mvn common-framework/.mvn
-RUN chmod +x common-framework/mvnw && ./common-framework/mvnw -f common-framework/pom.xml clean install -DskipTests
+RUN mvn -f common-framework/pom.xml clean install -DskipTests
 
 COPY media-service/pom.xml media-service/pom.xml
 COPY media-service/src media-service/src
-COPY media-service/mvnw media-service/mvnw
-COPY media-service/.mvn media-service/.mvn
-RUN chmod +x media-service/mvnw && ./media-service/mvnw -f media-service/pom.xml clean package -DskipTests
+RUN mvn -f media-service/pom.xml clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app

@@ -1,11 +1,11 @@
 FROM eclipse-temurin:21-jdk-alpine AS builder
 WORKDIR /build
 
+RUN apk add --no-cache maven
+
 COPY eureka-server/pom.xml eureka-server/pom.xml
 COPY eureka-server/src eureka-server/src
-COPY eureka-server/mvnw eureka-server/mvnw
-COPY eureka-server/.mvn eureka-server/.mvn
-RUN chmod +x eureka-server/mvnw && ./eureka-server/mvnw -f eureka-server/pom.xml clean package -DskipTests
+RUN mvn -f eureka-server/pom.xml clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app

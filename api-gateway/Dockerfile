@@ -1,11 +1,11 @@
 FROM eclipse-temurin:21-jdk-alpine AS builder
 WORKDIR /build
 
+RUN apk add --no-cache maven
+
 COPY api-gateway/pom.xml api-gateway/pom.xml
 COPY api-gateway/src api-gateway/src
-COPY api-gateway/mvnw api-gateway/mvnw
-COPY api-gateway/.mvn api-gateway/.mvn
-RUN chmod +x api-gateway/mvnw && ./api-gateway/mvnw -f api-gateway/pom.xml clean package -DskipTests
+RUN mvn -f api-gateway/pom.xml clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
