@@ -2,8 +2,10 @@ package iuh.fit.postservice.application.features.saved_post.commands.save_post;
 
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.application.exception.ErrorCode;
+import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.SavedPost;
+import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.SavedPostRepository;
 import lombok.AccessLevel;
@@ -23,11 +25,18 @@ public class SavePostHandler {
 
     PostRepository postRepository;
     SavedPostRepository savedPostRepository;
+    PostVisibilityService postVisibilityService;
 
     @Transactional
     public SavedPost handle(SavePostCommand command) {
         Post post = postRepository.findByIdAndDeletedFalse(command.getPostId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+        if (post.getStatus() != PostStatus.PUBLISHED
+                || post.isArchived()
+                || !postVisibilityService.canView(post, command.getUserId())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
+        }
 
         Optional<SavedPost> existingOpt = savedPostRepository.findByUserIdAndPostId(command.getUserId(), post.getId());
         if (existingOpt.isPresent()) {

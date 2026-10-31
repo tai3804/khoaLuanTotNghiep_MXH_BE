@@ -16,6 +16,7 @@ import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.application.exception.ErrorCode;
 import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
+import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.features.post.commands.create_post.CreatePostCommand;
 import iuh.fit.postservice.application.features.post.commands.create_post.CreatePostCommandHandler;
 import iuh.fit.postservice.application.features.post.commands.create_post.CreatePostResult;
@@ -34,21 +35,25 @@ import iuh.fit.postservice.application.features.post.queries.get_post_detail.Get
 import iuh.fit.postservice.application.features.post.queries.get_post_detail.GetPostDetailResult;
 import iuh.fit.postservice.application.features.post.queries.get_user_posts.GetUserPostsQuery;
 import iuh.fit.postservice.application.features.post.queries.get_user_posts.GetUserPostsQueryHandler;
+import iuh.fit.postservice.application.service.PostPublicationHelper;
 import iuh.fit.postservice.application.service.PostSeenService;
-import iuh.fit.postservice.domain.enums.PostPrivacy;
-import iuh.fit.postservice.domain.enums.PostStatus;
+import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.domain.enums.ModerationAppealStatus;
+import iuh.fit.postservice.domain.enums.PostPrivacy;
+import iuh.fit.postservice.domain.enums.PostStatus;
+import iuh.fit.postservice.infrastructure.cache.PostCacheEvictor;
 import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
 import iuh.fit.postservice.infrastructure.event.ModerationAuditPublisher;
 import iuh.fit.postservice.infrastructure.event.ReputationEventPublisher;
 import iuh.fit.postservice.presentation.constants.ApiConstants;
 import iuh.fit.postservice.presentation.constants.MessageConstants;
 import iuh.fit.postservice.presentation.dto.request.CreatePostRequest;
-import iuh.fit.postservice.presentation.dto.request.SharePostRequest;
 import iuh.fit.postservice.presentation.dto.request.MarkPostsSeenRequest;
-import iuh.fit.postservice.presentation.dto.request.UpdatePostRequest;
+import iuh.fit.postservice.presentation.dto.request.SharePostRequest;
 import iuh.fit.postservice.presentation.dto.request.UpdatePostDateRequest;
+import iuh.fit.postservice.presentation.dto.request.UpdatePostRequest;
 import iuh.fit.postservice.presentation.dto.response.PostResponse;
 import iuh.fit.postservice.presentation.mapper.PostPresentationMapper;
 import jakarta.validation.Valid;
@@ -56,20 +61,22 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springdoc.core.annotations.ParameterObject;
-import org.springframework.http.MediaType;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.kafka.core.KafkaTemplate;
 
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.LinkedHashMap;
-import iuh.fit.postservice.domain.enums.ModerationAppealStatus;
 
 @RestController
 @RequestMapping(ApiConstants.POST_API)
@@ -93,6 +100,9 @@ public class PostController {
     GetUserPostsQueryHandler getUserPostsQueryHandler;
     GetAllPostsQueryHandler getAllPostsQueryHandler;
     PostSeenService postSeenService;
+    PostVisibilityService postVisibilityService;
+    PostPublicationHelper postPublicationHelper;
+    PostCacheEvictor postCacheEvictor;
     PostPresentationMapper postPresentationMapper;
     JwtUtil jwtUtil;
     iuh.fit.postservice.infrastructure.persistence.repository.PostRepository postRepository;
@@ -104,6 +114,8 @@ public class PostController {
     iuh.fit.postservice.application.features.analytics.GetCreatorAnalyticsQueryHandler getCreatorAnalyticsQueryHandler;
     UserConnectionClient userConnectionClient;
     CacheManager cacheManager;
+    StringRedisTemplate stringRedisTemplate;
+    TransactionTemplate transactionTemplate;
     static final int MAX_GROUP_PINNED_POSTS = 5;
     KafkaTemplate<String, Object> kafkaTemplate;
     ReputationEventPublisher reputationEventPublisher;
@@ -289,14 +301,11 @@ public class PostController {
     @Operation(summary = "Appeal a moderation decision on own post")
     public ResponseEntity<ApiResponse<Map<String, Object>>> appealModeratedPost(
             @PathVariable UUID postId, @org.springframework.web.bind.annotation.RequestBody Map<String, String> request) {
-        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
-        if (!getCurrentUserId().equals(post.getAuthorId())) throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
+        if (!getCurrentUserId().equals(post.getAuthorId())) throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         if (post.getGroupId() != null) throw new BusinessException(ErrorCode.INVALID_INPUT);
         String message = request == null ? null : request.get("message");
         if (message == null || message.isBlank()) throw new BusinessException(ErrorCode.INVALID_INPUT);
-        // Historical moderation records may not have an action value. The post's
-        // hidden/deleted state is still a valid moderation decision to appeal; a post that is
-        // visible again (restored / appeal accepted) has nothing left to appeal.
         if ((!post.isArchived() && !post.isDeleted())
                 || post.getAppealStatus() == ModerationAppealStatus.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -312,7 +321,7 @@ public class PostController {
     @Operation(summary = "Appeal a group moderation decision")
     public ResponseEntity<ApiResponse<Map<String, Object>>> appealGroupPost(
             @PathVariable UUID postId, @org.springframework.web.bind.annotation.RequestBody Map<String, String> request) {
-        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
         if (post.getGroupId() == null || !getCurrentUserId().equals(post.getAuthorId()) || !post.isDeleted()) throw new BusinessException(ErrorCode.INVALID_INPUT);
         String message = request == null ? null : request.get("message");
         if (message == null || message.isBlank() || post.getAppealStatus() == ModerationAppealStatus.PENDING) throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -338,7 +347,7 @@ public class PostController {
     @PatchMapping("/{postId}/group-appeal/review")
     public ResponseEntity<ApiResponse<Map<String, Object>>> reviewGroupAppeal(@PathVariable UUID postId, @RequestParam boolean approved, @org.springframework.web.bind.annotation.RequestBody(required = false) Map<String, String> request) {
         UUID reviewerId = getCurrentUserId();
-        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
         if (post.getGroupId() == null || post.getAppealStatus() != ModerationAppealStatus.PENDING) throw new BusinessException(ErrorCode.INVALID_INPUT);
         requireGroupModerator(post.getGroupId());
         post.setAppealStatus(approved ? ModerationAppealStatus.ACCEPTED : ModerationAppealStatus.REJECTED);
@@ -353,8 +362,6 @@ public class PostController {
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> myModerationAppeals() {
         UUID userId = getCurrentUserId();
         List<Map<String, Object>> appeals = postRepository.findAll().stream()
-                // Include historical posts that were hidden/deleted before appeal
-                // metadata was introduced, so their owners can still appeal.
                 .filter(post -> post.getGroupId() == null && userId.equals(post.getAuthorId()) && (post.getModerationAction() != null
                         || post.isArchived() || post.isDeleted() || post.getAppealStatus() != null))
                 .sorted(java.util.Comparator.comparing(Post::getUpdatedAt, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
@@ -376,7 +383,7 @@ public class PostController {
             @PathVariable UUID postId, @RequestParam boolean approved, @org.springframework.web.bind.annotation.RequestBody(required = false) Map<String, String> request) {
         UUID moderatorId = getCurrentUserId();
         requireSystemModerator();
-        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+        Post post = postRepository.findById(postId).orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
         if (post.getAppealStatus() != ModerationAppealStatus.PENDING) throw new BusinessException(ErrorCode.INVALID_INPUT);
         post.setAppealStatus(approved ? ModerationAppealStatus.ACCEPTED : ModerationAppealStatus.REJECTED);
         post.setAppealReviewNote(request == null ? null : request.get("note"));
@@ -396,7 +403,7 @@ public class PostController {
             @RequestParam boolean approved) {
         UUID viewerId = getCurrentUserId();
         Post post = postRepository.findByIdAndDeletedFalse(postId)
-                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
         if (post.getGroupId() == null) throw new BusinessException(ErrorCode.INVALID_INPUT);
         requireGroupModerator(post.getGroupId());
         if (post.getStatus() != PostStatus.PENDING_APPROVAL) throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -406,15 +413,17 @@ public class PostController {
                 : PostStatus.PUBLISHED;
         post.setStatus(approved ? targetStatus : PostStatus.REJECTED);
         if (approved) post.setLastActivityAt(java.time.LocalDateTime.now());
-        postRepository.save(post);
+        Post saved = postRepository.save(post);
         clearPostCaches();
-        groupNotificationPublisher.postReviewed(post, viewerId, approved);
+        groupNotificationPublisher.postReviewed(saved, viewerId, approved);
+        if (approved && targetStatus == PostStatus.PUBLISHED) {
+            postPublicationHelper.publishAndNotifyDeferredPost(saved);
+        }
 
-        // Bài bị từ chối không còn xem được qua truy vấn chi tiết (sẽ báo "không tìm thấy"), nên trả về thông tin tối thiểu
         PostResponse response = approved
                 ? postPresentationMapper.toResponse(getPostDetailQueryHandler.handle(GetPostDetailQuery.builder().postId(postId).viewerId(viewerId).build()))
-                : PostResponse.builder().id(post.getId()).authorId(post.getAuthorId()).groupId(post.getGroupId())
-                .content(post.getContent()).status(post.getStatus()).createdAt(post.getCreatedAt()).build();
+                : PostResponse.builder().id(saved.getId()).authorId(saved.getAuthorId()).groupId(saved.getGroupId())
+                .content(saved.getContent()).status(saved.getStatus()).createdAt(saved.getCreatedAt()).build();
         return ResponseEntity.ok(ApiResponse.success(response, approved ? "Post approved successfully" : "Post rejected successfully"));
     }
 
@@ -425,15 +434,15 @@ public class PostController {
             @RequestParam(value = "pinned", defaultValue = "true") boolean pinned) {
         UUID viewerId = getCurrentUserId();
         Post post = postRepository.findByIdAndDeletedFalse(postId)
-                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
         if (post.getGroupId() == null || post.getStatus() != PostStatus.PUBLISHED) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.GROUP_POST_NOT_PINNABLE);
+            throw new BusinessException(PostServiceErrorCode.GROUP_POST_NOT_PINNABLE);
         }
         requireGroupModerator(post.getGroupId());
         if (pinned) {
             if (post.getGroupPinnedAt() == null) {
                 if (postRepository.countByGroupIdAndGroupPinnedAtIsNotNullAndDeletedFalse(post.getGroupId()) >= MAX_GROUP_PINNED_POSTS) {
-                    throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.GROUP_PIN_LIMIT);
+                    throw new BusinessException(PostServiceErrorCode.GROUP_PIN_LIMIT);
                 }
                 post.setGroupPinnedAt(java.time.LocalDateTime.now());
             }
@@ -453,7 +462,7 @@ public class PostController {
             @RequestParam(required = false) String reason) {
         UUID moderatorId = getCurrentUserId();
         Post post = postRepository.findByIdAndDeletedFalse(postId)
-                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
         if (post.getGroupId() == null) throw new BusinessException(ErrorCode.INVALID_INPUT);
         requireGroupModerator(post.getGroupId());
 
@@ -523,7 +532,7 @@ public class PostController {
             @RequestParam(value = "size", defaultValue = "20") int size) {
         UUID currentUserId = getCurrentUserId();
         if (!currentUserId.equals(userId)) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+            throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Order.desc("createdAt")));
         org.springframework.data.domain.Page<Post> postsPage = postRepository.findByAuthorIdAndDeletedFalseAndIsArchivedTrue(userId, pageable);
@@ -560,7 +569,7 @@ public class PostController {
         UUID currentUserId = getCurrentUserId();
         int updated = postRepository.updateCreatedAtByIdAndAuthorId(postId, currentUserId, request.getCreatedAt());
         if (updated == 0) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+            throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
         clearPostCaches();
         GetPostDetailResult result = getPostDetailQueryHandler.handle(GetPostDetailQuery.builder().postId(postId).viewerId(currentUserId).build());
@@ -594,7 +603,7 @@ public class PostController {
         UUID currentUserId = getCurrentUserId();
         UUID targetPostId = postId != null ? postId : (request.getOriginalPostId() != null ? request.getOriginalPostId() : request.getSharedPostId());
         if (targetPostId == null) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND);
+            throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
         }
         SharePostCommand command = postPresentationMapper.toShareCommand(request, targetPostId, currentUserId);
         SharePostResult result = sharePostCommandHandler.handle(command);
@@ -641,12 +650,12 @@ public class PostController {
                     .filter(item -> groupId.equals(item.groupId()) && item.member())
                     .findFirst().orElse(null);
             if (membership == null || !("ADMIN".equals(membership.role()) || "MODERATOR".equals(membership.role()))) {
-                throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+                throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
             }
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+            throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
     }
 
@@ -658,10 +667,10 @@ public class PostController {
             visibility = response == null || response.getData() == null ? null : response.getData().stream()
                     .filter(item -> groupId.equals(item.groupId())).findFirst().orElse(null);
         } catch (Exception exception) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.GROUP_SERVICE_UNAVAILABLE);
+            throw new BusinessException(PostServiceErrorCode.GROUP_SERVICE_UNAVAILABLE);
         }
         if (visibility == null || (!visibility.member() && !visibility.publicGroup())) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.GROUP_PRIVATE);
+            throw new BusinessException(PostServiceErrorCode.GROUP_PRIVATE);
         }
     }
 
@@ -669,7 +678,7 @@ public class PostController {
         List<String> roles = jwtUtil.getCurrentUserRoles();
         boolean allowed = roles != null && roles.stream().anyMatch(role -> "ADMIN".equalsIgnoreCase(role) || "ROLE_ADMIN".equalsIgnoreCase(role)
                 || "MODERATOR".equalsIgnoreCase(role) || "ROLE_MODERATOR".equalsIgnoreCase(role));
-        if (!allowed) throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+        if (!allowed) throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
     }
 
     private Map<String, Object> appealView(Post post) {
@@ -703,17 +712,37 @@ public class PostController {
     }
 
     private void clearPostCaches() {
-        for (String cacheName : List.of("post-feed-v2", "post-user-feed-v2", "post-detail-v2")) {
-            org.springframework.cache.Cache cache = cacheManager.getCache(cacheName);
-            if (cache != null) cache.clear();
-        }
+        postCacheEvictor.evictAllWithRecheck();
     }
 
     @PostMapping("/{postId}/view")
-    @Operation(summary = "Record post view", description = "Increments view count of a post")
+    @Operation(summary = "Record post view", description = "Increments view count of a post with per-viewer deduplication")
     public ResponseEntity<ApiResponse<Long>> recordPostView(@PathVariable("postId") UUID postId) {
-        postRepository.incrementViewCount(postId);
-        return ResponseEntity.ok(ApiResponse.success(1L, "Ghi nhận lượt xem bài viết"));
+        UUID viewerId = getOptionalCurrentUserId();
+        Post post = postRepository.findByIdAndDeletedFalse(postId)
+                .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
+
+        if (post.getStatus() != PostStatus.PUBLISHED
+                || post.isArchived()
+                || !postVisibilityService.canView(post, viewerId)) {
+            throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
+        }
+
+        long currentViews = post.getViewCount();
+        if (viewerId != null && !viewerId.equals(post.getAuthorId())) {
+            boolean shouldIncrement = true;
+            try {
+                String dedupKey = "post-service:post-view:" + postId + ":" + viewerId;
+                Boolean added = stringRedisTemplate.opsForValue().setIfAbsent(dedupKey, "1", Duration.ofHours(6));
+                shouldIncrement = Boolean.TRUE.equals(added);
+            } catch (Exception ignored) {
+            }
+            if (shouldIncrement) {
+                postRepository.incrementViewCount(postId);
+                currentViews += 1;
+            }
+        }
+        return ResponseEntity.ok(ApiResponse.success(currentViews, "Ghi nhận lượt xem bài viết"));
     }
 
     @GetMapping("/analytics/me")
@@ -730,10 +759,10 @@ public class PostController {
     public ResponseEntity<ApiResponse<iuh.fit.postservice.presentation.dto.response.PostInsightsResponse>> getPostInsights(@PathVariable("postId") UUID postId) {
         UUID currentUserId = getCurrentUserId();
         var post = postRepository.findByIdAndDeletedFalse(postId)
-                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 
         if (!post.getAuthorId().equals(currentUserId)) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+            throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
 
         long views = post.getViewCount();
@@ -845,18 +874,25 @@ public class PostController {
     public ResponseEntity<ApiResponse<PostResponse>> publishScheduledPostNow(@PathVariable("postId") UUID postId) {
         UUID currentUserId = getCurrentUserId();
         var post = postRepository.findByIdAndDeletedFalse(postId)
-                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 
         if (!post.getAuthorId().equals(currentUserId)) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.UNAUTHORIZED_ACTION);
+            throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
+        }
+
+        if (post.getStatus() != PostStatus.SCHEDULED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
 
         post.setStatus(PostStatus.PUBLISHED);
-        postRepository.save(post);
+        post.setLastActivityAt(java.time.LocalDateTime.now());
+        Post saved = postRepository.save(post);
         clearPostCaches();
+        postPublicationHelper.publishAndNotifyDeferredPost(saved);
 
-        var media = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
-        var detail = postFeatureMapper.toGetDetailResult(post, media);
+        var media = postMediaRepository.findByPostIdOrderBySortOrderAsc(saved.getId());
+        var detail = postFeatureMapper.toGetDetailResult(saved, media);
+        detail.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(saved.getPollData(), currentUserId));
         var response = postPresentationMapper.toResponse(detail);
 
         return ResponseEntity.ok(ApiResponse.success(response, "Đăng bài viết ngay thành công"));
@@ -866,65 +902,79 @@ public class PostController {
     @Operation(summary = "Vote in a post poll", description = "Cast a vote on one or more options in a post poll")
     public ResponseEntity<ApiResponse<PostResponse>> votePoll(
             @PathVariable("postId") UUID postId,
-            @Valid @RequestBody iuh.fit.postservice.presentation.dto.request.VotePollRequest request
+            @Valid @org.springframework.web.bind.annotation.RequestBody iuh.fit.postservice.presentation.dto.request.VotePollRequest request
     ) {
         UUID currentUserId = getCurrentUserId();
-        Post post = postRepository.findByIdAndDeletedFalse(postId)
-                .orElseThrow(() -> new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POST_NOT_FOUND));
 
-        if (post.getPollData() == null || post.getPollData().isBlank()) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POLL_NOT_FOUND);
+        Post viewCheckPost = postRepository.findByIdAndDeletedFalse(postId)
+                .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
+        if (viewCheckPost.getStatus() != PostStatus.PUBLISHED
+                || viewCheckPost.isArchived()
+                || !postVisibilityService.canView(viewCheckPost, currentUserId)) {
+            throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
         }
 
-        iuh.fit.postservice.domain.entities.PostPoll poll = iuh.fit.postservice.application.util.PostPollHelper.fromJson(post.getPollData());
-        if (poll == null) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POLL_NOT_FOUND);
-        }
+        Post updatedPost = transactionTemplate.execute(status -> {
+            Post post = postRepository.findByIdAndDeletedFalseForUpdate(postId)
+                    .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
 
-        boolean isExpired = poll.getClosedAt() != null && java.time.Instant.now().isAfter(poll.getClosedAt());
-        if (poll.isClosed() || isExpired) {
-            throw new BusinessException(iuh.fit.postservice.application.exception.PostServiceErrorCode.POLL_CLOSED);
-        }
-
-        Set<String> validOptionIds = new java.util.HashSet<>();
-        for (var opt : poll.getOptions()) {
-            validOptionIds.add(opt.getId());
-        }
-
-        List<String> selectedOptions = request.getOptionIds().stream()
-                .filter(validOptionIds::contains)
-                .toList();
-
-        if (selectedOptions.isEmpty()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-
-        // Single choice check
-        if (!poll.isMultipleChoice() && selectedOptions.size() > 1) {
-            selectedOptions = List.of(selectedOptions.get(0));
-        }
-
-        // Apply votes
-        for (var opt : poll.getOptions()) {
-            if (opt.getVoterIds() == null) {
-                opt.setVoterIds(new java.util.HashSet<>());
+            if (post.getStatus() != PostStatus.PUBLISHED || post.isArchived()) {
+                throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
             }
-            if (!poll.isMultipleChoice()) {
-                opt.getVoterIds().remove(currentUserId);
-            }
-            if (selectedOptions.contains(opt.getId())) {
-                opt.getVoterIds().add(currentUserId);
-            }
-            opt.setVoteCount(opt.getVoterIds().size());
-        }
 
-        post.setPollData(iuh.fit.postservice.application.util.PostPollHelper.toJson(poll));
-        postRepository.save(post);
+            if (post.getPollData() == null || post.getPollData().isBlank()) {
+                throw new BusinessException(PostServiceErrorCode.POLL_NOT_FOUND);
+            }
+
+            iuh.fit.postservice.domain.entities.PostPoll poll = iuh.fit.postservice.application.util.PostPollHelper.fromJson(post.getPollData());
+            if (poll == null) {
+                throw new BusinessException(PostServiceErrorCode.POLL_NOT_FOUND);
+            }
+
+            boolean isExpired = poll.getClosedAt() != null && java.time.Instant.now().isAfter(poll.getClosedAt());
+            if (poll.isClosed() || isExpired) {
+                throw new BusinessException(PostServiceErrorCode.POLL_CLOSED);
+            }
+
+            Set<String> validOptionIds = new java.util.HashSet<>();
+            for (var opt : poll.getOptions()) {
+                validOptionIds.add(opt.getId());
+            }
+
+            List<String> selectedOptions = request.getOptionIds().stream()
+                    .filter(validOptionIds::contains)
+                    .toList();
+
+            if (selectedOptions.isEmpty()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT);
+            }
+
+            if (!poll.isMultipleChoice() && selectedOptions.size() > 1) {
+                selectedOptions = List.of(selectedOptions.get(0));
+            }
+
+            for (var opt : poll.getOptions()) {
+                if (opt.getVoterIds() == null) {
+                    opt.setVoterIds(new java.util.HashSet<>());
+                }
+                if (!poll.isMultipleChoice()) {
+                    opt.getVoterIds().remove(currentUserId);
+                }
+                if (selectedOptions.contains(opt.getId())) {
+                    opt.getVoterIds().add(currentUserId);
+                }
+                opt.setVoteCount(opt.getVoterIds().size());
+            }
+
+            post.setPollData(iuh.fit.postservice.application.util.PostPollHelper.toJson(poll));
+            return postRepository.save(post);
+        });
+
         clearPostCaches();
 
-        var media = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
-        var detail = postFeatureMapper.toGetDetailResult(post, media);
-        detail.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), currentUserId));
+        var media = postMediaRepository.findByPostIdOrderBySortOrderAsc(updatedPost.getId());
+        var detail = postFeatureMapper.toGetDetailResult(updatedPost, media);
+        detail.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(updatedPost.getPollData(), currentUserId));
         var response = postPresentationMapper.toResponse(detail);
         response.setPoll(detail.getPoll());
 

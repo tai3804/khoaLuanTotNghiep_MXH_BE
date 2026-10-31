@@ -42,6 +42,12 @@ public class DeviceRepositoryImpl extends BaseRepositoryImpl<Device, UUID, Devic
     }
 
     @Override
+    public Optional<Device> findByUserIdAndRefreshTokenHash(UUID userId, String refreshTokenHash) {
+        return deviceJpaRepository.findByUserIdAndRefreshTokenHash(userId, refreshTokenHash)
+                .map(deviceModelMapper::toDto);
+    }
+
+    @Override
     public void deleteAllByUserId(UUID userId) {
         deviceJpaRepository.deleteAllByUserId(userId);
     }

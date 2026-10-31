@@ -44,7 +44,7 @@ public class GetMessagesHandler {
             throw new BusinessException(ChatServiceErrorCode.NOT_A_CONVERSATION_MEMBER);
         }
 
-        PageRequest pageRequest = PageRequest.of(query.getPage(), query.getSize());
+        PageRequest pageRequest = PageRequest.of(Math.max(0, query.getPage()), Math.min(Math.max(1, query.getSize()), 100));
         List<UUID> userDeletedIds = messageUserDeletionRepository.findAllDeletedMessageIdsByUserId(query.getCurrentUserId());
 
         Page<Message> messagePage;
@@ -61,7 +61,7 @@ public class GetMessagesHandler {
         List<Message> pageMessages = messagePage.getContent();
         List<UUID> messageIds = pageMessages.stream().map(Message::getId).toList();
 
-        // 1. Fetch replied messages
+        // 1. Fetch replied messages strictly within the same conversation
         List<UUID> replyIds = pageMessages.stream()
                 .map(Message::getReplyToMessageId)
                 .filter(Objects::nonNull)
@@ -70,7 +70,8 @@ public class GetMessagesHandler {
 
         Map<UUID, Message> replyMap = replyIds.isEmpty() ? Map.of() :
                 messageRepository.findAllByIdIn(replyIds).stream()
-                        .collect(Collectors.toMap(Message::getId, m -> m));
+                        .filter(m -> query.getConversationId().equals(m.getConversationId()))
+                        .collect(Collectors.toMap(Message::getId, m -> m, (a, b) -> a));
 
         // 2. Fetch reactions
         List<MessageReaction> allReactions = messageIds.isEmpty() ? List.of() :
@@ -82,10 +83,10 @@ public class GetMessagesHandler {
         List<GetMessagesResult> results = pageMessages.stream().map(message -> {
             GetMessagesResult result = messageFeatureMapper.toGetMessagesResult(message);
 
-            // Populate reply details
+            // Populate reply details without leaking recalled messages
             if (message.getReplyToMessageId() != null && replyMap.containsKey(message.getReplyToMessageId())) {
                 Message replyMsg = replyMap.get(message.getReplyToMessageId());
-                result.setReplyToContent(replyMsg.getContent());
+                result.setReplyToContent(replyMsg.isDeleted() ? "Tin nhắn đã được thu hồi" : replyMsg.getContent());
                 result.setReplyToSenderId(replyMsg.getSenderId());
             }
 

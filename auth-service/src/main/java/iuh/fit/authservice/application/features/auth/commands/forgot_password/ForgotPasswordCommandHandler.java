@@ -9,10 +9,13 @@ import iuh.fit.commonframework.infrastructure.security.OtpUtil;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.experimental.NonFinal;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.Map;
 
 @Slf4j
@@ -26,15 +29,41 @@ public class ForgotPasswordCommandHandler {
     OtpUtil otpUtil;
     KafkaTemplate<String, Object> kafkaTemplate;
 
+    @NonFinal
+    @Value("${AUTH_OTP_COOLDOWN_SECONDS:60}")
+    int otpCooldownSeconds;
+
     public void handle(ForgotPasswordCommand command) {
-        User user = userRepository.findByEmail(command.getEmail())
+        String emailInput = command.getEmail() != null ? command.getEmail().trim().toLowerCase() : "";
+        User user = userRepository.findByEmail(emailInput)
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.EMAIL_NOT_FOUND));
 
-        String otp = otpUtil.generateOtp();
-        String redisKey = "password_reset:" + user.getEmail();
+        String normalizedEmail = user.getEmail().trim().toLowerCase();
 
-        redisCacheService.set(redisKey, otp, otpUtil.getResetPasswordTtl());
-        log.info("Generated Password Reset OTP for email {}: {}", user.getEmail(), otp);
+        String cooldownKey = "password_reset_cooldown:" + normalizedEmail;
+        try {
+            if (redisCacheService.hasKey(cooldownKey)) {
+                throw new BusinessException(AuthErrorCode.OTP_REQUEST_COOLDOWN);
+            }
+        } catch (BusinessException be) {
+            throw be;
+        } catch (Exception e) {
+            log.warn("Redis check reset cooldown error: {}", e.getMessage());
+        }
+
+        String otp = otpUtil.generateOtp();
+        String redisKey = "password_reset:" + normalizedEmail;
+        String attemptsKey = "password_reset_attempts:" + normalizedEmail;
+
+        try {
+            redisCacheService.set(redisKey, otp, otpUtil.getResetPasswordTtl());
+            redisCacheService.delete(attemptsKey);
+            redisCacheService.set(cooldownKey, "1", Duration.ofSeconds(otpCooldownSeconds > 0 ? otpCooldownSeconds : 60));
+        } catch (Exception e) {
+            log.error("Failed to store password reset OTP in Redis: {}", e.getMessage());
+            throw new BusinessException(AuthErrorCode.SERVICE_UNAVAILABLE);
+        }
+        log.info("Generated password reset OTP for userId {}", user.getId());
 
         try {
             kafkaTemplate.send("notification.email.password-reset", Map.of(

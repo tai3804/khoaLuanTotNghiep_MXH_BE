@@ -1,6 +1,8 @@
 package iuh.fit.userservice.application.features.user_profile.queries.get_user_profile;
 
+import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
+import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.application.mapper.UserProfileApplicationMapper;
 import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.repository.UserProfileRepository;
@@ -26,21 +28,26 @@ public class GetUserProfileQueryHandler {
         UserProfile userProfile = userProfileRepository.findByUserId(query.getUserId())
                 .or(() -> userProfileRepository.findById(query.getUserId()))
                 .orElseGet(() -> {
-                    log.warn("UserProfile not found for userId: {}. Auto-creating UserProfile with available claims.", query.getUserId());
-                    String firstName = null;
-                    String lastName = null;
-                    String middleName = null;
+                    String currentUserId = null;
                     try {
-                        String currentUserId = jwtUtil.getCurrentUserId();
-                        if (currentUserId != null && currentUserId.equalsIgnoreCase(query.getUserId().toString())) {
+                        currentUserId = jwtUtil.getCurrentUserId();
+                    } catch (Exception ignored) {}
+
+                    if (currentUserId != null && currentUserId.equalsIgnoreCase(query.getUserId().toString())) {
+                        log.warn("UserProfile not found for current user: {}. Auto-creating UserProfile with available claims.", query.getUserId());
+                        String firstName = null;
+                        String lastName = null;
+                        String middleName = null;
+                        try {
                             firstName = jwtUtil.getClaim("firstName");
                             lastName = jwtUtil.getClaim("lastName");
                             middleName = jwtUtil.getClaim("middleName");
+                        } catch (Exception e) {
+                            log.debug("Could not extract user name claims from JWT: {}", e.getMessage());
                         }
-                    } catch (Exception e) {
-                        log.debug("Could not extract user name claims from JWT: {}", e.getMessage());
+                        return userProfileRepository.save(userProfileApplicationMapper.toDefaultEntity(query.getUserId(), firstName, lastName, middleName));
                     }
-                    return userProfileRepository.save(userProfileApplicationMapper.toDefaultEntity(query.getUserId(), firstName, lastName, middleName));
+                    throw new BusinessException(UserServiceErrorCode.USER_PROFILE_NOT_FOUND);
                 });
 
         return userProfileApplicationMapper.toQueryResult(userProfile);

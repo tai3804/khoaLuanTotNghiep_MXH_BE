@@ -34,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -57,7 +58,6 @@ public class NotificationController {
     iuh.fit.notificationservice.application.features.notification_setting.commands.update_settings.UpdateNotificationSettingsHandler updateNotificationSettingsHandler;
     NotificationPresentationMapper mapper;
     JwtUtil jwtUtil;
-
 
     @GetMapping
     @Operation(summary = "Get user notifications", description = "Retrieves paginated list of in-app notifications for the authenticated user")
@@ -116,6 +116,7 @@ public class NotificationController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'INTERNAL')")
     @Operation(summary = "Create in-app notification", description = "Creates a new in-app notification and triggers FCM push notification")
     public ResponseEntity<ApiResponse<NotificationResponse>> createNotification(
             @Valid @RequestBody CreateNotificationRequest request) {
@@ -151,12 +152,12 @@ public class NotificationController {
     }
 
     @PostMapping("/send-email")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INTERNAL')")
     @Operation(summary = "Send email notification", description = "Sends email via SMTP/Brevo API")
     public ResponseEntity<ApiResponse<Void>> sendEmail(@Valid @RequestBody SendEmailRequest request) {
         sendEmailHandler.handle(mapper.toCommand(request));
         return ResponseEntity.ok(ApiResponse.success(null, "Email sent successfully"));
     }
-
 
     private UUID getCurrentUserId() {
         String userIdStr = jwtUtil.getCurrentUserId();

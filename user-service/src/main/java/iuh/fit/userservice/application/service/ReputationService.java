@@ -252,7 +252,6 @@ public class ReputationService {
      * Chạy định kỳ (mỗi giờ) và có thể gọi tay qua API nội bộ: mở khóa tài khoản hết hạn và cộng điểm hồi phục
      * cho người đã đủ một ngày không bị trừ điểm.
      */
-    @Transactional
     public Map<String, Integer> runMaintenance() {
         Map<String, Integer> result = new LinkedHashMap<>();
         result.put("unlocked", releaseExpiredLocks());

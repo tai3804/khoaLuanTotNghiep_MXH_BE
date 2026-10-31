@@ -10,5 +10,6 @@ import java.util.UUID;
 public interface DeviceRepository extends BaseRepository<Device, UUID> {
     List<Device> findByUserId(UUID userId);
     Optional<Device> findByUserIdAndDeviceFingerprint(UUID userId, String deviceFingerprint);
+    Optional<Device> findByUserIdAndRefreshTokenHash(UUID userId, String refreshTokenHash);
     void deleteAllByUserId(UUID userId);
 }

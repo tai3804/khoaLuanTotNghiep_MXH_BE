@@ -11,4 +11,5 @@ import java.util.UUID;
 public class LogoutUserCommand {
     UUID userId;
     String deviceFingerprint;
+    String refreshTokenHash;
 }

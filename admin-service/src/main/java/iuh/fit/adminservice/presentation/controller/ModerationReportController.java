@@ -83,6 +83,9 @@ public class ModerationReportController {
         if (!report.getReporterId().equals(getCurrentUserId())) {
             throw new BusinessException(AdminServiceErrorCode.UNAUTHORIZED);
         }
+        if (report.getAppealedAt() != null) {
+            throw new BusinessException(AdminServiceErrorCode.REPORT_ALREADY_APPEALED);
+        }
         if (report.getStatus() != ReportStatus.RESOLVED && report.getStatus() != ReportStatus.DISMISSED) {
             return ResponseEntity.badRequest().build();
         }
@@ -131,7 +134,6 @@ public class ModerationReportController {
         try {
             moderatorId = getCurrentUserId();
         } catch (Exception ignored) {
-            // Internal or system processor default
             moderatorId = UUID.fromString("00000000-0000-0000-0000-000000000000");
         }
         ProcessReportCommand command = moderationPresentationMapper.toProcessReportCommand(request, reportId, moderatorId);

@@ -1,7 +1,6 @@
 package iuh.fit.notificationservice.infrastructure.mail;
 
 import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,9 +8,11 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.HtmlUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -33,12 +34,20 @@ public class EmailService {
     @Value("${brevo.sender.name}")
     String senderName;
 
-    final RestTemplate restTemplate = new RestTemplate();
+    final RestTemplate restTemplate;
+
+    public EmailService() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(5000);
+        requestFactory.setReadTimeout(10000);
+        this.restTemplate = new RestTemplate(requestFactory);
+    }
 
     public void sendPasswordResetEmail(String toEmail, String resetToken) {
         log.info("Sending password reset email to {} via Brevo", toEmail);
 
         try {
+            String safeToken = HtmlUtils.htmlEscape(resetToken != null ? resetToken : "");
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("api-key", apiKey != null ? apiKey.trim() : "");
@@ -49,7 +58,7 @@ public class EmailService {
                     "to", List.of(Map.of("email", toEmail)),
                     "subject", "Password Reset Request",
                     "htmlContent",
-                    "<p>To reset your password, please use the following OTP token: <strong>" + resetToken
+                    "<p>To reset your password, please use the following OTP token: <strong>" + safeToken
                             + "</strong></p><p>If you did not request this, please ignore this email.</p>");
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
@@ -74,6 +83,7 @@ public class EmailService {
         log.info("Sending registration OTP email to {} via Brevo", toEmail);
 
         try {
+            String safeOtp = HtmlUtils.htmlEscape(otpCode != null ? otpCode : "");
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("api-key", apiKey != null ? apiKey.trim() : "");
@@ -86,7 +96,7 @@ public class EmailService {
                     "htmlContent",
                     "<div style=\"font-family: Arial, sans-serif; padding: 20px;\">" +
                     "<h2>Xác thực đăng ký tài khoản</h2>" +
-                    "<p>Mã OTP của bạn để đăng ký tài khoản là: <strong style=\"font-size: 24px; color: #4F46E5;\">" + otpCode + "</strong></p>" +
+                    "<p>Mã OTP của bạn để đăng ký tài khoản là: <strong style=\"font-size: 24px; color: #4F46E5;\">" + safeOtp + "</strong></p>" +
                     "<p>Mã OTP này có hiệu lực trong <strong>15 phút</strong>.</p>" +
                     "<p>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.</p>" +
                     "</div>");

@@ -1,5 +1,6 @@
 package iuh.fit.userservice.application.features.user_connection.commands.unfriend_user;
 
+import iuh.fit.userservice.application.service.UserCounterSyncService;
 import iuh.fit.userservice.domain.entities.UserConnection;
 import iuh.fit.userservice.domain.repository.UserConnectionRepository;
 import lombok.AccessLevel;
@@ -20,6 +21,7 @@ import java.util.UUID;
 public class UnfriendUserCommandHandler {
 
     UserConnectionRepository userConnectionRepository;
+    UserCounterSyncService userCounterSyncService;
 
     @Transactional
     public void handle(UnfriendUserCommand command) {
@@ -54,6 +56,9 @@ public class UnfriendUserCommandHandler {
         } else {
             log.warn("No active connections found to unfriend between user {} and {}", userId, targetUserId);
         }
+
+        // 4. Synchronize counters for both users
+        userCounterSyncService.syncCounters(userId);
+        userCounterSyncService.syncCounters(targetUserId);
     }
 }
-

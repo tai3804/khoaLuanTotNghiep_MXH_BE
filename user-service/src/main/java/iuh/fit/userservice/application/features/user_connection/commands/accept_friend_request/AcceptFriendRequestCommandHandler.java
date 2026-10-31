@@ -3,11 +3,12 @@ package iuh.fit.userservice.application.features.user_connection.commands.accept
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.application.mapper.UserConnectionApplicationMapper;
+import iuh.fit.userservice.application.service.UserCounterSyncService;
 import iuh.fit.userservice.domain.entities.UserConnection;
+import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.enums.ConnectionStatus;
 import iuh.fit.userservice.domain.enums.ConnectionType;
 import iuh.fit.userservice.domain.repository.UserConnectionRepository;
-import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.repository.UserProfileRepository;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class AcceptFriendRequestCommandHandler {
     UserConnectionRepository userConnectionRepository;
     UserProfileRepository userProfileRepository;
     UserConnectionApplicationMapper userConnectionApplicationMapper;
+    UserCounterSyncService userCounterSyncService;
     KafkaTemplate<String, Object> kafkaTemplate;
 
     @Transactional
@@ -40,17 +42,27 @@ public class AcceptFriendRequestCommandHandler {
         ).or(() -> userConnectionRepository.findById(command.getRequesterId()))
         .orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
 
+        if (!friendConn.getTargetId().equals(command.getUserId())) {
+            throw new BusinessException(UserServiceErrorCode.FORBIDDEN);
+        }
+
+        if (friendConn.getStatus() == ConnectionStatus.ACCEPTED) {
+            throw new BusinessException(UserServiceErrorCode.CONNECTION_ALREADY_EXISTS);
+        }
+
         friendConn.setStatus(ConnectionStatus.ACCEPTED);
         userConnectionRepository.save(friendConn);
 
-        UUID requesterId = friendConn.getRequesterId().equals(command.getUserId())
-                ? friendConn.getTargetId()
-                : friendConn.getRequesterId();
+        UUID requesterId = friendConn.getRequesterId();
 
         // Rule: Accepting friend request means User B also FOLLOWS User A
         ensureFollow(command.getUserId(), requesterId);
         // Ensure User A also FOLLOWS User B
         ensureFollow(requesterId, command.getUserId());
+
+        // Synchronize accurate counters for both users
+        userCounterSyncService.syncCounters(command.getUserId());
+        userCounterSyncService.syncCounters(requesterId);
 
         // Publish ACCEPT_FRIEND notification event to Kafka (UC-NO01)
         try {
@@ -80,7 +92,6 @@ public class AcceptFriendRequestCommandHandler {
             log.warn("Failed to publish ACCEPT_FRIEND notification event: {}", e.getMessage());
         }
     }
-
 
     private void ensureFollow(UUID followerId, UUID targetId) {
         userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(followerId, targetId, ConnectionType.FOLLOW)

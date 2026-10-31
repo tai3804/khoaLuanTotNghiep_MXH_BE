@@ -32,6 +32,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -42,11 +44,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import jakarta.servlet.http.HttpServletResponse;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 
@@ -60,6 +61,8 @@ import iuh.fit.authservice.presentation.constants.MessageConstants;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Tag(name = "Authentication", description = "APIs for user login, register, logout, and token refresh")
 public class AuthController {
+
+    private static final int MAX_OTP_ATTEMPTS = 5;
 
     RegisterUserCommandHandler registerUserCommandHandler;
     LoginUserCommandHandler loginUserCommandHandler;
@@ -77,6 +80,10 @@ public class AuthController {
     @Value("${app.security.jwt.expiration.refresh-token}")
     long refreshTokenExpiration;
 
+    @NonFinal
+    @Value("${AUTH_OTP_COOLDOWN_SECONDS:60}")
+    int otpCooldownSeconds;
+
     @PostMapping("/register/send-otp")
     @Operation(summary = "Send registration OTP", description = "Checks if email exists and sends OTP for email verification")
     public ResponseEntity<ApiResponse<Void>> sendRegisterOtp(@Valid @RequestBody SendRegisterOtpRequest request) {
@@ -85,16 +92,31 @@ public class AuthController {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
+        String cooldownKey = "register_otp_cooldown:" + email;
+        try {
+            if (redisCacheService.hasKey(cooldownKey)) {
+                throw new BusinessException(AuthErrorCode.OTP_REQUEST_COOLDOWN);
+            }
+        } catch (BusinessException be) {
+            throw be;
+        } catch (Exception e) {
+            log.warn("Redis check register cooldown error: {}", e.getMessage());
+        }
+
         String otp = otpUtil.generateOtp();
         String redisKey = "register_email_otp:" + email;
+        String attemptsKey = "register_otp_attempts:" + email;
 
-        // TTL of 15 minutes (900 seconds) for OTP
+        Duration otpTtl = Duration.ofMinutes(15);
         try {
-            redisCacheService.set(redisKey, otp, java.time.Duration.ofMinutes(15));
+            redisCacheService.set(redisKey, otp, otpTtl);
+            redisCacheService.delete(attemptsKey);
+            redisCacheService.set(cooldownKey, "1", Duration.ofSeconds(otpCooldownSeconds > 0 ? otpCooldownSeconds : 60));
         } catch (Exception e) {
-            log.warn("Failed to set register_email_otp in Redis: {}", e.getMessage());
+            log.error("Failed to set register_email_otp in Redis: {}", e.getMessage());
+            throw new BusinessException(AuthErrorCode.SERVICE_UNAVAILABLE);
         }
-        log.info("Generated Registration Email OTP for email {}: {}", email, otp);
+        log.info("Generated registration email OTP for {}", email);
 
         try {
             kafkaTemplate.send("notification.email.register-otp", Map.of(
@@ -114,24 +136,40 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Map<String, String>>> verifyRegisterOtp(@Valid @RequestBody VerifyRegisterOtpRequest request) {
         String email = request.getEmail().trim().toLowerCase();
         String redisKey = "register_email_otp:" + email;
+        String attemptsKey = "register_otp_attempts:" + email;
 
-        String storedOtp = null;
+        String storedOtp;
         try {
             storedOtp = redisCacheService.get(redisKey, String.class);
         } catch (Exception e) {
             log.error("Failed to read register OTP from Redis: {}", e.getMessage());
+            throw new BusinessException(AuthErrorCode.SERVICE_UNAVAILABLE);
         }
 
-        if (storedOtp == null || !storedOtp.equals(request.getOtpCode().trim())) {
+        if (storedOtp == null) {
             throw new BusinessException(AuthErrorCode.INVALID_OTP);
         }
 
+        if (!storedOtp.equals(request.getOtpCode().trim())) {
+            int attempts = incrementAttemptCounter(attemptsKey, Duration.ofMinutes(15));
+            if (attempts >= MAX_OTP_ATTEMPTS) {
+                redisCacheService.delete(redisKey);
+                redisCacheService.delete(attemptsKey);
+                throw new BusinessException(AuthErrorCode.TOO_MANY_ATTEMPTS);
+            }
+            throw new BusinessException(AuthErrorCode.INVALID_OTP);
+        }
+
+        // Evict OTP immediately to prevent reuse
+        redisCacheService.delete(redisKey);
+        redisCacheService.delete(attemptsKey);
+
         String registerSessionToken = UUID.randomUUID().toString();
-        // TTL of 30 minutes (1800 seconds) for the registration session
         try {
-            redisCacheService.set("register_session:" + registerSessionToken, email, java.time.Duration.ofMinutes(30));
+            redisCacheService.set("register_session:" + registerSessionToken, email, Duration.ofMinutes(30));
         } catch (Exception e) {
-            log.warn("Failed to set register_session in Redis: {}", e.getMessage());
+            log.error("Failed to set register_session in Redis: {}", e.getMessage());
+            throw new BusinessException(AuthErrorCode.SERVICE_UNAVAILABLE);
         }
 
         return ResponseEntity.ok(ApiResponse.success(Map.of("registerSessionToken", registerSessionToken), "Xác thực OTP email thành công"));
@@ -151,21 +189,27 @@ public class AuthController {
     public ResponseEntity<ApiResponse<LoginUserResponse>> login(
             @Valid @RequestBody LoginUserRequest request,
             @RequestHeader(value = "X-Client-Type", defaultValue = "WEB") String clientType,
+            @RequestHeader(value = "X-Device-Fingerprint", required = false) String headerFingerprint,
+            HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
 
         LoginUserCommand command = authPresentationMapper.toCommand(request);
+        if (command.getDeviceFingerprint() == null || command.getDeviceFingerprint().isBlank()) {
+            command.setDeviceFingerprint(
+                    (headerFingerprint != null && !headerFingerprint.isBlank()) ? headerFingerprint.trim() : "default-web-device");
+        }
+        if (command.getDeviceName() == null || command.getDeviceName().isBlank()) {
+            command.setDeviceName(httpRequest.getHeader("User-Agent"));
+        }
+        if (command.getIpAddress() == null || command.getIpAddress().isBlank()) {
+            command.setIpAddress(extractClientIp(httpRequest));
+        }
+
         LoginUserResult result = loginUserCommandHandler.handle(command);
         LoginUserResponse response = authPresentationMapper.toResponse(result);
 
         if (response.getRefreshToken() != null) {
-            ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
-                    .httpOnly(true)
-                    .secure(false)
-                    .path("/")
-                    .maxAge(refreshTokenExpiration / 1000)
-                    .sameSite("Lax")
-                    .build();
-            httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
+            setRefreshTokenCookie(httpRequest, httpResponse, response.getRefreshToken(), refreshTokenExpiration / 1000);
         }
 
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.USER_LOGGED_IN_SUCCESSFULLY));
@@ -178,6 +222,7 @@ public class AuthController {
             @CookieValue(name = "refreshToken", required = false) String cookieRefreshToken,
             @RequestHeader(value = "X-Client-Type", defaultValue = "WEB") String clientType,
             @RequestHeader(value = "X-Device-Fingerprint", required = false) String deviceFingerprint,
+            HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
 
         String token = (request != null && request.getRefreshToken() != null && !request.getRefreshToken().isBlank())
@@ -193,14 +238,7 @@ public class AuthController {
         RefreshTokenResponse response = authPresentationMapper.toResponse(result);
 
         if (response.getRefreshToken() != null) {
-            ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
-                    .httpOnly(true)
-                    .secure(false)
-                    .path("/")
-                    .maxAge(refreshTokenExpiration / 1000)
-                    .sameSite("Lax")
-                    .build();
-            httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
+            setRefreshTokenCookie(httpRequest, httpResponse, response.getRefreshToken(), refreshTokenExpiration / 1000);
         }
 
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.TOKEN_REFRESHED_SUCCESSFULLY));
@@ -211,6 +249,8 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> logout(
             @RequestBody(required = false) LogoutUserRequest request,
             @CookieValue(name = "refreshToken", required = false) String cookieRefreshToken,
+            @RequestHeader(value = "X-Device-Fingerprint", required = false) String headerFingerprint,
+            HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
 
         String userIdStr = jwtUtil.getCurrentUserId();
@@ -218,14 +258,24 @@ public class AuthController {
             try {
                 Jwt jwt = jwtDecoder.decode(cookieRefreshToken.trim());
                 userIdStr = jwt.getSubject();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
 
-        if (userIdStr != null && request != null && request.getDeviceFingerprint() != null && !request.getDeviceFingerprint().isBlank()) {
+        String resolvedFingerprint = (request != null && request.getDeviceFingerprint() != null && !request.getDeviceFingerprint().isBlank())
+                ? request.getDeviceFingerprint().trim()
+                : (headerFingerprint != null && !headerFingerprint.isBlank() ? headerFingerprint.trim() : null);
+
+        String refreshTokenHash = (cookieRefreshToken != null && !cookieRefreshToken.isBlank())
+                ? jwtUtil.hashToken(cookieRefreshToken.trim())
+                : null;
+
+        if (userIdStr != null && (resolvedFingerprint != null || refreshTokenHash != null)) {
             try {
                 LogoutUserCommand command = new LogoutUserCommand();
                 command.setUserId(UUID.fromString(userIdStr));
-                command.setDeviceFingerprint(request.getDeviceFingerprint());
+                command.setDeviceFingerprint(resolvedFingerprint);
+                command.setRefreshTokenHash(refreshTokenHash);
                 logoutUserCommandHandler.handle(command);
             } catch (Exception e) {
                 log.warn("Failed to revoke device session on logout: {}", e.getMessage());
@@ -233,15 +283,40 @@ public class AuthController {
         }
 
         // Always clear HttpOnly refreshToken cookie
-        ResponseCookie deleteCookie = ResponseCookie.from("refreshToken", "")
-                .httpOnly(true)
-                .secure(false)
-                .path("/")
-                .maxAge(0)
-                .sameSite("Lax")
-                .build();
-        httpResponse.addHeader(HttpHeaders.SET_COOKIE, deleteCookie.toString());
+        setRefreshTokenCookie(httpRequest, httpResponse, "", 0);
 
         return ResponseEntity.ok(ApiResponse.success(null, MessageConstants.USER_LOGGED_OUT_SUCCESSFULLY));
+    }
+
+    private void setRefreshTokenCookie(HttpServletRequest httpRequest, HttpServletResponse httpResponse, String token, long maxAgeSeconds) {
+        boolean isHttps = (httpRequest != null && httpRequest.isSecure())
+                || (httpRequest != null && "https".equalsIgnoreCase(httpRequest.getHeader("X-Forwarded-Proto")));
+        ResponseCookie springCookie = ResponseCookie.from("refreshToken", token)
+                .httpOnly(true)
+                .secure(isHttps)
+                .path("/")
+                .maxAge(maxAgeSeconds)
+                .sameSite(isHttps ? "None" : "Lax")
+                .build();
+        httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
+    }
+
+    private int incrementAttemptCounter(String key, Duration ttl) {
+        try {
+            Integer current = redisCacheService.get(key, Integer.class);
+            int next = (current != null ? current : 0) + 1;
+            redisCacheService.set(key, next, ttl);
+            return next;
+        } catch (Exception e) {
+            return 1;
+        }
+    }
+
+    private String extractClientIp(HttpServletRequest request) {
+        String xf = request.getHeader("X-Forwarded-For");
+        if (xf != null && !xf.isBlank()) {
+            return xf.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

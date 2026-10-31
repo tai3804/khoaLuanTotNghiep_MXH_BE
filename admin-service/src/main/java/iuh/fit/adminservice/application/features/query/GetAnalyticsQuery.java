@@ -4,11 +4,13 @@ import iuh.fit.adminservice.application.dto.response.ActivityHeatmapResponse;
 import iuh.fit.adminservice.application.dto.response.DemographicsResponse;
 import iuh.fit.adminservice.application.dto.response.PostPagedResponse;
 import iuh.fit.adminservice.application.dto.response.TrendingHashtagResponse;
+import iuh.fit.adminservice.application.dto.response.UserInfoResponse;
 import iuh.fit.adminservice.application.dto.response.UserResponse;
 import iuh.fit.adminservice.domain.entities.ModerationLog;
 import iuh.fit.adminservice.domain.entities.Report;
 import iuh.fit.adminservice.domain.repository.ModerationLogRepository;
 import iuh.fit.adminservice.domain.repository.ReportRepository;
+import iuh.fit.adminservice.infrastructure.feign.AuthFeignClient;
 import iuh.fit.adminservice.infrastructure.feign.PostFeignClient;
 import iuh.fit.adminservice.infrastructure.feign.UserFeignClient;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ import java.util.regex.Pattern;
 public class GetAnalyticsQuery {
 
     private final UserFeignClient userFeignClient;
+    private final AuthFeignClient authFeignClient;
     private final PostFeignClient postFeignClient;
     private final ReportRepository reportRepository;
     private final ModerationLogRepository moderationLogRepository;
@@ -75,7 +78,6 @@ public class GetAnalyticsQuery {
                         int dayIdx = dt.getDayOfWeek().getValue() - 1; // 0=Monday, 6=Sunday
                         int hour = dt.getHour();
 
-                        // Total interactions for this post = 1 (bài viết) + likes + comments + shares
                         long postInteractions = 1L + Math.max(0, post.getLikeCount())
                                 + Math.max(0, post.getCommentCount())
                                 + Math.max(0, post.getShareCount());
@@ -181,7 +183,7 @@ public class GetAnalyticsQuery {
         try {
             PostPagedResponse postResp = postFeignClient.getPosts(1, 100);
             if (postResp != null && postResp.getData() != null) {
-                Pattern hashtagPattern = Pattern.compile("#\\w+");
+                Pattern hashtagPattern = Pattern.compile("#[\\p{L}\\p{N}_]+");
                 for (var post : postResp.getData()) {
                     if (post.getContent() != null) {
                         Matcher matcher = hashtagPattern.matcher(post.getContent());
@@ -197,9 +199,13 @@ public class GetAnalyticsQuery {
         }
 
         List<TrendingHashtagResponse> list = new ArrayList<>();
-        int rank = 1;
+        List<Map.Entry<String, Long>> sortedTags = tagCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(20)
+                .toList();
 
-        for (Map.Entry<String, Long> entry : tagCounts.entrySet()) {
+        int rank = 1;
+        for (Map.Entry<String, Long> entry : sortedTags) {
             long count = entry.getValue();
             list.add(TrendingHashtagResponse.builder()
                     .rank(rank++)
@@ -239,9 +245,35 @@ public class GetAnalyticsQuery {
 
         LocalDate now = LocalDate.now();
 
-        if (users != null) {
+        if (users != null && !users.isEmpty()) {
+            Map<String, String> userStatusMap = new HashMap<>();
+            try {
+                List<UUID> userIds = users.stream()
+                        .map(u -> {
+                            String idStr = u.getUserId() != null ? u.getUserId() : u.getId();
+                            return idStr != null ? UUID.fromString(idStr) : null;
+                        })
+                        .filter(Objects::nonNull)
+                        .toList();
+                if (!userIds.isEmpty()) {
+                    List<UserInfoResponse> authInfos = authFeignClient.getUsersInfo(userIds);
+                    if (authInfos != null) {
+                        for (UserInfoResponse info : authInfos) {
+                            if (info != null && info.getId() != null) {
+                                userStatusMap.put(info.getId().toString(), info.getStatus());
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not fetch auth status for demographics: {}", e.getMessage());
+            }
+
             for (UserResponse u : users) {
-                if (!"BANNED".equalsIgnoreCase(u.getStatus())) {
+                String idStr = u.getUserId() != null ? u.getUserId() : u.getId();
+                String status = userStatusMap.getOrDefault(idStr, u.getStatus() != null ? u.getStatus() : "ACTIVE");
+
+                if (!"BANNED".equalsIgnoreCase(status)) {
                     activeCount++;
                 }
                 if (Boolean.TRUE.equals(u.getIsOnline())) {

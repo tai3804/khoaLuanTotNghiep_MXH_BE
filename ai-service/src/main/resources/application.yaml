@@ -10,7 +10,7 @@ spring:
     import: classpath:application-common.yaml
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/admin_db}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ai_db}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:root}
   jpa:
@@ -30,15 +30,17 @@ spring:
     consumer:
       group-id: ai-service-group
       auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
+        spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: "*"
 
 ai:
   gemini:
     api-key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+    model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
     api-url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models}
   summary:
     enabled: ${AI_SUMMARY_ENABLED:true}

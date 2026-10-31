@@ -11,14 +11,16 @@ import iuh.fit.adminservice.application.features.query.GetAuditLogsQuery;
 import iuh.fit.adminservice.application.features.query.GetBlacklistQuery;
 import iuh.fit.adminservice.application.features.query.GetSystemConfigsQuery;
 import iuh.fit.adminservice.application.features.query.GetSystemHealthQuery;
+import iuh.fit.commonframework.infrastructure.cache.RedisCacheService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/admin/settings")
 @RequiredArgsConstructor
@@ -32,6 +34,7 @@ public class AdminSettingsController {
     private final GetSystemConfigsQuery getSystemConfigsQuery;
     private final UpdateSystemConfigsCommand updateSystemConfigsCommand;
     private final AuditLogService auditLogService;
+    private final RedisCacheService redisCacheService;
 
     // Blacklist - Available to both ADMIN and MODERATOR
     @GetMapping("/blacklist")
@@ -74,18 +77,59 @@ public class AdminSettingsController {
     // Public System Configs - accessible without authentication
     @GetMapping("/public")
     public ResponseEntity<Map<String, String>> getPublicConfigs() {
-        return ResponseEntity.ok(getSystemConfigsQuery.execute());
+        Map<String, String> allConfigs = getSystemConfigsQuery.execute();
+        Set<String> allowedPublicKeys = Set.of(
+                "maintenance_mode",
+                "allow_registration",
+                "ai_moderation_enabled",
+                "max_upload_size_mb",
+                "system_announcement",
+                "max_reports_auto_hide"
+        );
+        Map<String, String> publicConfigs = new HashMap<>();
+        if (allConfigs != null) {
+            for (Map.Entry<String, String> entry : allConfigs.entrySet()) {
+                if (allowedPublicKeys.contains(entry.getKey())) {
+                    publicConfigs.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        return ResponseEntity.ok(publicConfigs);
     }
 
     // Clear Cache - ADMIN only
     @PostMapping("/clear-cache")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> clearCache(@RequestParam(defaultValue = "all") String type) {
-        auditLogService.log("CLEAR_CACHE", "CACHE", type.toUpperCase(), "Xóa bộ nhớ đệm hệ thống: " + type);
+        String cleanType = type != null ? type.trim().toLowerCase() : "all";
+        try {
+            switch (cleanType) {
+                case "blacklist" -> redisCacheService.deletePattern("admin-service:blacklist*");
+                case "posts" -> {
+                    redisCacheService.deletePattern("post-service:*");
+                    redisCacheService.deletePattern("feed-service:*");
+                }
+                case "token" -> {
+                    // Do NOT delete token revocation state or token versions, as that would invalidate security!
+                    log.info("Token cache synchronization checked by admin.");
+                }
+                case "all" -> {
+                    redisCacheService.deletePattern("admin-service:*");
+                    redisCacheService.deletePattern("post-service:*");
+                    redisCacheService.deletePattern("feed-service:*");
+                    redisCacheService.deletePattern("user-service:*");
+                }
+                default -> redisCacheService.deletePattern(cleanType + ":*");
+            }
+        } catch (Exception e) {
+            log.error("Failed to clear redis cache for type {}: {}", cleanType, e.getMessage());
+        }
+
+        auditLogService.log("CLEAR_CACHE", "CACHE", cleanType.toUpperCase(), "Xóa bộ nhớ đệm hệ thống: " + cleanType);
         return ResponseEntity.ok(Map.of(
                 "success", true,
-                "type", type,
-                "message", "Đã dọn dẹp và làm mới bộ nhớ đệm " + type + " thành công"
+                "type", cleanType,
+                "message", "Đã dọn dẹp và làm mới bộ nhớ đệm " + cleanType + " thành công"
         ));
     }
 

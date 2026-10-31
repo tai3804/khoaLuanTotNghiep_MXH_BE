@@ -26,6 +26,10 @@ public class RejectFriendRequestCommandHandler {
         ).or(() -> userConnectionRepository.findById(command.getRequesterId()))
         .orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
 
+        if (!friendConn.getTargetId().equals(command.getUserId())) {
+            throw new BusinessException(UserServiceErrorCode.FORBIDDEN);
+        }
+
         friendConn.setStatus(ConnectionStatus.REJECTED);
         userConnectionRepository.save(friendConn);
     }

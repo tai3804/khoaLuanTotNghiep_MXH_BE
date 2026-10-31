@@ -4,10 +4,14 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -20,7 +24,7 @@ public class RedisCacheService {
 
     RedisTemplate<String, Object> redisTemplate;
 
-    static String TOKEN_VERSION_PREFIX = "auth-service:user:token_version:";
+    public static final String TOKEN_VERSION_PREFIX = "auth-service:user:token_version:";
 
     public void set(String key, Object value) {
         redisTemplate.opsForValue().set(key, value);
@@ -76,12 +80,25 @@ public class RedisCacheService {
 
     public void deletePattern(String pattern) {
         try {
-            Set<String> keys = redisTemplate.keys(pattern);
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
+            List<String> keysToDelete = new ArrayList<>();
+            try (Cursor<String> cursor = redisTemplate.scan(
+                    ScanOptions.scanOptions().match(pattern).count(200).build())) {
+                while (cursor.hasNext()) {
+                    keysToDelete.add(cursor.next());
+                }
             }
-        } catch (Exception e) {
-            log.error("Error deleting pattern [{}] from Redis: {}", pattern, e.getMessage());
+            if (!keysToDelete.isEmpty()) {
+                redisTemplate.delete(keysToDelete);
+            }
+        } catch (Exception scanEx) {
+            try {
+                Set<String> keys = redisTemplate.keys(pattern);
+                if (keys != null && !keys.isEmpty()) {
+                    redisTemplate.delete(keys);
+                }
+            } catch (Exception e) {
+                log.error("Error deleting pattern [{}] from Redis: {}", pattern, e.getMessage());
+            }
         }
     }
 

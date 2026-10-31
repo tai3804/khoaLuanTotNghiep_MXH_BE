@@ -17,10 +17,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -53,8 +51,8 @@ public class AiModerationService {
 
     /**
      * Xử lý báo cáo bài viết tự động khi nhận ReportCreatedEvent qua Kafka
+     * Không gắn @Transactional toàn phương thức để tránh giữ kết nối DB trong lúc gọi HTTP Feign & Gemini
      */
-    @Transactional
     public void evaluateReport(ReportCreatedEvent event) {
         if (!moderationEnabled) {
             log.info("AI Moderation is disabled by configuration. Skipping report: {}", event.getReportId());
@@ -152,7 +150,7 @@ public class AiModerationService {
                 log.info("AI Evaluation Result: Post {} is SAFE (Score: {}).", event.getTargetId(), score);
             }
 
-            // 3. Tầng 3: Tự học các từ nhạy cảm mới được trích xuất
+            // 3. Tầng 3: Tự học các từ nhạy cảm mới được trích xuất (lưu trạng thái PENDING_REVIEW để admin phê duyệt)
             if (result.getExtractedKeywords() != null && !result.getExtractedKeywords().isEmpty()) {
                 selfLearningService.learnKeywords(
                         result.getExtractedKeywords(),
@@ -160,15 +158,6 @@ public class AiModerationService {
                         result.getSeverity(),
                         true
                 );
-
-                // Đồng bộ từ điển sang admin-service nếu cần
-                for (String word : result.getExtractedKeywords()) {
-                    try {
-                        adminFeignClient.learnSensitiveWord(word);
-                    } catch (Exception ex) {
-                        // ignore admin sync error
-                    }
-                }
             }
 
             // 4. Lưu vết nhật ký AI Moderation Log
@@ -211,8 +200,6 @@ public class AiModerationService {
                     .build();
         }
 
-        // Ưu tiên Gemini AI phân tích toàn diện ngữ cảnh ngữ nghĩa tiếng Việt
-        // Nếu API ngoại tuyến, GeminiApiClient tự động kích hoạt Fallback Engine chuẩn mực và giáo dục
         return geminiApiClient.evaluate(content);
     }
 
@@ -247,14 +234,10 @@ public class AiModerationService {
 
     /**
      * Tự động kiểm duyệt bài viết mới tạo qua sự kiện Kafka 'post.created'.
-     * <p>
-     * Bài nghi vấn vi phạm sẽ được tạm ẩn và gắn cờ cho kiểm duyệt viên quyết định (gỡ hẳn hoặc khôi phục),
-     * AI không tự gỡ vĩnh viễn bài viết.
+     * Không gắn @Transactional toàn phương thức để tránh giữ kết nối DB khi gọi HTTP.
      *
-     * @return true nếu bài viết an toàn (hoặc kiểm duyệt AI đang tắt) và có thể tiếp tục tóm tắt;
-     *         false nếu bài bị gắn cờ, đã được đánh giá trước đó hoặc không có nội dung.
+     * @return true nếu bài viết an toàn và có thể tiếp tục tóm tắt; false nếu bài bị gắn cờ hoặc đã đánh giá.
      */
-    @Transactional
     public boolean evaluateNewPost(UUID postId, UUID authorId, String content) {
         if (content == null || content.isBlank()) {
             return false;

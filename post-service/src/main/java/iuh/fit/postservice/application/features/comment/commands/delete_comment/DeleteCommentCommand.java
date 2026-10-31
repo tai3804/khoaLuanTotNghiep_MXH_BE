@@ -12,6 +12,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class DeleteCommentCommand {
+    UUID postId;
     UUID commentId;
     UUID userId;
 }

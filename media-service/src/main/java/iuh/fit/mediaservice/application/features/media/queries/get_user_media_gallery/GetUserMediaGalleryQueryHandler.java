@@ -30,22 +30,25 @@ public class GetUserMediaGalleryQueryHandler {
     public PagedResponse<MediaResponse> handle(GetUserMediaGalleryQuery query) {
         String userIdParam = query.getUserId();
         int page = Math.max(0, query.getPage());
-        int size = query.getSize() > 0 ? query.getSize() : 20;
+        int size = query.getSize() > 0 ? Math.min(query.getSize(), 100) : 20;
+
+        UUID currentUserUuid = null;
+        String currentUserId = jwtUtil.getCurrentUserId();
+        if (currentUserId != null && !currentUserId.isBlank()) {
+            try {
+                currentUserUuid = UUID.fromString(currentUserId);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
 
         UUID targetUserId = null;
         if (userIdParam == null || "me".equalsIgnoreCase(userIdParam) || userIdParam.isBlank()) {
-            String currentUserId = jwtUtil.getCurrentUserId();
-            if (currentUserId != null && !currentUserId.isBlank()) {
-                targetUserId = UUID.fromString(currentUserId);
-            }
+            targetUserId = currentUserUuid;
         } else {
             try {
                 targetUserId = UUID.fromString(userIdParam);
             } catch (Exception e) {
-                String currentUserId = jwtUtil.getCurrentUserId();
-                if (currentUserId != null && !currentUserId.isBlank()) {
-                    targetUserId = UUID.fromString(currentUserId);
-                }
+                targetUserId = currentUserUuid;
             }
         }
 
@@ -53,7 +56,19 @@ public class GetUserMediaGalleryQueryHandler {
             return PagedResponse.from(Page.empty(), List.of());
         }
 
-        Page<Media> mediaPage = mediaRepository.findByUserIdOrderByCreatedAtDesc(targetUserId, PageRequest.of(page, size));
+        List<String> roles = jwtUtil.getCurrentUserRoles();
+        boolean isStaff = roles != null && roles.stream().anyMatch(r ->
+                "ROLE_ADMIN".equalsIgnoreCase(r) ||
+                "ADMIN".equalsIgnoreCase(r) ||
+                "ROLE_MODERATOR".equalsIgnoreCase(r) ||
+                "MODERATOR".equalsIgnoreCase(r)
+        );
+        boolean isOwner = targetUserId.equals(currentUserUuid);
+
+        Page<Media> mediaPage = (isOwner || isStaff)
+                ? mediaRepository.findByUserIdOrderByCreatedAtDesc(targetUserId, PageRequest.of(page, size))
+                : mediaRepository.findPublicGalleryByUserId(targetUserId, PageRequest.of(page, size));
+
         List<MediaResponse> responseList = mediaPage.getContent().stream()
                 .map(mediaPresentationMapper::toResponse)
                 .toList();

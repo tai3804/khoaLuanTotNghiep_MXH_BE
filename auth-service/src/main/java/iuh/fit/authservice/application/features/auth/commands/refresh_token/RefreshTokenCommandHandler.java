@@ -1,7 +1,10 @@
 package iuh.fit.authservice.application.features.auth.commands.refresh_token;
 
 import iuh.fit.authservice.application.exception.AuthErrorCode;
+import iuh.fit.authservice.domain.entities.Device;
 import iuh.fit.authservice.domain.entities.User;
+import iuh.fit.authservice.domain.enums.DeviceStatus;
+import iuh.fit.authservice.domain.enums.UserStatus;
 import iuh.fit.authservice.domain.repository.DeviceRepository;
 import iuh.fit.authservice.domain.repository.UserRepository;
 import iuh.fit.authservice.infrastructure.security.TokenProvider;
@@ -16,6 +19,8 @@ import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -29,7 +34,7 @@ public class RefreshTokenCommandHandler {
     JwtDecoder jwtDecoder;
     JwtUtil jwtUtil;
 
-    @Transactional
+    @Transactional(noRollbackFor = BusinessException.class)
     public RefreshTokenResult handle(RefreshTokenCommand command) {
         String tokenStr = command.getRefreshToken();
         if (tokenStr == null || tokenStr.isBlank()) {
@@ -57,54 +62,53 @@ public class RefreshTokenCommandHandler {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.USER_NOT_FOUND));
 
-        if (iuh.fit.authservice.domain.enums.UserStatus.BANNED.equals(user.getStatus())) {
+        if (UserStatus.BANNED.equals(user.getStatus())) {
             throw new BusinessException(AuthErrorCode.ACCOUNT_BANNED);
         }
 
-        if (iuh.fit.authservice.domain.enums.UserStatus.LOCKED.equals(user.getStatus())) {
+        if (UserStatus.LOCKED.equals(user.getStatus())) {
             throw new BusinessException(AuthErrorCode.ACCOUNT_LOCKED);
         }
 
-        // Validate tokenVersion
-        Object jwtTokenVersionObj = jwt.getClaim("tokenVersion");
-        int jwtTokenVersion = 1;
-        if (jwtTokenVersionObj instanceof Number) {
-            jwtTokenVersion = ((Number) jwtTokenVersionObj).intValue();
-        } else if (jwtTokenVersionObj instanceof String) {
-            try {
-                jwtTokenVersion = Integer.parseInt((String) jwtTokenVersionObj);
-            } catch (NumberFormatException ignored) {}
-        }
+        int jwtTokenVersion = jwtUtil.extractTokenVersion(jwt);
         int currentTokenVersion = user.getTokenVersion() != null ? user.getTokenVersion() : 1;
 
         if (jwtTokenVersion != currentTokenVersion) {
             throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
         }
 
+        String incomingTokenHash = jwtUtil.hashToken(tokenStr);
+        Optional<Device> deviceOpt;
+        if (command.getDeviceFingerprint() != null && !command.getDeviceFingerprint().isBlank()) {
+            deviceOpt = deviceRepository.findByUserIdAndDeviceFingerprint(userId, command.getDeviceFingerprint().trim());
+        } else {
+            deviceOpt = deviceRepository.findByUserIdAndRefreshTokenHash(userId, incomingTokenHash);
+        }
+
+        if (deviceOpt.isEmpty()) {
+            throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+        }
+
+        Device device = deviceOpt.get();
+        if (device.getStatus() == DeviceStatus.REVOKED) {
+            throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+        }
+
+        // Token Rotation check: Validate that the incoming refresh token matches the recorded hash
+        if (device.getRefreshTokenHash() == null || !device.getRefreshTokenHash().equals(incomingTokenHash)) {
+            // Token reuse / replay attack detected! Revoke device immediately and persist without rollback
+            device.setStatus(DeviceStatus.REVOKED);
+            device.setRefreshTokenHash(null);
+            deviceRepository.save(device);
+            throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+        }
+
         String newAccessToken = tokenProvider.generateAccessToken(user);
         String newRefreshToken = tokenProvider.generateRefreshToken(user);
 
-        if (command.getDeviceFingerprint() != null && !command.getDeviceFingerprint().isBlank()) {
-            java.util.Optional<iuh.fit.authservice.domain.entities.Device> deviceOpt =
-                    deviceRepository.findByUserIdAndDeviceFingerprint(userId, command.getDeviceFingerprint());
-            if (deviceOpt.isPresent()) {
-                iuh.fit.authservice.domain.entities.Device device = deviceOpt.get();
-                if (device.getStatus() == iuh.fit.authservice.domain.enums.DeviceStatus.REVOKED) {
-                    throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
-                }
-                // Token Rotation check: Validate that the incoming refresh token matches the recorded hash
-                String incomingTokenHash = jwtUtil.hashToken(tokenStr);
-                if (device.getRefreshTokenHash() != null && !device.getRefreshTokenHash().equals(incomingTokenHash)) {
-                    // Token reuse / replay attack detected! Revoke device immediately
-                    device.setStatus(iuh.fit.authservice.domain.enums.DeviceStatus.REVOKED);
-                    deviceRepository.save(device);
-                    throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
-                }
-                device.setRefreshTokenHash(jwtUtil.hashToken(newRefreshToken));
-                device.setLastActiveAt(java.time.LocalDateTime.now());
-                deviceRepository.save(device);
-            }
-        }
+        device.setRefreshTokenHash(jwtUtil.hashToken(newRefreshToken));
+        device.setLastActiveAt(LocalDateTime.now());
+        deviceRepository.save(device);
 
         return RefreshTokenResult.builder()
                 .accessToken(newAccessToken)

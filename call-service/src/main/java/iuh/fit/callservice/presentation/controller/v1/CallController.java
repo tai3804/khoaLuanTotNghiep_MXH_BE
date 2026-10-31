@@ -19,6 +19,8 @@ import iuh.fit.callservice.application.features.call.commands.join_call.JoinCall
 import iuh.fit.callservice.application.features.call.commands.join_call.JoinCallResult;
 import iuh.fit.callservice.application.features.call.commands.leave_call.LeaveCallCommand;
 import iuh.fit.callservice.application.features.call.commands.leave_call.LeaveCallCommandHandler;
+import iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommand;
+import iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommandHandler;
 import iuh.fit.callservice.application.features.call.commands.toggle_media.ToggleMediaCommand;
 import iuh.fit.callservice.application.features.call.commands.toggle_media.ToggleMediaCommandHandler;
 import iuh.fit.callservice.application.features.call.queries.get_active_call.GetActiveCallQuery;
@@ -36,6 +38,7 @@ import iuh.fit.callservice.presentation.mapper.CallPresentationMapper;
 import iuh.fit.callservice.domain.entities.CallParticipant;
 import iuh.fit.callservice.domain.entities.CallSession;
 import iuh.fit.callservice.domain.enums.CallStatus;
+import iuh.fit.callservice.domain.enums.ChannelType;
 import iuh.fit.callservice.infrastructure.persistence.repository.CallParticipantRepository;
 import iuh.fit.callservice.infrastructure.persistence.repository.CallSessionRepository;
 import jakarta.validation.Valid;
@@ -60,7 +63,7 @@ public class CallController {
     InitiateCallCommandHandler initiateCallCommandHandler;
     JoinCallCommandHandler joinCallCommandHandler;
     LeaveCallCommandHandler leaveCallCommandHandler;
-    iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommandHandler rejectCallCommandHandler;
+    RejectCallCommandHandler rejectCallCommandHandler;
     EndCallCommandHandler endCallCommandHandler;
     ToggleMediaCommandHandler toggleMediaCommandHandler;
     GetActiveCallQueryHandler getActiveCallQueryHandler;
@@ -103,12 +106,11 @@ public class CallController {
             @PathVariable UUID callSessionId,
             @RequestParam(defaultValue = "false") boolean missed) {
         UUID currentUserId = getCurrentUserId();
-        iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommand command =
-                iuh.fit.callservice.application.features.call.commands.reject_call.RejectCallCommand.builder()
-                        .callSessionId(callSessionId)
-                        .currentUserId(currentUserId)
-                        .missed(missed)
-                        .build();
+        RejectCallCommand command = RejectCallCommand.builder()
+                .callSessionId(callSessionId)
+                .currentUserId(currentUserId)
+                .missed(missed)
+                .build();
         rejectCallCommandHandler.handle(command);
         return ResponseEntity.ok(ApiResponse.success(null, "Rejected call session successfully"));
     }
@@ -155,11 +157,19 @@ public class CallController {
     @GetMapping("/{callSessionId}")
     @Operation(summary = "Get call session details", description = "Retrieves session details by call session ID")
     public ResponseEntity<ApiResponse<CallSessionResponse>> getCallSession(@PathVariable UUID callSessionId) {
+        UUID currentUserId = getCurrentUserId();
         CallSession session = callSessionRepository.findById(callSessionId).orElse(null);
         if (session == null) {
             return ResponseEntity.ok(ApiResponse.success(null, "Call session not found"));
         }
         List<CallParticipant> participants = callParticipantRepository.findByCallSessionId(session.getId());
+        if (session.getChannelType() == ChannelType.DIRECT) {
+            boolean isMember = currentUserId.equals(session.getHostUserId())
+                    || participants.stream().anyMatch(p -> currentUserId.equals(p.getUserId()));
+            if (!isMember) {
+                throw new BusinessException(CallServiceErrorCode.NOT_A_CALL_PARTICIPANT);
+            }
+        }
         return ResponseEntity.ok(ApiResponse.success(callPresentationMapper.toResponse(session, participants), "Call session retrieved successfully"));
     }
 

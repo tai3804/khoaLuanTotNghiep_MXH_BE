@@ -65,6 +65,7 @@ public class ReactionController {
             @RequestParam(value = "size", defaultValue = "20") int size) {
         GetPostReactionsQuery query = GetPostReactionsQuery.builder()
                 .postId(postId)
+                .viewerId(getOptionalCurrentUserId())
                 .page(page)
                 .size(size)
                 .build();
@@ -79,5 +80,17 @@ public class ReactionController {
             throw new BusinessException(ErrorCode.UNAUTHENTICATED);
         }
         return UUID.fromString(userIdStr);
+    }
+
+    private UUID getOptionalCurrentUserId() {
+        String userIdStr = jwtUtil.getCurrentUserId();
+        if (userIdStr == null || userIdStr.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(userIdStr);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

@@ -1,0 +1,3 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  iuh.fit.apigateway.config.DotenvEnvironmentPostProcessor
+

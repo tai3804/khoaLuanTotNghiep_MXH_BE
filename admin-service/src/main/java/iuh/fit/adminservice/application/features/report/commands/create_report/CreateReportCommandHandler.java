@@ -20,6 +20,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -90,7 +92,13 @@ public class CreateReportCommandHandler {
             log.info("Checking auto-hide threshold for target [{} - {}]: current pending reports = {}, threshold = {}",
                     report.getTargetType(), report.getTargetId(), pendingCount, maxReports);
 
-            if (pendingCount >= maxReports) {
+            boolean alreadyAutoHidden = moderationLogRepository
+                    .findFirstByTargetTypeAndTargetIdAndActionInOrderByCreatedAtDesc(
+                            report.getTargetType(), report.getTargetId(),
+                            List.of(ModerationAction.HIDE_POST, ModerationAction.DELETE_POST, ModerationAction.DELETE_COMMENT)
+                    ).isPresent();
+
+            if (pendingCount >= maxReports && !alreadyAutoHidden) {
                 if (report.getTargetType() == TargetType.POST) {
                     log.warn("Auto-hiding POST {} because pending reports ({}) reached threshold ({})",
                             report.getTargetId(), pendingCount, maxReports);

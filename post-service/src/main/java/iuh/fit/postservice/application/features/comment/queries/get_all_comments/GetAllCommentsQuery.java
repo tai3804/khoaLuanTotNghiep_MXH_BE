@@ -4,6 +4,8 @@ import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.util.UUID;
+
 @Getter
 @Setter
 @Builder
@@ -11,5 +13,7 @@ import lombok.experimental.FieldDefaults;
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class GetAllCommentsQuery {
+    UUID postId;
+    UUID viewerId;
     BaseFilter filter;
 }

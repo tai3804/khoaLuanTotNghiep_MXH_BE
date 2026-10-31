@@ -1,22 +1,25 @@
 package iuh.fit.postservice.application.features.post.commands.delete_post;
 
 import iuh.fit.commonframework.application.exception.BusinessException;
+import iuh.fit.commonframework.event.PostDeletedEvent;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
+import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
+import iuh.fit.postservice.infrastructure.cache.PostCacheEvictor;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
-import iuh.fit.postservice.infrastructure.client.media.MediaClient;
 import lombok.AccessLevel;
-import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -27,9 +30,10 @@ public class DeletePostCommandHandler {
 
     PostRepository postRepository;
     PostMediaRepository postMediaRepository;
-    MediaClient mediaClient;
     JwtUtil jwtUtil;
     RankedFeedCache rankedFeedCache;
+    PostCacheEvictor postCacheEvictor;
+    KafkaTemplate<String, Object> kafkaTemplate;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -49,25 +53,34 @@ public class DeletePostCommandHandler {
             throw new BusinessException(PostServiceErrorCode.UNAUTHORIZED_ACTION);
         }
 
-        post.setDeleted(true);
-        postRepository.save(post);
-        rankedFeedCache.evictViewer(post.getAuthorId());
-
-        // Delete associated S3 files via MediaClient
         List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
+        List<String> fileKeys = new ArrayList<>();
         for (PostMedia media : mediaList) {
-            try {
-                String targetKey = (media.getFileUrl() != null && !media.getFileUrl().isBlank())
-                        ? media.getFileUrl()
-                        : media.getFileKey();
-                if (targetKey != null && !targetKey.isBlank()) {
-                    mediaClient.deleteFile(targetKey);
-                    log.info("Requested media-service to delete file: {}", targetKey);
-                }
-            } catch (Exception e) {
-                log.error("Failed to delete media file [{}] from S3: {}", media.getFileKey(), e.getMessage());
+            String targetKey = (media.getFileKey() != null && !media.getFileKey().isBlank())
+                    ? media.getFileKey()
+                    : media.getFileUrl();
+            if (targetKey != null && !targetKey.isBlank()) {
+                fileKeys.add(targetKey);
             }
         }
+
+        post.setDeleted(true);
+        post.setGroupPinnedAt(null);
+        postRepository.save(post);
         postMediaRepository.deleteByPostId(post.getId());
+
+        rankedFeedCache.evictViewer(post.getAuthorId());
+        postCacheEvictor.evictAllWithRecheck();
+
+        try {
+            kafkaTemplate.send("post.deleted", PostDeletedEvent.builder()
+                    .postId(post.getId())
+                    .authorId(post.getAuthorId())
+                    .fileKeys(fileKeys)
+                    .build());
+            log.info("Published PostDeletedEvent for post {} with {} media key(s)", post.getId(), fileKeys.size());
+        } catch (Exception e) {
+            log.error("Failed to publish PostDeletedEvent for post {}: {}", post.getId(), e.getMessage());
+        }
     }
 }

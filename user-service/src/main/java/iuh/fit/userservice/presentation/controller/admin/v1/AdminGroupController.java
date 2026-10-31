@@ -1,5 +1,7 @@
 package iuh.fit.userservice.presentation.controller.admin.v1;
 
+import iuh.fit.commonframework.application.exception.BusinessException;
+import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.domain.entities.Group;
 import iuh.fit.userservice.domain.repository.GroupRepository;
 import iuh.fit.userservice.infrastructure.kafka.producers.GroupEventPublisher;
@@ -33,12 +35,12 @@ public class AdminGroupController {
     @DeleteMapping("/{groupId}")
     public ResponseEntity<Void> deleteGroup(@PathVariable UUID groupId) {
         log.info("Admin requested delete for group: {}", groupId);
-        try {
-            groupRepository.deleteById(groupId);
-            groupEventPublisher.publishGroupDeleted(groupId);
-        } catch (Exception e) {
-            log.warn("Failed to delete group {}: {}", groupId, e.getMessage());
-        }
-        return ResponseEntity.ok().build();
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new BusinessException(UserServiceErrorCode.GROUP_NOT_FOUND));
+
+        group.setDeleted(true);
+        groupRepository.save(group);
+        groupEventPublisher.publishGroupDeleted(groupId);
+        return ResponseEntity.noContent().build();
     }
 }

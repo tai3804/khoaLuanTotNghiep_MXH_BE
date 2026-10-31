@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,5 +25,7 @@ public interface CallSessionRepository extends BaseJpaRepository<CallSession, UU
 
     Optional<CallSession> findFirstByConversationIdOrderByStartedAtDesc(UUID conversationId);
 
-    List<CallSession> findByConversationIdAndStatusIn(UUID conversationId, java.util.Collection<CallStatus> statuses);
+    List<CallSession> findByConversationIdAndStatusIn(UUID conversationId, Collection<CallStatus> statuses);
+
+    List<CallSession> findByStatusIn(Collection<CallStatus> statuses);
 }

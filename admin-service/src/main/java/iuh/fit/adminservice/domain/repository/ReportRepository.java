@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.Collection;
 import java.util.List;
@@ -35,4 +36,6 @@ public interface ReportRepository extends BaseJpaRepository<Report, UUID> {
     long countByStatus(ReportStatus status);
 
     long countByTargetTypeAndTargetIdAndStatus(TargetType targetType, UUID targetId, ReportStatus status);
+
+    long countByStatusInAndResolvedAtBetween(Collection<ReportStatus> statuses, LocalDateTime start, LocalDateTime end);
 }

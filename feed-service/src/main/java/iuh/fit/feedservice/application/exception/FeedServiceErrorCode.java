@@ -12,7 +12,8 @@ import lombok.experimental.FieldDefaults;
 public enum FeedServiceErrorCode implements BaseError {
 
     FEED_ITEM_NOT_FOUND(404, "Feed item not found", 404),
-    UNAUTHORIZED(401, "Unauthenticated", 401);
+    UNAUTHORIZED(401, "Unauthenticated", 401),
+    FORBIDDEN(403, "You do not have permission to view this feed", 403);
 
     int code;
     String message;

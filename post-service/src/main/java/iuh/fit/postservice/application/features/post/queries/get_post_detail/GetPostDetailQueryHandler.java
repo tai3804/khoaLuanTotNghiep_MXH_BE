@@ -14,11 +14,14 @@ import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import org.springframework.stereotype.Service;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -33,33 +36,32 @@ public class GetPostDetailQueryHandler {
     UserConnectionClient userConnectionClient;
 
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "post-detail-v2", key = "#query.viewerId + ':' + #query.postId")
+    @Cacheable(
+            cacheNames = "post-detail-v2",
+            key = "#query.viewerId + ':' + #query.postId",
+            condition = "T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication() == null || !T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getAuthorities().toString().contains('INTERNAL')"
+    )
     public GetPostDetailResult handle(GetPostDetailQuery query) {
-        boolean isStaff = false;
-        try {
-            List<String> roles = jwtUtil.getCurrentUserRoles();
-            if (roles != null) {
-                isStaff = roles.stream().anyMatch(r ->
-                    r.equalsIgnoreCase("ROLE_MODERATOR") ||
-                    r.equalsIgnoreCase("MODERATOR") ||
-                    r.equalsIgnoreCase("ROLE_ADMIN") ||
-                    r.equalsIgnoreCase("ADMIN")
-                );
-            }
-        } catch (Exception ignored) {}
+        boolean isPrivileged = hasPrivilegedAuthority();
 
-        Post post = (isStaff ? postRepository.findById(query.getPostId()) : postRepository.findByIdAndDeletedFalse(query.getPostId()))
+        Post post = (isPrivileged ? postRepository.findById(query.getPostId()) : postRepository.findByIdAndDeletedFalse(query.getPostId()))
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
+
+        boolean isAuthor = query.getViewerId() != null && Objects.equals(query.getViewerId(), post.getAuthorId());
+
+        if (post.isArchived() && !isPrivileged && !isAuthor) {
+            throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
+        }
 
         // Unpublished posts must never be exposed merely by guessing their ID.
         // Their author may inspect them, and a group admin/moderator may inspect
         // a pending group post in order to review it.
-        if (post.getStatus() != PostStatus.PUBLISHED && !isStaff && !query.getViewerId().equals(post.getAuthorId())
-                && !(post.getStatus() == PostStatus.PENDING_APPROVAL && canModerateGroup(post.getGroupId()))) {
+        if (post.getStatus() != PostStatus.PUBLISHED && !isPrivileged && !isAuthor
+                && !(post.getStatus() == PostStatus.PENDING_APPROVAL && query.getViewerId() != null && canModerateGroup(post.getGroupId()))) {
             throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
         }
 
-        if (!isStaff && !postVisibilityService.canView(post, query.getViewerId())) {
+        if (!isPrivileged && !postVisibilityService.canView(post, query.getViewerId())) {
             // Do not disclose whether a private/friends-only post exists.
             throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
         }
@@ -69,6 +71,37 @@ public class GetPostDetailQueryHandler {
         GetPostDetailResult result = postFeatureMapper.toGetDetailResult(post, mediaList);
         result.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
         return result;
+    }
+
+    private boolean hasPrivilegedAuthority() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getAuthorities() != null) {
+                boolean fromAuthorities = auth.getAuthorities().stream().anyMatch(a -> {
+                    String role = a.getAuthority();
+                    return "ROLE_INTERNAL".equalsIgnoreCase(role)
+                            || "INTERNAL".equalsIgnoreCase(role)
+                            || "ROLE_ADMIN".equalsIgnoreCase(role)
+                            || "ADMIN".equalsIgnoreCase(role)
+                            || "ROLE_MODERATOR".equalsIgnoreCase(role)
+                            || "MODERATOR".equalsIgnoreCase(role);
+                });
+                if (fromAuthorities) {
+                    return true;
+                }
+            }
+            List<String> roles = jwtUtil.getCurrentUserRoles();
+            if (roles != null) {
+                return roles.stream().anyMatch(r ->
+                        "ROLE_MODERATOR".equalsIgnoreCase(r) ||
+                        "MODERATOR".equalsIgnoreCase(r) ||
+                        "ROLE_ADMIN".equalsIgnoreCase(r) ||
+                        "ADMIN".equalsIgnoreCase(r)
+                );
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     private boolean canModerateGroup(java.util.UUID groupId) {

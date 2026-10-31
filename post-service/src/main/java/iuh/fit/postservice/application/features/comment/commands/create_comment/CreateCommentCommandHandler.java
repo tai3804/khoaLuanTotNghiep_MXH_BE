@@ -4,10 +4,12 @@ import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.CommentFeatureMapper;
+import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.application.util.TagAndHashtagHelper;
 import iuh.fit.postservice.domain.entities.Comment;
 import iuh.fit.postservice.domain.entities.Post;
+import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.infrastructure.client.media.MediaClient;
 import iuh.fit.postservice.infrastructure.client.media.dto.MediaClientResponse;
 import iuh.fit.postservice.infrastructure.persistence.repository.CommentRepository;
@@ -16,9 +18,9 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
@@ -39,18 +41,28 @@ public class CreateCommentCommandHandler {
     CommentFeatureMapper commentFeatureMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
     ReputationGuard reputationGuard;
+    PostVisibilityService postVisibilityService;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
     public CreateCommentResult handle(CreateCommentCommand command) {
-        reputationGuard.checkCanComment(command.getAuthorId()); // quyền bình luận theo bậc điểm uy tín
+        reputationGuard.checkCanComment(command.getAuthorId());
         Post post = postRepository.findByIdAndDeletedFalse(command.getPostId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
+
+        if (post.getStatus() != PostStatus.PUBLISHED
+                || post.isArchived()
+                || !postVisibilityService.canView(post, command.getAuthorId())) {
+            throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
+        }
 
         Comment parent = null;
         if (command.getParentCommentId() != null) {
             parent = commentRepository.findByIdAndDeletedFalse(command.getParentCommentId())
                     .orElseThrow(() -> new BusinessException(PostServiceErrorCode.COMMENT_NOT_FOUND));
+            if (!parent.getPostId().equals(post.getId())) {
+                throw new BusinessException(PostServiceErrorCode.COMMENT_NOT_FOUND);
+            }
             parent.setReplyCount(parent.getReplyCount() + 1);
             commentRepository.save(parent);
         }
@@ -73,7 +85,6 @@ public class CreateCommentCommandHandler {
 
         Comment comment = commentFeatureMapper.toEntity(command, mediaUrl, mediaKey);
 
-        // Extract mentions and tagged users
         Set<UUID> allTaggedUserIds = new HashSet<>();
         if (command.getTaggedUserIds() != null) {
             allTaggedUserIds.addAll(command.getTaggedUserIds());
@@ -83,13 +94,11 @@ public class CreateCommentCommandHandler {
 
         Comment savedComment = commentRepository.save(comment);
 
-        // Synchronize accurate comment count on post
         long realCommentCount = commentRepository.countByPostIdAndDeletedFalse(post.getId());
         post.setCommentCount(realCommentCount);
         post.setLastActivityAt(java.time.LocalDateTime.now());
         postRepository.save(post);
 
-        // Publish notification event to Kafka (UC-NO01)
         try {
             String snippet = command.getContent();
             if (snippet != null && snippet.length() > 60) {
@@ -97,7 +106,6 @@ public class CreateCommentCommandHandler {
             }
             String contentText = snippet != null ? snippet : "đã bình luận hình ảnh";
 
-            // 1. If replying to someone else's comment, notify parent comment author
             if (parent != null && parent.getAuthorId() != null && !parent.getAuthorId().equals(command.getAuthorId())) {
                 Map<String, Object> replyEvent = new HashMap<>();
                 replyEvent.put("recipientId", parent.getAuthorId().toString());
@@ -113,7 +121,6 @@ public class CreateCommentCommandHandler {
                 log.info("Published REPLY_COMMENT notification to parent author: {}", parent.getAuthorId());
             }
 
-            // 2. Notify post author if different from commenter and parent comment author
             if (post.getAuthorId() != null && !post.getAuthorId().equals(command.getAuthorId()) && (parent == null || !post.getAuthorId().equals(parent.getAuthorId()))) {
                 Map<String, Object> notifEvent = new HashMap<>();
                 notifEvent.put("recipientId", post.getAuthorId().toString());
@@ -129,7 +136,6 @@ public class CreateCommentCommandHandler {
                 log.info("Published COMMENT_POST notification to post author: {}", post.getAuthorId());
             }
 
-            // 3. Notify mentioned/tagged users in this comment
             if (!allTaggedUserIds.isEmpty()) {
                 for (UUID mentionedUserId : allTaggedUserIds) {
                     if (mentionedUserId != null && !mentionedUserId.equals(command.getAuthorId())) {
@@ -155,5 +161,3 @@ public class CreateCommentCommandHandler {
         return commentFeatureMapper.toCreateResult(savedComment);
     }
 }
-
-

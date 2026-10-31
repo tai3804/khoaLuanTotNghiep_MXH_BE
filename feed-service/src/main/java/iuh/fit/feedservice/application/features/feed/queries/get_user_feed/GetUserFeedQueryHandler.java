@@ -9,16 +9,16 @@ import iuh.fit.feedservice.infrastructure.persistence.repository.UserFeedItemRep
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -27,7 +27,6 @@ public class GetUserFeedQueryHandler {
     UserFeedItemRepository userFeedItemRepository;
     PostServiceClient postServiceClient;
 
-    @Transactional(readOnly = true)
     public PagedResponse<GetUserFeedResult> handle(GetUserFeedQuery query) {
         Pageable pageable = PageRequest.of(query.getPage(), query.getSize());
         Page<UserFeedItem> feedItemsPage = userFeedItemRepository.findByUserIdOrderByCreatedAtDesc(query.getUserId(), pageable);
@@ -40,17 +39,19 @@ public class GetUserFeedQueryHandler {
                 if (response != null && response.getData() != null) {
                     postDetail = response.getData();
                 }
-            } catch (Exception ignored) {
-                // If post-service returns 404 or is unavailable, fallback gracefully
+            } catch (Exception e) {
+                log.debug("Post {} not accessible or deleted: {}", item.getPostId(), e.getMessage());
             }
 
-            results.add(GetUserFeedResult.builder()
-                    .feedItemId(item.getId())
-                    .postId(item.getPostId())
-                    .authorId(item.getAuthorId())
-                    .postDetail(postDetail)
-                    .createdAt(item.getCreatedAt())
-                    .build());
+            if (postDetail != null) {
+                results.add(GetUserFeedResult.builder()
+                        .feedItemId(item.getId())
+                        .postId(item.getPostId())
+                        .authorId(item.getAuthorId())
+                        .postDetail(postDetail)
+                        .createdAt(item.getCreatedAt())
+                        .build());
+            }
         }
 
         return PagedResponse.<GetUserFeedResult>builder()

@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.InputStream;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -24,7 +26,7 @@ public class GeminiApiClient {
     @Value("${ai.gemini.api-key:}")
     private String apiKey;
 
-    @Value("${ai.gemini.model:gemini-1.5-flash}")
+    @Value("${ai.gemini.model:gemini-2.5-flash-lite}")
     private String modelName;
 
     @Value("${ai.gemini.api-url:https://generativelanguage.googleapis.com/v1beta/models}")
@@ -38,7 +40,7 @@ public class GeminiApiClient {
             .build();
 
     /**
-     * Phân tích ngữ cảnh nội dung bài viết/bình luận bằng Google Gemini 1.5 Flash
+     * Phân tích ngữ cảnh nội dung bài viết/bình luận bằng Google Gemini Flash
      */
     public GeminiModerationResult evaluate(String content) {
         if (content == null || content.isBlank()) {
@@ -54,7 +56,6 @@ public class GeminiApiClient {
                     .build();
         }
 
-        // 1. Nếu chưa cấu hình Gemini API Key -> Dùng ngay Fallback Fast Filter (0ms)
         if (apiKey == null || apiKey.trim().isEmpty() || apiKey.contains("your-gemini-api-key")) {
             log.warn("Gemini API key is not configured or empty. Using Fast Rule-based fallback engine.");
             return createFallbackResult(content);
@@ -93,7 +94,7 @@ public class GeminiApiClient {
                         ),
                         "generationConfig", Map.of(
                                 "temperature", 0.1,
-                                "maxOutputTokens", 1024,
+                                "maxOutputTokens", 2048,
                                 "responseMimeType", "application/json"
                         )
                 );
@@ -127,10 +128,45 @@ public class GeminiApiClient {
     private GeminiModerationResult parseGeminiResponse(String responseBody) {
         try {
             JsonNode rootNode = objectMapper.readTree(responseBody);
-            JsonNode candidate = rootNode.path("candidates").get(0);
+
+            // Kiểm tra safety block ở mức promptFeedback
+            JsonNode promptFeedback = rootNode.path("promptFeedback");
+            String blockReason = promptFeedback.path("blockReason").asText("");
+            if (!blockReason.isBlank()) {
+                return GeminiModerationResult.builder()
+                        .isToxic(true)
+                        .toxicityScore(0.95)
+                        .category("SAFETY_BLOCK")
+                        .severity("CRITICAL")
+                        .suggestedAction("AUTO_HIDE")
+                        .reason("Nội dung bị chặn bởi chính sách an toàn AI: " + blockReason)
+                        .extractedKeywords(Collections.emptyList())
+                        .isFallback(false)
+                        .build();
+            }
+
+            JsonNode candidates = rootNode.path("candidates");
+            if (!candidates.isArray() || candidates.isEmpty()) {
+                return createFallbackResult(responseBody);
+            }
+
+            JsonNode candidate = candidates.get(0);
+            String finishReason = candidate.path("finishReason").asText("");
+            if ("SAFETY".equalsIgnoreCase(finishReason) || "PROHIBITED_CONTENT".equalsIgnoreCase(finishReason) || "BLOCKLIST".equalsIgnoreCase(finishReason) || "SPII".equalsIgnoreCase(finishReason)) {
+                return GeminiModerationResult.builder()
+                        .isToxic(true)
+                        .toxicityScore(0.95)
+                        .category("SAFETY_BLOCK")
+                        .severity("CRITICAL")
+                        .suggestedAction("AUTO_HIDE")
+                        .reason("Nội dung vi phạm chính sách an toàn (" + finishReason + ")")
+                        .extractedKeywords(Collections.emptyList())
+                        .isFallback(false)
+                        .build();
+            }
+
             String rawJsonText = extractTextFromCandidate(candidate);
 
-            // Xóa markdown nếu có
             if (rawJsonText.startsWith("```json")) {
                 rawJsonText = rawJsonText.substring(7);
             }
@@ -141,6 +177,12 @@ public class GeminiApiClient {
                 rawJsonText = rawJsonText.substring(0, rawJsonText.length() - 3);
             }
             rawJsonText = rawJsonText.trim();
+
+            int firstBrace = rawJsonText.indexOf('{');
+            int lastBrace = rawJsonText.lastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                rawJsonText = rawJsonText.substring(firstBrace, lastBrace + 1);
+            }
 
             JsonNode parsed = objectMapper.readTree(rawJsonText);
             double toxicityScore = parsed.path("toxicityScore").asDouble(0.0);
@@ -172,7 +214,7 @@ public class GeminiApiClient {
 
         } catch (Exception e) {
             log.error("Failed to parse Gemini response text: {}", e.getMessage());
-            throw new RuntimeException(e);
+            return createFallbackResult(responseBody);
         }
     }
 
@@ -229,7 +271,6 @@ public class GeminiApiClient {
         }
 
         StringBuilder sb = new StringBuilder();
-        // Bỏ qua các part "thought" (suy nghĩ nội bộ của thinking models như Gemini 2.5/3.x)
         for (JsonNode part : parts) {
             if (part.has("thought") && part.get("thought").asBoolean(false)) {
                 continue;
@@ -253,12 +294,8 @@ public class GeminiApiClient {
         if (modelName != null && !modelName.isBlank()) {
             models.add(modelName.trim());
         }
-        models.add("gemini-3.5-flash-lite");
-        models.add("gemini-flash-lite-latest");
-        models.add("gemini-3.1-flash-lite");
-        models.add("gemini-3.5-flash");
-        models.add("gemini-flash-latest");
-        models.add("gemini-3.8-flash");
+        models.add("gemini-2.5-flash-lite");
+        models.add("gemini-2.0-flash");
         return new ArrayList<>(models);
     }
 
@@ -280,8 +317,7 @@ public class GeminiApiClient {
                         ),
                         "generationConfig", Map.of(
                                 "temperature", 0.7,
-                                // Các model Gemini 3.x tính cả token "suy nghĩ" vào giới hạn này, nên 1024 làm câu trả lời bị cụt
-                                "maxOutputTokens", 4096
+                                "maxOutputTokens", 2048
                         )
                 );
 
@@ -298,14 +334,17 @@ public class GeminiApiClient {
 
                 if (response.statusCode() == 200) {
                     JsonNode rootNode = objectMapper.readTree(response.body());
-                    JsonNode candidate = rootNode.path("candidates").get(0);
-                    if ("MAX_TOKENS".equals(candidate.path("finishReason").asText(""))) {
-                        log.warn("Gemini model {} stopped at MAX_TOKENS (truncated output). Trying next model...", candidateModel);
-                        continue;
-                    }
-                    String text = extractTextFromCandidate(candidate);
-                    if (!text.isBlank()) {
-                        return text;
+                    JsonNode candidates = rootNode.path("candidates");
+                    if (candidates.isArray() && !candidates.isEmpty()) {
+                        JsonNode candidate = candidates.get(0);
+                        if ("MAX_TOKENS".equals(candidate.path("finishReason").asText(""))) {
+                            log.warn("Gemini model {} stopped at MAX_TOKENS. Trying next model...", candidateModel);
+                            continue;
+                        }
+                        String text = extractTextFromCandidate(candidate);
+                        if (!text.isBlank()) {
+                            return text;
+                        }
                     }
                 } else {
                     log.warn("Gemini Assistant API with model {} returned code {}: {}. Trying next model...", candidateModel, response.statusCode(), response.body());
@@ -330,7 +369,6 @@ public class GeminiApiClient {
 
         List<Map<String, Object>> contents = new ArrayList<>();
 
-        // Nạp tối đa 10 lượt hội thoại gần nhất để giữ trọn vẹn ngữ cảnh mà tiết kiệm token
         if (rawHistory != null && !rawHistory.isEmpty()) {
             int startIdx = Math.max(0, rawHistory.size() - 10);
             for (int i = startIdx; i < rawHistory.size(); i++) {
@@ -362,7 +400,6 @@ public class GeminiApiClient {
             }
         }
 
-        // Thêm tin nhắn hiện tại của người dùng
         contents.add(Map.of(
                 "role", "user",
                 "parts", List.of(Map.of("text", currentMessage))
@@ -386,7 +423,7 @@ public class GeminiApiClient {
                 requestBodyMap.put("contents", contents);
                 requestBodyMap.put("generationConfig", Map.of(
                         "temperature", 0.7,
-                        "maxOutputTokens", 1024
+                        "maxOutputTokens", 2048
                 ));
 
                 String requestJson = objectMapper.writeValueAsString(requestBodyMap);
@@ -402,10 +439,13 @@ public class GeminiApiClient {
 
                 if (response.statusCode() == 200) {
                     JsonNode rootNode = objectMapper.readTree(response.body());
-                    JsonNode candidate = rootNode.path("candidates").get(0);
-                    String text = extractTextFromCandidate(candidate);
-                    if (!text.isBlank()) {
-                        return text;
+                    JsonNode candidates = rootNode.path("candidates");
+                    if (candidates.isArray() && !candidates.isEmpty()) {
+                        JsonNode candidate = candidates.get(0);
+                        String text = extractTextFromCandidate(candidate);
+                        if (!text.isBlank()) {
+                            return text;
+                        }
                     }
                 } else {
                     log.warn("Gemini chatWithHistory model {} error code {}: {}. Trying next...", candidateModel, response.statusCode(), response.body());
@@ -419,36 +459,58 @@ public class GeminiApiClient {
     }
 
     /**
-     * Tải ảnh từ URL chuyển thành inline_data Base64 cho Gemini Multimodal Vision
+     * Tải ảnh từ URL chuyển thành inline_data Base64 cho Gemini Multimodal Vision (ngăn SSRF + giới hạn 10MB)
      */
     private Optional<Map<String, Object>> fetchImageInlinePart(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank() || !imageUrl.startsWith("http")) {
             return Optional.empty();
         }
         try {
+            URI uri = URI.create(imageUrl.trim());
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return Optional.empty();
+            }
+
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            for (InetAddress addr : addresses) {
+                if (addr.isLoopbackAddress() || addr.isSiteLocalAddress() || addr.isLinkLocalAddress() || addr.isAnyLocalAddress() || addr.isMulticastAddress()) {
+                    String hostLower = host.toLowerCase();
+                    if (!hostLower.contains("minio") && !hostLower.contains("localhost")) {
+                        log.warn("Blocked potentially unsafe host IP address in fetchImageInlinePart: {}", addr);
+                        return Optional.empty();
+                    }
+                }
+            }
+
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(imageUrl.trim()))
-                    .timeout(Duration.ofSeconds(3))
+                    .uri(uri)
+                    .timeout(Duration.ofSeconds(5))
                     .GET()
                     .build();
 
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() == 200 && response.body() != null && response.body().length > 0) {
-                String mimeType = "image/jpeg";
-                String contentType = response.headers().firstValue("Content-Type").orElse("");
-                if (contentType.contains("png") || imageUrl.endsWith(".png")) {
-                    mimeType = "image/png";
-                } else if (contentType.contains("webp") || imageUrl.endsWith(".webp")) {
-                    mimeType = "image/webp";
-                }
+            HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() == 200) {
+                try (InputStream is = response.body()) {
+                    byte[] bytes = is.readNBytes(10 * 1024 * 1024); // max 10MB
+                    if (bytes.length > 0) {
+                        String mimeType = "image/jpeg";
+                        String contentType = response.headers().firstValue("Content-Type").orElse("");
+                        if (contentType.contains("png") || imageUrl.endsWith(".png")) {
+                            mimeType = "image/png";
+                        } else if (contentType.contains("webp") || imageUrl.endsWith(".webp")) {
+                            mimeType = "image/webp";
+                        }
 
-                String base64Data = Base64.getEncoder().encodeToString(response.body());
-                return Optional.of(Map.of(
-                        "inline_data", Map.of(
-                                "mime_type", mimeType,
-                                "data", base64Data
-                        )
-                ));
+                        String base64Data = Base64.getEncoder().encodeToString(bytes);
+                        return Optional.of(Map.of(
+                                "inline_data", Map.of(
+                                        "mime_type", mimeType,
+                                        "data", base64Data
+                                )
+                        ));
+                    }
+                }
             }
         } catch (Exception e) {
             log.debug("Could not download image for multimodal summary: {} ({})", imageUrl, e.getMessage());
@@ -471,7 +533,6 @@ public class GeminiApiClient {
         String convName = request.getConversationName() != null ? request.getConversationName() : "Cuộc trò chuyện";
         boolean isGroup = Boolean.TRUE.equals(request.getIsGroup());
 
-        // 1. Chuẩn bị nội dung text của các tin nhắn
         StringBuilder chatTranscript = new StringBuilder();
         chatTranscript.append(String.format("Tên cuộc hội thoại: %s (%s)\n", convName, isGroup ? "Nhóm chat" : "Chat 1-1"));
         chatTranscript.append("Danh sách các tin nhắn gần nhất:\n");
@@ -500,7 +561,6 @@ public class GeminiApiClient {
             }
         }
 
-        // 2. Tải tối đa 3 ảnh chuyển thành inline_data parts cho Gemini Multimodal Vision
         List<Map<String, Object>> parts = new ArrayList<>();
 
         String systemInstruction = """
@@ -525,7 +585,6 @@ public class GeminiApiClient {
             fetchImageInlinePart(imgUrl).ifPresent(parts::add);
         }
 
-        // 3. Gọi Gemini API
         for (String candidateModel : getCandidateModels()) {
             try {
                 String endpoint = String.format("%s/%s:generateContent?key=%s", apiUrl, candidateModel, apiKey);
@@ -536,7 +595,7 @@ public class GeminiApiClient {
                         ),
                         "generationConfig", Map.of(
                                 "temperature", 0.2,
-                                "maxOutputTokens", 1024,
+                                "maxOutputTokens", 2048,
                                 "responseMimeType", "application/json"
                         )
                 );
@@ -554,35 +613,44 @@ public class GeminiApiClient {
 
                 if (response.statusCode() == 200) {
                     JsonNode rootNode = objectMapper.readTree(response.body());
-                    JsonNode candidate = rootNode.path("candidates").get(0);
-                    String rawJsonText = extractTextFromCandidate(candidate);
+                    JsonNode candidates = rootNode.path("candidates");
+                    if (candidates.isArray() && !candidates.isEmpty()) {
+                        JsonNode candidate = candidates.get(0);
+                        String rawJsonText = extractTextFromCandidate(candidate);
 
-                    if (rawJsonText.startsWith("```json")) rawJsonText = rawJsonText.substring(7);
-                    if (rawJsonText.startsWith("```")) rawJsonText = rawJsonText.substring(3);
-                    if (rawJsonText.endsWith("```")) rawJsonText = rawJsonText.substring(0, rawJsonText.length() - 3);
-                    rawJsonText = rawJsonText.trim();
+                        if (rawJsonText.startsWith("```json")) rawJsonText = rawJsonText.substring(7);
+                        if (rawJsonText.startsWith("```")) rawJsonText = rawJsonText.substring(3);
+                        if (rawJsonText.endsWith("```")) rawJsonText = rawJsonText.substring(0, rawJsonText.length() - 3);
+                        rawJsonText = rawJsonText.trim();
 
-                    JsonNode parsed = objectMapper.readTree(rawJsonText);
-                    String summary = parsed.path("summary").asText(fallback.getSummary());
-                    String mediaDesc = parsed.path("mediaDescription").asText(fallback.getMediaDescription());
-                    List<String> actionItems = new ArrayList<>();
-                    JsonNode actionsNode = parsed.path("actionItems");
-                    if (actionsNode.isArray()) {
-                        for (JsonNode node : actionsNode) {
-                            actionItems.add(node.asText());
+                        int firstBrace = rawJsonText.indexOf('{');
+                        int lastBrace = rawJsonText.lastIndexOf('}');
+                        if (firstBrace >= 0 && lastBrace > firstBrace) {
+                            rawJsonText = rawJsonText.substring(firstBrace, lastBrace + 1);
                         }
-                    }
-                    if (actionItems.isEmpty()) {
-                        actionItems = fallback.getActionItems();
-                    }
 
-                    return MessageSummaryDto.SummarizeMessagesResponse.builder()
-                            .summary(summary)
-                            .mediaDescription(mediaDesc)
-                            .actionItems(actionItems)
-                            .messageCount(messages.size())
-                            .imageCount(imageCount)
-                            .build();
+                        JsonNode parsed = objectMapper.readTree(rawJsonText);
+                        String summary = parsed.path("summary").asText(fallback.getSummary());
+                        String mediaDesc = parsed.path("mediaDescription").asText(fallback.getMediaDescription());
+                        List<String> actionItems = new ArrayList<>();
+                        JsonNode actionsNode = parsed.path("actionItems");
+                        if (actionsNode.isArray()) {
+                            for (JsonNode node : actionsNode) {
+                                actionItems.add(node.asText());
+                            }
+                        }
+                        if (actionItems.isEmpty()) {
+                            actionItems = fallback.getActionItems();
+                        }
+
+                        return MessageSummaryDto.SummarizeMessagesResponse.builder()
+                                .summary(summary)
+                                .mediaDescription(mediaDesc)
+                                .actionItems(actionItems)
+                                .messageCount(messages.size())
+                                .imageCount(imageCount)
+                                .build();
+                    }
                 } else {
                     log.warn("Gemini multimodal summarize returned {}: {}", response.statusCode(), response.body());
                 }
@@ -673,7 +741,7 @@ public class GeminiApiClient {
                         ),
                         "generationConfig", Map.of(
                                 "temperature", 0.1,
-                                "maxOutputTokens", 1024,
+                                "maxOutputTokens", 2048,
                                 "responseMimeType", "application/json"
                         )
                 );
@@ -691,36 +759,45 @@ public class GeminiApiClient {
 
                 if (response.statusCode() == 200) {
                     JsonNode rootNode = objectMapper.readTree(response.body());
-                    JsonNode candidate = rootNode.path("candidates").get(0);
-                    String rawJsonText = extractTextFromCandidate(candidate);
+                    JsonNode candidates = rootNode.path("candidates");
+                    if (candidates.isArray() && !candidates.isEmpty()) {
+                        JsonNode candidate = candidates.get(0);
+                        String rawJsonText = extractTextFromCandidate(candidate);
 
-                    if (rawJsonText.startsWith("```json")) rawJsonText = rawJsonText.substring(7);
-                    if (rawJsonText.startsWith("```")) rawJsonText = rawJsonText.substring(3);
-                    if (rawJsonText.endsWith("```")) rawJsonText = rawJsonText.substring(0, rawJsonText.length() - 3);
-                    rawJsonText = rawJsonText.trim();
+                        if (rawJsonText.startsWith("```json")) rawJsonText = rawJsonText.substring(7);
+                        if (rawJsonText.startsWith("```")) rawJsonText = rawJsonText.substring(3);
+                        if (rawJsonText.endsWith("```")) rawJsonText = rawJsonText.substring(0, rawJsonText.length() - 3);
+                        rawJsonText = rawJsonText.trim();
 
-                    JsonNode parsed = objectMapper.readTree(rawJsonText);
-                    double toxicityScore = parsed.path("toxicityScore").asDouble(0.0);
-                    String category = parsed.path("category").asText("NONE");
-                    String severity = parsed.path("severity").asText("LOW");
-                    String suggestedAction = parsed.path("suggestedAction").asText("ALLOW");
-                    String reason = parsed.path("reason").asText("Hình ảnh an toàn và phù hợp");
-                    List<String> keywords = new ArrayList<>();
-                    JsonNode kwNode = parsed.path("extractedKeywords");
-                    if (kwNode.isArray()) {
-                        for (JsonNode kn : kwNode) keywords.add(kn.asText());
+                        int firstBrace = rawJsonText.indexOf('{');
+                        int lastBrace = rawJsonText.lastIndexOf('}');
+                        if (firstBrace >= 0 && lastBrace > firstBrace) {
+                            rawJsonText = rawJsonText.substring(firstBrace, lastBrace + 1);
+                        }
+
+                        JsonNode parsed = objectMapper.readTree(rawJsonText);
+                        double toxicityScore = parsed.path("toxicityScore").asDouble(0.0);
+                        String category = parsed.path("category").asText("NONE");
+                        String severity = parsed.path("severity").asText("LOW");
+                        String suggestedAction = parsed.path("suggestedAction").asText("ALLOW");
+                        String reason = parsed.path("reason").asText("Hình ảnh an toàn và phù hợp");
+                        List<String> keywords = new ArrayList<>();
+                        JsonNode kwNode = parsed.path("extractedKeywords");
+                        if (kwNode.isArray()) {
+                            for (JsonNode kn : kwNode) keywords.add(kn.asText());
+                        }
+
+                        return GeminiModerationResult.builder()
+                                .isToxic(toxicityScore >= 0.5)
+                                .toxicityScore(toxicityScore)
+                                .category(category)
+                                .severity(severity)
+                                .suggestedAction(suggestedAction)
+                                .reason(reason)
+                                .extractedKeywords(keywords)
+                                .isFallback(false)
+                                .build();
                     }
-
-                    return GeminiModerationResult.builder()
-                            .isToxic(toxicityScore >= 0.5)
-                            .toxicityScore(toxicityScore)
-                            .category(category)
-                            .severity(severity)
-                            .suggestedAction(suggestedAction)
-                            .reason(reason)
-                            .extractedKeywords(keywords)
-                            .isFallback(false)
-                            .build();
                 }
             } catch (Exception e) {
                 log.warn("Gemini vision moderation error with model {}: {}", candidateModel, e.getMessage());

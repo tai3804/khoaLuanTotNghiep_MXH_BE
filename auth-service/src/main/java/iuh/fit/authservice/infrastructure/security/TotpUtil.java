@@ -54,7 +54,7 @@ public class TotpUtil {
         try {
             code = Integer.parseInt(codeStr.trim());
         } catch (NumberFormatException e) {
-            log.warn("TOTP Verification failed: code [{}] is not numeric", codeStr);
+            log.warn("TOTP Verification failed: provided code is not numeric");
             return false;
         }
 
@@ -64,11 +64,11 @@ public class TotpUtil {
         for (int i = -2; i <= 2; i++) {
             long hash = generateTotpCode(secret, currentBucket + i);
             if (hash == code) {
-                log.info("TOTP Verification succeeded for bucket offset {}", i);
+                log.debug("TOTP Verification succeeded for bucket offset {}", i);
                 return true;
             }
         }
-        log.warn("TOTP Verification failed for code [{}] against secret [{}]", codeStr, secret);
+        log.warn("TOTP Verification failed: code mismatch");
         return false;
     }
 
@@ -98,7 +98,7 @@ public class TotpUtil {
 
             return binary % (long) Math.pow(10, codeDigits);
         } catch (Exception e) {
-            log.error("Error generating TOTP code from secret: {}", e.getMessage(), e);
+            log.error("Error generating TOTP code: {}", e.getMessage());
             return -1;
         }
     }

@@ -2,6 +2,7 @@ package iuh.fit.userservice.application.features.user_block.commands.block_user;
 
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.userservice.application.exception.UserServiceErrorCode;
+import iuh.fit.userservice.application.service.UserCounterSyncService;
 import iuh.fit.userservice.domain.entities.UserBlock;
 import iuh.fit.userservice.domain.entities.UserConnection;
 import iuh.fit.userservice.domain.entities.UserProfile;
@@ -26,6 +27,7 @@ public class BlockUserCommandHandler {
     UserBlockRepository userBlockRepository;
     UserConnectionRepository userConnectionRepository;
     UserProfileRepository userProfileRepository;
+    UserCounterSyncService userCounterSyncService;
 
     @Transactional
     public void handle(BlockUserCommand command) {
@@ -66,6 +68,8 @@ public class BlockUserCommandHandler {
         List<UserConnection> connections = userConnectionRepository.findAllConnectionsBetween(blockerId, finalTargetId);
         if (!connections.isEmpty()) {
             userConnectionRepository.deleteAll(connections);
+            userCounterSyncService.syncCounters(blockerId);
+            userCounterSyncService.syncCounters(finalTargetId);
         }
     }
 }

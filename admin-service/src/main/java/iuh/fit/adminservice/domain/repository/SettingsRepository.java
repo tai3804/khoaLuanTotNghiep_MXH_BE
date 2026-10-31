@@ -12,6 +12,7 @@ public interface SettingsRepository {
     BlacklistedWord saveBlacklistedWord(BlacklistedWord word);
     void deleteBlacklistedWord(Long id);
     List<BlacklistedWord> findAllBlacklistedWords();
+    Optional<BlacklistedWord> findBlacklistedWordByWordIgnoreCase(String word);
 
     // Config
     SystemConfig saveConfig(SystemConfig config);

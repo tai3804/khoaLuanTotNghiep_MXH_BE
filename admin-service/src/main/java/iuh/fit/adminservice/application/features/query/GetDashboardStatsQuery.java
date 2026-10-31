@@ -94,12 +94,18 @@ public class GetDashboardStatsQuery {
 
         long totalReports = 0;
         long pendingReports = 0;
-        long resolvedReports = 0;
+        long resolvedReportsToday = 0;
 
         try {
             totalReports = reportRepository.count();
             pendingReports = reportRepository.countByStatus(ReportStatus.PENDING);
-            resolvedReports = Math.max(0, totalReports - pendingReports);
+            LocalDateTime startOfToday = today.atStartOfDay();
+            LocalDateTime endOfToday = today.atTime(23, 59, 59, 999999999);
+            resolvedReportsToday = reportRepository.countByStatusInAndResolvedAtBetween(
+                    List.of(ReportStatus.RESOLVED, ReportStatus.DISMISSED),
+                    startOfToday,
+                    endOfToday
+            );
         } catch (Exception e) {
             log.warn("Failed to fetch report counts from repository: {}", e.getMessage());
         }
@@ -108,7 +114,7 @@ public class GetDashboardStatsQuery {
         stat.setTotalPosts(totalPosts);
         stat.setTotalReports(totalReports);
         stat.setPendingReports(pendingReports);
-        stat.setResolvedReportsToday(resolvedReports);
+        stat.setResolvedReportsToday(resolvedReportsToday);
         stat.setNewUsersToday(newUsersToday);
         stat.setNewPostsToday(newPostsToday);
         stat.setActiveUsersNow(onlineUsers);
@@ -131,21 +137,30 @@ public class GetDashboardStatsQuery {
             newUsersPerDay.put(today.minusDays(i), 0L);
         }
 
+        long usersWithNullDate = 0;
+        LocalDate startOfWindow = today.minusDays(6);
+        long baselineUsersBeforeWindow = 0;
+
         if (users != null) {
             for (UserResponse u : users) {
                 LocalDate d = parseDate(u.getCreatedAt());
-                if (d != null && newUsersPerDay.containsKey(d)) {
+                if (d == null) {
+                    usersWithNullDate++;
+                } else if (newUsersPerDay.containsKey(d)) {
                     newUsersPerDay.put(d, newUsersPerDay.get(d) + 1);
+                } else if (d.isBefore(startOfWindow)) {
+                    baselineUsersBeforeWindow++;
                 }
             }
         }
 
-        long cumulativeUsers = users != null ? users.size() : 0;
+        long runningCumulative = baselineUsersBeforeWindow + usersWithNullDate;
 
         for (int i = 6; i >= 0; i--) {
             LocalDate d = today.minusDays(i);
             long newUsers = newUsersPerDay.getOrDefault(d, 0L);
-            list.add(new UserGrowthStatResponse(d.format(formatter), newUsers, cumulativeUsers));
+            runningCumulative += newUsers;
+            list.add(new UserGrowthStatResponse(d.format(formatter), newUsers, runningCumulative));
         }
         return list;
     }

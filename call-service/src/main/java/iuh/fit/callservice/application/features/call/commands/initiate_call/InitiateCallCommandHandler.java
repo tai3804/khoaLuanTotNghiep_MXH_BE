@@ -23,11 +23,14 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +45,19 @@ public class InitiateCallCommandHandler {
 
     @Transactional
     public InitiateCallResult handle(InitiateCallCommand command) {
+        Set<UUID> validTargetIds = new LinkedHashSet<>();
+        if (command.getTargetUserIds() != null) {
+            for (UUID targetId : command.getTargetUserIds()) {
+                if (targetId != null && !targetId.equals(command.getCurrentUserId())) {
+                    validTargetIds.add(targetId);
+                }
+            }
+        }
+
+        if (command.getChannelType() == ChannelType.DIRECT && validTargetIds.isEmpty()) {
+            throw new BusinessException(CallServiceErrorCode.CANNOT_CALL_SELF);
+        }
+
         // An unanswered call must not lock the caller forever.  The browser can
         // be closed or lose its connection before it sends the timeout/end API.
         // Expire only old INITIATED sessions; genuinely connected calls remain
@@ -55,7 +71,7 @@ public class InitiateCallCommandHandler {
                     && activeCall.getStartedAt().isBefore(LocalDateTime.now().minusSeconds(40));
 
             if (command.getChannelType() == ChannelType.GROUP || unansweredAndExpired || activeCall.getHostUserId().equals(command.getCurrentUserId())) {
-                activeCall.setStatus(CallStatus.ENDED);
+                activeCall.setStatus(unansweredAndExpired ? CallStatus.MISSED : CallStatus.ENDED);
                 activeCall.setEndedAt(LocalDateTime.now());
                 activeCall.setDurationInSeconds(0);
                 callSessionRepository.save(activeCall);
@@ -99,32 +115,26 @@ public class InitiateCallCommandHandler {
         participantsToSave.add(hostParticipant);
 
         // Add Target Participants & Notify via WebSocket STOMP
-        if (command.getTargetUserIds() != null) {
-            for (UUID targetId : command.getTargetUserIds()) {
-                if (targetId.equals(command.getCurrentUserId())) {
-                    continue;
-                }
-                CallParticipant participant = CallParticipant.builder()
-                        .callSessionId(session.getId())
-                        .userId(targetId)
-                        .role(ParticipantRole.PARTICIPANT)
-                        .status(ParticipantStatus.RINGING)
-                        .build();
-                participantsToSave.add(participant);
+        for (UUID targetId : validTargetIds) {
+            CallParticipant participant = CallParticipant.builder()
+                    .callSessionId(session.getId())
+                    .userId(targetId)
+                    .role(ParticipantRole.PARTICIPANT)
+                    .status(ParticipantStatus.RINGING)
+                    .build();
+            participantsToSave.add(participant);
 
-                // Real-time Push: INCOMING_CALL signal to target user queue
-                WebRtcSignalResponse incomingSignal = WebRtcSignalResponse.builder()
-                        .callSessionId(session.getId())
-                        .senderId(command.getCurrentUserId())
-                        .targetUserId(targetId)
-                        .signalType(WebRtcSignalType.INCOMING_CALL)
-                        .mediaType(session.getMediaType())
-                        .channelType(session.getChannelType())
-                        .timestamp(Instant.now())
-                        .build();
+            WebRtcSignalResponse incomingSignal = WebRtcSignalResponse.builder()
+                    .callSessionId(session.getId())
+                    .senderId(command.getCurrentUserId())
+                    .targetUserId(targetId)
+                    .signalType(WebRtcSignalType.INCOMING_CALL)
+                    .mediaType(session.getMediaType())
+                    .channelType(session.getChannelType())
+                    .timestamp(Instant.now())
+                    .build();
 
-                incomingSignals.add(incomingSignal);
-            }
+            incomingSignals.add(incomingSignal);
         }
 
         participantsToSave = callParticipantRepository.saveAll(participantsToSave);
@@ -143,6 +153,7 @@ public class InitiateCallCommandHandler {
         });
 
         List<InitiateCallResult.ParticipantResult> participantResults = participantsToSave.stream()
+                .filter(Objects::nonNull)
                 .map(callFeatureMapper::toInitiateParticipantResult)
                 .toList();
 

@@ -111,17 +111,23 @@ public class MfaController {
         LoginUserResponse response = mfaPresentationMapper.toLoginUserResponse(result);
 
         if (response.getRefreshToken() != null) {
-            ResponseCookie springCookie = ResponseCookie.from("refreshToken", response.getRefreshToken())
-                    .httpOnly(true)
-                    .secure(false)
-                    .path("/")
-                    .maxAge(refreshTokenExpiration / 1000)
-                    .sameSite("Lax")
-                    .build();
-            httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
+            setRefreshTokenCookie(httpRequest, httpResponse, response.getRefreshToken(), refreshTokenExpiration / 1000);
         }
 
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    private void setRefreshTokenCookie(HttpServletRequest httpRequest, HttpServletResponse httpResponse, String token, long maxAgeSeconds) {
+        boolean isHttps = (httpRequest != null && httpRequest.isSecure())
+                || (httpRequest != null && "https".equalsIgnoreCase(httpRequest.getHeader("X-Forwarded-Proto")));
+        ResponseCookie springCookie = ResponseCookie.from("refreshToken", token)
+                .httpOnly(true)
+                .secure(isHttps)
+                .path("/")
+                .maxAge(maxAgeSeconds)
+                .sameSite(isHttps ? "None" : "Lax")
+                .build();
+        httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
     }
 
     private String extractClientIp(HttpServletRequest request) {

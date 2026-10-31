@@ -13,6 +13,7 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class GetPostReactionsQuery {
     UUID postId;
+    UUID viewerId;
     int page;
     int size;
 }

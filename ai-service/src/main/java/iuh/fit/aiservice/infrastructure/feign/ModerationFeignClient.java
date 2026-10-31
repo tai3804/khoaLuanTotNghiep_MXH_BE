@@ -13,7 +13,7 @@ import lombok.Data;
 @FeignClient(name = "admin-service", url = "${ADMIN_SERVICE_URL:}", contextId = "moderationServiceClient", configuration = FeignClientConfig.class)
 public interface ModerationFeignClient {
 
-    @PostMapping("/api/v1/moderation/reports/{reportId}/process")
+    @PostMapping("/api/v1/internal/admin/reports/{reportId}/process")
     ApiResponse<Void> processReport(@PathVariable("reportId") UUID reportId, @RequestBody ProcessReportRequest request);
 
     @Data

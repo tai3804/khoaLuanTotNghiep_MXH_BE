@@ -29,10 +29,10 @@ spring:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
 eureka:
@@ -58,4 +58,3 @@ reputation:
   maintenance:
     interval-ms: 3600000   # chu kỳ chạy công việc hồi điểm / mở khóa (mặc định mỗi giờ)
     initial-delay-ms: 120000
-

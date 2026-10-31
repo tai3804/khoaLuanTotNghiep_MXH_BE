@@ -45,7 +45,7 @@ public class SearchMessagesHandler {
             throw new BusinessException(ChatServiceErrorCode.NOT_A_CONVERSATION_MEMBER);
         }
 
-        PageRequest pageRequest = PageRequest.of(query.getPage(), query.getSize());
+        PageRequest pageRequest = PageRequest.of(Math.max(0, query.getPage()), Math.min(Math.max(1, query.getSize()), 100));
         List<UUID> userDeletedIds = messageUserDeletionRepository.findAllDeletedMessageIdsByUserId(query.getCurrentUserId());
 
         Page<Message> messagePage = messageRepository.searchMessagesInConversation(
@@ -58,7 +58,7 @@ public class SearchMessagesHandler {
         List<Message> pageMessages = messagePage.getContent();
         List<UUID> messageIds = pageMessages.stream().map(Message::getId).toList();
 
-        // Fetch reply messages
+        // Fetch reply messages strictly within the same conversation
         List<UUID> replyIds = pageMessages.stream()
                 .map(Message::getReplyToMessageId)
                 .filter(Objects::nonNull)
@@ -67,7 +67,8 @@ public class SearchMessagesHandler {
 
         Map<UUID, Message> replyMap = replyIds.isEmpty() ? Map.of() :
                 messageRepository.findAllByIdIn(replyIds).stream()
-                        .collect(Collectors.toMap(Message::getId, m -> m));
+                        .filter(m -> query.getConversationId().equals(m.getConversationId()))
+                        .collect(Collectors.toMap(Message::getId, m -> m, (a, b) -> a));
 
         // Fetch reactions
         List<MessageReaction> allReactions = messageIds.isEmpty() ? List.of() :
@@ -81,7 +82,7 @@ public class SearchMessagesHandler {
 
             if (message.getReplyToMessageId() != null && replyMap.containsKey(message.getReplyToMessageId())) {
                 Message replyMsg = replyMap.get(message.getReplyToMessageId());
-                result.setReplyToContent(replyMsg.getContent());
+                result.setReplyToContent(replyMsg.isDeleted() ? "Tin nhắn đã được thu hồi" : replyMsg.getContent());
                 result.setReplyToSenderId(replyMsg.getSenderId());
             }
 

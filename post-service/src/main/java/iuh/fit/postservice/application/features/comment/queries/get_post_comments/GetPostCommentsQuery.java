@@ -14,6 +14,7 @@ import java.util.UUID;
 public class GetPostCommentsQuery {
     UUID postId;
     UUID parentCommentId;
+    UUID viewerId;
     int page;
     int size;
 }

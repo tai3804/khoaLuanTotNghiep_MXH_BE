@@ -1,6 +1,7 @@
 package iuh.fit.feedservice.infrastructure.event;
 
 import iuh.fit.commonframework.event.PostCreatedEvent;
+import iuh.fit.commonframework.event.PostDeletedEvent;
 import iuh.fit.commonframework.event.PostModeratedEvent;
 import iuh.fit.feedservice.application.features.feed.commands.process_post_created.ProcessPostCreatedCommand;
 import iuh.fit.feedservice.application.features.feed.commands.process_post_created.ProcessPostCreatedCommandHandler;
@@ -39,14 +40,29 @@ public class PostEventListener {
         }
     }
 
-    @KafkaListener(topics = "post.moderated", groupId = "feed-service-group")
-    public void handlePostModerated(PostModeratedEvent event) {
-        log.info("Received PostModeratedEvent in feed-service for postId: {}", event.getPostId());
+    @KafkaListener(topics = "post.deleted", groupId = "feed-service-group")
+    public void handlePostDeleted(PostDeletedEvent event) {
+        log.info("Received PostDeletedEvent in feed-service for postId: {}", event.getPostId());
         try {
             ProcessPostDeletedCommand command = ProcessPostDeletedCommand.builder()
                     .postId(event.getPostId())
                     .build();
             processPostDeletedCommandHandler.handle(command);
+        } catch (Exception e) {
+            log.error("Failed to process PostDeletedEvent in feed-service", e);
+        }
+    }
+
+    @KafkaListener(topics = "post.moderated", groupId = "feed-service-group")
+    public void handlePostModerated(PostModeratedEvent event) {
+        log.info("Received PostModeratedEvent in feed-service for postId: {}, action: {}", event.getPostId(), event.getAction());
+        try {
+            if ("HIDE_POST".equalsIgnoreCase(event.getAction()) || "DELETE_POST".equalsIgnoreCase(event.getAction())) {
+                ProcessPostDeletedCommand command = ProcessPostDeletedCommand.builder()
+                        .postId(event.getPostId())
+                        .build();
+                processPostDeletedCommandHandler.handle(command);
+            }
         } catch (Exception e) {
             log.error("Failed to process PostModeratedEvent in feed-service", e);
         }

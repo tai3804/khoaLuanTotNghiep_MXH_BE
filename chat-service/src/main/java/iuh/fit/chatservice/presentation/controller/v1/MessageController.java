@@ -25,6 +25,9 @@ import iuh.fit.chatservice.application.features.message.queries.get_messages.Get
 import iuh.fit.chatservice.application.features.message.queries.search_messages.SearchMessagesHandler;
 import iuh.fit.chatservice.application.features.message.queries.search_messages.SearchMessagesQuery;
 import iuh.fit.chatservice.domain.entities.Message;
+import iuh.fit.chatservice.domain.enums.MemberStatus;
+import iuh.fit.chatservice.infrastructure.persistence.repository.ConversationMemberRepository;
+import iuh.fit.chatservice.infrastructure.persistence.repository.MessageRepository;
 import iuh.fit.chatservice.presentation.constants.ApiConstants;
 import iuh.fit.chatservice.presentation.dto.request.EditMessageRequest;
 import iuh.fit.chatservice.presentation.dto.request.SendMessageRequest;
@@ -43,8 +46,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import iuh.fit.chatservice.domain.enums.MemberStatus;
-import iuh.fit.chatservice.infrastructure.persistence.repository.ConversationMemberRepository;
 
 @RestController
 @RequestMapping(ApiConstants.CHAT_API + "/conversations/{conversationId}/messages")
@@ -65,6 +66,7 @@ public class MessageController {
     ChatPresentationMapper chatPresentationMapper;
     JwtUtil jwtUtil;
     ConversationMemberRepository conversationMemberRepository;
+    MessageRepository messageRepository;
 
     @PostMapping
     @Operation(summary = "Send message via REST API", description = "Sends a message in a conversation via REST API (also broadcasts to WebSocket subscribers)")
@@ -189,20 +191,20 @@ public class MessageController {
         // Broadcast recall event to WebSocket subscribers
         messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/recalled", messageId);
 
-        // Also broadcast full message with deleted=true so all clients update immediately
+        // Broadcast scrubbed message with deleted=true so all clients update immediately
         MessageResponse fullMsgResponse = MessageResponse.builder()
                 .messageId(recalled.getId())
                 .conversationId(recalled.getConversationId())
                 .senderId(recalled.getSenderId())
                 .type(recalled.getType())
-                .content(recalled.getContent())
-                .mediaUrl(recalled.getMediaUrl())
+                .content("")
+                .mediaUrl(null)
                 .replyToMessageId(recalled.getReplyToMessageId())
                 .edited(recalled.isEdited())
                 .deleted(true)
-                .pinned(recalled.isPinned())
-                .pinnedAt(recalled.getPinnedAt())
-                .pinnedById(recalled.getPinnedById())
+                .pinned(false)
+                .pinnedAt(null)
+                .pinnedById(null)
                 .createdAt(recalled.getCreatedAt())
                 .build();
         messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, fullMsgResponse);
@@ -255,6 +257,11 @@ public class MessageController {
         UUID currentUserId = getCurrentUserId();
         if (!conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(conversationId, currentUserId, MemberStatus.ACTIVE)) {
             throw new BusinessException(ChatServiceErrorCode.NOT_A_CONVERSATION_MEMBER);
+        }
+        Message msg = messageRepository.findById(messageId)
+                .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND));
+        if (!msg.getConversationId().equals(conversationId)) {
+            throw new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND);
         }
         messagingTemplate.convertAndSend("/topic/conversations/" + conversationId + "/receipts", (Object)
                 Map.of("type", "DELIVERED", "userId", currentUserId.toString(), "messageId", messageId.toString()));

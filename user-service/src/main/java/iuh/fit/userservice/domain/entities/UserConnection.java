@@ -13,7 +13,11 @@ import java.util.UUID;
 
 @Entity
 @jakarta.persistence.EntityListeners(iuh.fit.userservice.infrastructure.persistence.SuggestionCacheEvictionListener.class)
-@Table(name = "user_connections")
+@Table(name = "user_connections", indexes = {
+        @Index(name = "idx_conn_req_target_type", columnList = "requester_id, target_id, type"),
+        @Index(name = "idx_conn_target_type_status", columnList = "target_id, type, status"),
+        @Index(name = "idx_conn_req_type_status", columnList = "requester_id, type, status")
+})
 @Getter
 @Setter
 @NoArgsConstructor

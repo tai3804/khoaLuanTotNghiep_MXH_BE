@@ -5,9 +5,11 @@ import iuh.fit.postservice.domain.entities.Reaction;
 import iuh.fit.postservice.domain.enums.ReactionType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -35,6 +37,8 @@ public interface ReactionRepository extends BaseJpaRepository<Reaction, UUID> {
                 ));
     }
 
+    @Modifying
+    @Transactional
     void deleteByPostIdAndUserId(UUID postId, UUID userId);
 
     /** Số lượt mình thả cảm xúc cho bài của từng tác giả kể từ mốc `since` (dùng tính độ thân thiết khi xếp hạng bảng tin). */

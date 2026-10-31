@@ -1,6 +1,8 @@
 package iuh.fit.postservice.infrastructure.client.user;
 
 import feign.RequestInterceptor;
+import iuh.fit.commonframework.infrastructure.security.InternalApiKeyFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -8,9 +10,19 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 @Configuration
 public class UserConnectionFeignConfig {
+
     @Bean
-    RequestInterceptor forwardAuthorizationHeader() {
+    RequestInterceptor forwardAuthorizationHeader(
+            @Value("${app.security.internal-api-key:kltn-internal-dev-key}") String internalApiKey) {
         return template -> {
+            String url = template.url();
+            if (url != null && url.startsWith("/api/v1/internal/")) {
+                if (!template.headers().containsKey(InternalApiKeyFilter.HEADER)) {
+                    template.header(InternalApiKeyFilter.HEADER, internalApiKey);
+                }
+                return;
+            }
+
             String authorization = null;
             ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attributes != null && attributes.getRequest() != null) {

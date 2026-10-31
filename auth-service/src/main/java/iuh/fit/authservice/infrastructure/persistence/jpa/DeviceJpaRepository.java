@@ -12,5 +12,6 @@ import java.util.UUID;
 public interface DeviceJpaRepository extends BaseJpaRepository<DeviceDbModel, UUID> {
     List<DeviceDbModel> findByUserId(UUID userId);
     Optional<DeviceDbModel> findByUserIdAndDeviceFingerprint(UUID userId, String deviceFingerprint);
+    Optional<DeviceDbModel> findByUserIdAndRefreshTokenHash(UUID userId, String refreshTokenHash);
     void deleteAllByUserId(UUID userId);
 }

@@ -28,9 +28,9 @@ public class SelfLearningService {
     private boolean autoLearnEnabled;
 
     /**
-     * Tự học các từ ngữ nhạy cảm mới được phát hiện từ Gemini AI hoặc Admin
+     * Tự học các từ ngữ nhạy cảm mới được phát hiện từ Gemini AI hoặc Admin.
+     * Mỗi từ được lưu trong giao dịch riêng biệt để lỗi của 1 từ không làm hỏng toàn bộ đợt học.
      */
-    @Transactional
     public void learnKeywords(List<String> keywords, String category, String severity, boolean isAutoLearned) {
         if (!autoLearnEnabled && isAutoLearned) {
             log.info("Auto-learning is disabled. Skipping learning for keywords: {}", keywords);
@@ -44,44 +44,58 @@ public class SelfLearningService {
         for (String rawKeyword : keywords) {
             String word = rawKeyword != null ? rawKeyword.toLowerCase().trim() : "";
             if (word.length() < 2 || word.length() > 50) {
-                continue; // Bỏ qua từ quá ngắn hoặc quá dài
+                continue;
             }
 
             try {
-                Optional<SensitiveKeyword> existing = repository.findByKeyword(word);
-                if (existing.isPresent()) {
-                    SensitiveKeyword kw = existing.get();
-                    kw.setHitCount(kw.getHitCount() + 1);
-                    kw.setLastTriggeredAt(LocalDateTime.now());
-                    if (severity != null) {
-                        kw.setSeverity(severity);
-                    }
-                    if (category != null && !"NONE".equalsIgnoreCase(category)) {
-                        kw.setCategory(category);
-                    }
-                    repository.save(kw);
-                    fastFilter.addOrUpdateWordInCache(word, kw.getCategory(), kw.getSeverity());
-                    log.info("Incremented hit count for existing keyword: '{}' (hits={})", word, kw.getHitCount());
-                } else {
-                    SensitiveKeyword newKw = SensitiveKeyword.builder()
-                            .keyword(word)
-                            .category(category != null && !"NONE".equalsIgnoreCase(category) ? category : "PROFANITY")
-                            .severity(severity != null ? severity : "MEDIUM")
-                            .hitCount(1)
-                            .isAutoLearned(isAutoLearned)
-                            .status("ACTIVE")
-                            .confidenceScore(isAutoLearned ? 0.85 : 1.0)
-                            .lastTriggeredAt(LocalDateTime.now())
-                            .build();
-
-                    repository.save(newKw);
-                    fastFilter.addOrUpdateWordInCache(word, newKw.getCategory(), newKw.getSeverity());
-                    log.info("Successfully learned new {} keyword: '{}' [category={}, severity={}]",
-                            isAutoLearned ? "AI auto-learned" : "manual admin", word, category, severity);
-                }
+                saveOrUpdateSingleKeyword(word, category, severity, isAutoLearned);
             } catch (Exception e) {
                 log.warn("Failed to learn keyword '{}': {}", word, e.getMessage());
             }
+        }
+    }
+
+    @Transactional
+    public void saveOrUpdateSingleKeyword(String word, String category, String severity, boolean isAutoLearned) {
+        Optional<SensitiveKeyword> existing = repository.findByKeyword(word);
+        if (existing.isPresent()) {
+            SensitiveKeyword kw = existing.get();
+            if ("WHITELISTED".equalsIgnoreCase(kw.getStatus())) {
+                log.debug("Skipping whitelisted keyword '{}'", word);
+                return;
+            }
+            kw.setHitCount(kw.getHitCount() + 1);
+            kw.setLastTriggeredAt(LocalDateTime.now());
+            if (severity != null) {
+                kw.setSeverity(severity);
+            }
+            if (category != null && !"NONE".equalsIgnoreCase(category)) {
+                kw.setCategory(category);
+            }
+            repository.save(kw);
+            if ("ACTIVE".equalsIgnoreCase(kw.getStatus())) {
+                fastFilter.addOrUpdateWordInCache(word, kw.getCategory(), kw.getSeverity());
+            }
+            log.info("Incremented hit count for existing keyword: '{}' (hits={})", word, kw.getHitCount());
+        } else {
+            String status = isAutoLearned ? "PENDING_REVIEW" : "ACTIVE";
+            SensitiveKeyword newKw = SensitiveKeyword.builder()
+                    .keyword(word)
+                    .category(category != null && !"NONE".equalsIgnoreCase(category) ? category : "PROFANITY")
+                    .severity(severity != null ? severity : "MEDIUM")
+                    .hitCount(1)
+                    .isAutoLearned(isAutoLearned)
+                    .status(status)
+                    .confidenceScore(isAutoLearned ? 0.85 : 1.0)
+                    .lastTriggeredAt(LocalDateTime.now())
+                    .build();
+
+            repository.save(newKw);
+            if (!isAutoLearned) {
+                fastFilter.addOrUpdateWordInCache(word, newKw.getCategory(), newKw.getSeverity());
+            }
+            log.info("Successfully learned new {} keyword: '{}' [status={}, category={}, severity={}]",
+                    isAutoLearned ? "AI auto-learned" : "manual admin", word, status, category, severity);
         }
     }
 

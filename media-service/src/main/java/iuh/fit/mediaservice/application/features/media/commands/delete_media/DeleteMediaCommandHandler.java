@@ -13,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -46,22 +48,26 @@ public class DeleteMediaCommandHandler {
         String rawKey = command.getFileKey().trim();
         String actualKey = awsS3StorageService.extractFileKeyFromUrl(rawKey);
 
-        // 1. Kiểm tra xem request có mang X-Internal-Key hợp lệ (gọi nội bộ giữa các microservices) không
-        boolean isInternalCall = false;
-        try {
-            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            if (attributes != null) {
-                HttpServletRequest request = attributes.getRequest();
-                String providedKey = request.getHeader(InternalApiKeyFilter.HEADER);
-                if (providedKey != null && MessageDigest.isEqual(
-                        providedKey.getBytes(StandardCharsets.UTF_8),
-                        internalApiKey.getBytes(StandardCharsets.UTF_8))) {
-                    isInternalCall = true;
+        // 1. Kiểm tra xem request có mang X-Internal-Key hợp lệ hoặc ROLE_INTERNAL (gọi nội bộ giữa các microservices) không
+        boolean isInternalCall = hasInternalAuthority();
+        if (!isInternalCall) {
+            try {
+                ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+                if (attributes != null) {
+                    HttpServletRequest request = attributes.getRequest();
+                    String providedKey = request.getHeader(InternalApiKeyFilter.HEADER);
+                    if (providedKey != null && internalApiKey != null && !internalApiKey.isBlank()
+                            && MessageDigest.isEqual(
+                                    providedKey.getBytes(StandardCharsets.UTF_8),
+                                    internalApiKey.getBytes(StandardCharsets.UTF_8))) {
+                        isInternalCall = true;
+                    }
                 }
+            } catch (Exception ignored) {
             }
-        } catch (Exception ignored) {}
+        }
 
-        // 2. Kiểm tra quyền Admin/Moderator hoặc quyền sở hữu file nếu không phải Internal Call
+        // 2. Kiểm tra quyền Admin/Moderator hoặc quyền sở hữu file (fail-closed) nếu không phải Internal Call
         if (!isInternalCall) {
             List<String> roles = jwtUtil.getCurrentUserRoles();
             boolean isAdmin = roles != null && (
@@ -84,19 +90,22 @@ public class DeleteMediaCommandHandler {
                     throw new BusinessException(MediaServiceErrorCode.UNAUTHORIZED);
                 }
 
-                // Tra cứu metadata của file trong cơ sở dữ liệu
                 Optional<Media> mediaOpt = mediaRepository.findByFileKey(actualKey);
                 if (mediaOpt.isEmpty() && !actualKey.equals(rawKey)) {
                     mediaOpt = mediaRepository.findByFileKey(rawKey);
                 }
 
-                if (mediaOpt.isPresent()) {
-                    Media media = mediaOpt.get();
-                    if (media.getUserId() != null && !media.getUserId().equals(currentUserId)) {
-                        log.warn("BOLA attempt blocked: User {} attempted to delete media {} owned by {}",
-                                currentUserId, actualKey, media.getUserId());
-                        throw new BusinessException(MediaServiceErrorCode.FORBIDDEN_ACTION);
-                    }
+                if (mediaOpt.isEmpty()) {
+                    log.warn("Fail-closed BOLA protection: User {} attempted to delete untracked or non-existent media {}",
+                            currentUserId, actualKey);
+                    throw new BusinessException(MediaServiceErrorCode.FORBIDDEN_ACTION);
+                }
+
+                Media media = mediaOpt.get();
+                if (media.getUserId() == null || !media.getUserId().equals(currentUserId)) {
+                    log.warn("BOLA attempt blocked: User {} attempted to delete media {} owned by {}",
+                            currentUserId, actualKey, media.getUserId());
+                    throw new BusinessException(MediaServiceErrorCode.FORBIDDEN_ACTION);
                 }
             }
         }
@@ -107,5 +116,13 @@ public class DeleteMediaCommandHandler {
             mediaRepository.deleteByFileKey(rawKey);
         }
     }
-}
 
+    private boolean hasInternalAuthority() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities() == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream().anyMatch(a ->
+                "ROLE_INTERNAL".equals(a.getAuthority()) || "INTERNAL".equals(a.getAuthority()));
+    }
+}

@@ -92,4 +92,13 @@ public interface UserConnectionRepository extends JpaRepository<UserConnection, 
 
     @Query("SELECT c FROM UserConnection c WHERE c.targetId = :userId AND c.type = 'FOLLOW' AND c.status = 'ACCEPTED'")
     List<UserConnection> findAllAcceptedFollowers(@Param("userId") UUID userId);
+
+    @Query("SELECT COUNT(c) FROM UserConnection c WHERE (c.requesterId = :userId OR c.targetId = :userId) AND c.type = iuh.fit.userservice.domain.enums.ConnectionType.FRIEND AND c.status = iuh.fit.userservice.domain.enums.ConnectionStatus.ACCEPTED")
+    long countAcceptedFriends(@Param("userId") UUID userId);
+
+    @Query("SELECT COUNT(c) FROM UserConnection c WHERE c.targetId = :userId AND c.type = iuh.fit.userservice.domain.enums.ConnectionType.FOLLOW AND c.status = iuh.fit.userservice.domain.enums.ConnectionStatus.ACCEPTED")
+    long countAcceptedFollowers(@Param("userId") UUID userId);
+
+    @Query("SELECT COUNT(c) FROM UserConnection c WHERE c.requesterId = :userId AND c.type = iuh.fit.userservice.domain.enums.ConnectionType.FOLLOW AND c.status = iuh.fit.userservice.domain.enums.ConnectionStatus.ACCEPTED")
+    long countAcceptedFollowing(@Param("userId") UUID userId);
 }

@@ -34,6 +34,11 @@ public class SettingsRepositoryImpl implements SettingsRepository {
     }
 
     @Override
+    public Optional<BlacklistedWord> findBlacklistedWordByWordIgnoreCase(String word) {
+        return jpaBlacklistedWordRepository.findByWordIgnoreCase(word);
+    }
+
+    @Override
     public SystemConfig saveConfig(SystemConfig config) {
         return jpaSystemConfigRepository.save(config);
     }

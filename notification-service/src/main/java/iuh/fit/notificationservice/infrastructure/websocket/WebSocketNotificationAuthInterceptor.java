@@ -1,5 +1,7 @@
 package iuh.fit.notificationservice.infrastructure.websocket;
 
+import iuh.fit.commonframework.infrastructure.cache.RedisCacheService;
+import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -25,14 +27,21 @@ import java.util.Collections;
 public class WebSocketNotificationAuthInterceptor implements ChannelInterceptor {
 
     JwtDecoder jwtDecoder;
+    JwtUtil jwtUtil;
+    RedisCacheService redisCacheService;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+        if (accessor == null || accessor.getCommand() == null) {
+            return message;
+        }
 
-        if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
+        StompCommand command = accessor.getCommand();
+
+        if (StompCommand.CONNECT.equals(command)) {
             String authHeader = accessor.getFirstNativeHeader("Authorization");
-            String token = null;
+            String token;
 
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 token = authHeader.substring(7);
@@ -43,6 +52,7 @@ public class WebSocketNotificationAuthInterceptor implements ChannelInterceptor 
             if (token != null && !token.isBlank()) {
                 try {
                     Jwt jwt = jwtDecoder.decode(token);
+                    validateActiveJwt(jwt);
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(jwt, null, Collections.emptyList());
                     accessor.setUser(authentication);
@@ -50,6 +60,8 @@ public class WebSocketNotificationAuthInterceptor implements ChannelInterceptor 
                         accessor.getSessionAttributes().put("userId", jwt.getSubject());
                     }
                     log.info("WebSocket notification connection authenticated for user: {}", jwt.getSubject());
+                } catch (MessageDeliveryException e) {
+                    throw e;
                 } catch (Exception e) {
                     log.error("WebSocket notification JWT authentication failed: {}", e.getMessage());
                     throw new MessageDeliveryException("Unauthorized STOMP connection: invalid or expired token");
@@ -58,25 +70,22 @@ public class WebSocketNotificationAuthInterceptor implements ChannelInterceptor 
                 log.warn("WebSocket notification CONNECT attempted without token");
                 throw new MessageDeliveryException("Unauthorized STOMP connection: token is required");
             }
-        }
+        } else if (StompCommand.SEND.equals(command)) {
+            Jwt jwt = requireAuthenticatedJwt(accessor);
+            validateActiveJwt(jwt);
 
-        if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            String destination = accessor.getDestination();
+            if (destination != null && (destination.startsWith("/topic") || destination.startsWith("/queue"))) {
+                log.warn("Blocked client STOMP SEND directly to broker destination {} by user {}", destination, jwt.getSubject());
+                throw new MessageDeliveryException("Forbidden: clients cannot publish directly to broker topics or queues");
+            }
+        } else if (StompCommand.SUBSCRIBE.equals(command)) {
+            Jwt jwt = requireAuthenticatedJwt(accessor);
+            validateActiveJwt(jwt);
+
+            String currentUserId = jwt.getSubject();
             String destination = accessor.getDestination();
             if (destination != null) {
-                if (accessor.getUser() == null) {
-                    log.warn("Unauthorized subscription attempt to notification destination: {}", destination);
-                    throw new MessageDeliveryException("Unauthorized subscription: authentication required");
-                }
-
-                String currentUserId = null;
-                if (accessor.getUser() instanceof UsernamePasswordAuthenticationToken auth) {
-                    if (auth.getPrincipal() instanceof Jwt jwt) {
-                        currentUserId = jwt.getSubject();
-                    } else if (auth.getPrincipal() instanceof String s) {
-                        currentUserId = s;
-                    }
-                }
-
                 if (destination.startsWith("/topic/notifications.count.")) {
                     String targetUserId = destination.substring("/topic/notifications.count.".length());
                     if (currentUserId == null || !currentUserId.equalsIgnoreCase(targetUserId)) {
@@ -89,10 +98,30 @@ public class WebSocketNotificationAuthInterceptor implements ChannelInterceptor 
                         log.warn("User {} attempted to subscribe to notifications feed of {}", currentUserId, targetUserId);
                         throw new MessageDeliveryException("Forbidden subscription: cannot subscribe to another user's notifications feed");
                     }
+                } else if (!destination.startsWith("/user/")) {
+                    log.warn("User {} attempted to subscribe to unauthorized destination {}", currentUserId, destination);
+                    throw new MessageDeliveryException("Forbidden subscription destination");
                 }
             }
         }
 
         return message;
+    }
+
+    private Jwt requireAuthenticatedJwt(StompHeaderAccessor accessor) {
+        if (accessor.getUser() instanceof UsernamePasswordAuthenticationToken auth
+                && auth.getPrincipal() instanceof Jwt jwt) {
+            return jwt;
+        }
+        throw new MessageDeliveryException("Unauthorized STOMP frame: authentication required");
+    }
+
+    private void validateActiveJwt(Jwt jwt) {
+        if (!jwtUtil.isTokenValid(jwt)) {
+            throw new MessageDeliveryException("Unauthorized STOMP frame: token expired");
+        }
+        if (jwtUtil.isTokenRevoked(jwt, redisCacheService)) {
+            throw new MessageDeliveryException("Unauthorized STOMP frame: token revoked");
+        }
     }
 }

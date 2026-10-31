@@ -57,7 +57,7 @@ public class GetMutualFriendsHandler {
         }
 
         Map<UUID, UserProfile> profileMap = userProfileRepository.findByUserIdIn(pagedIds).stream()
-                .collect(Collectors.toMap(UserProfile::getUserId, p -> p));
+                .collect(Collectors.toMap(UserProfile::getUserId, p -> p, (a, b) -> a));
 
         List<UserConnectionResult> results = pagedIds.stream()
                 .map(userId -> userConnectionApplicationMapper.toResult(userId, profileMap.get(userId)))

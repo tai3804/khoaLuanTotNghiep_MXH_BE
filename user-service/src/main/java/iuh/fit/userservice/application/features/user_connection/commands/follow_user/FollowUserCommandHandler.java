@@ -3,7 +3,9 @@ package iuh.fit.userservice.application.features.user_connection.commands.follow
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.application.mapper.UserConnectionApplicationMapper;
+import iuh.fit.userservice.application.service.UserCounterSyncService;
 import iuh.fit.userservice.domain.entities.UserConnection;
+import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.enums.ConnectionStatus;
 import iuh.fit.userservice.domain.enums.ConnectionType;
 import iuh.fit.userservice.domain.repository.UserBlockRepository;
@@ -16,8 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import iuh.fit.userservice.domain.entities.UserProfile;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -34,6 +34,7 @@ public class FollowUserCommandHandler {
     UserProfileRepository userProfileRepository;
     UserBlockRepository userBlockRepository;
     UserConnectionApplicationMapper userConnectionApplicationMapper;
+    UserCounterSyncService userCounterSyncService;
     KafkaTemplate<String, Object> kafkaTemplate;
 
     @Transactional
@@ -92,6 +93,10 @@ public class FollowUserCommandHandler {
                 ));
             }
         }
+
+        // Synchronize accurate counters for follower and target
+        userCounterSyncService.syncCounters(command.getFollowerId());
+        userCounterSyncService.syncCounters(finalTargetUserId);
 
         // Publish FOLLOW_USER notification event to Kafka (UC-NO01)
         try {

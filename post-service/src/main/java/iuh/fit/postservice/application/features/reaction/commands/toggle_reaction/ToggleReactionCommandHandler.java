@@ -3,9 +3,11 @@ package iuh.fit.postservice.application.features.reaction.commands.toggle_reacti
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.ReactionFeatureMapper;
+import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.Reaction;
+import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.domain.enums.ReactionType;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.ReactionRepository;
@@ -13,9 +15,9 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
@@ -33,13 +35,20 @@ public class ToggleReactionCommandHandler {
     ReactionFeatureMapper reactionFeatureMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
     ReputationGuard reputationGuard;
+    PostVisibilityService postVisibilityService;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
     public ToggleReactionResult handle(ToggleReactionCommand command) {
-        reputationGuard.checkNotLocked(command.getUserId()); // tài khoản đang bị khóa không thả cảm xúc được
+        reputationGuard.checkNotLocked(command.getUserId());
         Post post = postRepository.findByIdAndDeletedFalse(command.getPostId())
                 .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
+
+        if (post.getStatus() != PostStatus.PUBLISHED
+                || post.isArchived()
+                || !postVisibilityService.canView(post, command.getUserId())) {
+            throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
+        }
 
         Optional<Reaction> existingReaction = reactionRepository.findByPostIdAndUserId(command.getPostId(), command.getUserId());
         ReactionType activeType = null;
@@ -47,18 +56,15 @@ public class ToggleReactionCommandHandler {
         if (existingReaction.isPresent()) {
             Reaction reaction = existingReaction.get();
             if (reaction.getType() == command.getType()) {
-                // Remove reaction (toggle off)
                 reactionRepository.deleteByPostIdAndUserId(command.getPostId(), command.getUserId());
             } else {
-                // Change reaction type
                 reaction.setType(command.getType());
                 reactionRepository.save(reaction);
                 activeType = command.getType();
             }
         } else {
-            // Add new reaction
             Reaction newReaction = reactionFeatureMapper.toEntity(command);
-            reactionRepository.save(newReaction);
+            reactionRepository.saveAndFlush(newReaction);
             activeType = command.getType();
         }
 
@@ -66,7 +72,6 @@ public class ToggleReactionCommandHandler {
         post.setLikeCount(totalReactions);
         postRepository.save(post);
 
-        // Publish notification event to Kafka if not self-reacting (UC-NO01)
         if (activeType != null && post.getAuthorId() != null && !post.getAuthorId().equals(command.getUserId())) {
             try {
                 Map<String, Object> notifEvent = new HashMap<>();
@@ -101,4 +106,3 @@ public class ToggleReactionCommandHandler {
         return reactionFeatureMapper.toToggleResult(command.getPostId(), command.getUserId(), activeType, totalReactions);
     }
 }
-

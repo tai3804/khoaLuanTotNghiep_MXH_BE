@@ -35,6 +35,9 @@ public class FeignClientConfig {
                         template.header("Authorization", authorization);
                         log.debug("Forwarded Authorization header to Feign call: {}", template.url());
                     }
+                } else {
+                    // Running in background Kafka thread, provide internal key for service calls
+                    template.header(InternalApiKeyFilter.HEADER, internalApiKey);
                 }
             }
         };

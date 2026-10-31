@@ -19,6 +19,7 @@ import iuh.fit.userservice.application.features.user_profile.queries.search_user
 import iuh.fit.userservice.application.mapper.UserProfileApplicationMapper;
 import iuh.fit.userservice.domain.entities.ProfileViewHistory;
 import iuh.fit.userservice.domain.entities.UserProfile;
+import iuh.fit.userservice.domain.enums.ConnectionStatus;
 import iuh.fit.userservice.domain.enums.ConnectionType;
 import iuh.fit.userservice.domain.enums.Gender;
 import iuh.fit.userservice.domain.repository.ProfileViewHistoryRepository;
@@ -249,17 +250,28 @@ public class UserProfileController {
             throw new BusinessException(UserServiceErrorCode.RESOURCE_NOT_FOUND);
         }
         UUID currentUserId = UUID.fromString(userIdStr);
-        var pageable = PageRequest.of(page, size);
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        var pageable = PageRequest.of(safePage, safeSize);
         var pageResult = profileViewHistoryRepository.findByTargetUserIdOrderByLastViewedAtDesc(currentUserId,
                 pageable);
 
+        List<UUID> viewerIds = pageResult.getContent().stream()
+                .map(hist -> hist.getViewerId())
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<UUID, UserProfile> profileMap = viewerIds.isEmpty() ? Collections.emptyMap() :
+                userProfileRepository.findByUserIdIn(viewerIds).stream()
+                        .collect(Collectors.toMap(UserProfile::getUserId, p -> p, (a, b) -> a));
+
         List<ProfileVisitorResponse> visitors = pageResult.getContent().stream()
                 .map(hist -> {
-                    var pOpt = userProfileRepository.findByUserId(hist.getViewerId());
-                    String fn = pOpt.map(UserProfile::getFirstName).orElse(null);
-                    String ln = pOpt.map(UserProfile::getLastName).orElse(null);
-                    String mn = pOpt.map(UserProfile::getMiddleName).orElse(null);
-                    String av = pOpt.map(UserProfile::getAvatarUrl).orElse(null);
+                    UserProfile p = profileMap.get(hist.getViewerId());
+                    String fn = p != null ? p.getFirstName() : null;
+                    String ln = p != null ? p.getLastName() : null;
+                    String mn = p != null ? p.getMiddleName() : null;
+                    String av = p != null ? p.getAvatarUrl() : null;
                     String fullName = Stream.of(ln, mn, fn)
                             .filter(s -> s != null && !s.isBlank())
                             .collect(Collectors.joining(" "));
@@ -269,7 +281,8 @@ public class UserProfileController {
                     boolean isFollowing = userConnectionRepository
                             .findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
                                     currentUserId, hist.getViewerId(), ConnectionType.FOLLOW)
-                            .isPresent();
+                            .map(follow -> follow.getStatus() == ConnectionStatus.ACCEPTED)
+                            .orElse(false);
 
                     return ProfileVisitorResponse.builder()
                             .viewerId(hist.getViewerId())

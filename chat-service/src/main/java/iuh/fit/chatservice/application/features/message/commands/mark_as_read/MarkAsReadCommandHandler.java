@@ -31,7 +31,13 @@ public class MarkAsReadCommandHandler {
                 .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.NOT_A_CONVERSATION_MEMBER));
 
         UUID targetMessageId = command.getMessageId();
-        if (targetMessageId == null) {
+        if (targetMessageId != null) {
+            Message msg = messageRepository.findById(targetMessageId)
+                    .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND));
+            if (!msg.getConversationId().equals(command.getConversationId())) {
+                throw new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND);
+            }
+        } else {
             Optional<Message> latestOpt = messageRepository.findTopByConversationIdAndDeletedFalseOrderByCreatedAtDesc(command.getConversationId());
             if (latestOpt.isPresent()) {
                 targetMessageId = latestOpt.get().getId();

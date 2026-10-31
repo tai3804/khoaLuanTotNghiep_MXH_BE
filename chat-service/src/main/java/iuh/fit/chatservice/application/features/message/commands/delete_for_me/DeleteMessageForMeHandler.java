@@ -36,6 +36,10 @@ public class DeleteMessageForMeHandler {
         Message message = messageRepository.findById(command.getMessageId())
                 .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND));
 
+        if (!message.getConversationId().equals(command.getConversationId())) {
+            throw new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND);
+        }
+
         if (!messageUserDeletionRepository.existsByMessageIdAndUserId(message.getId(), command.getCurrentUserId())) {
             MessageUserDeletion deletion = MessageUserDeletion.builder()
                     .messageId(message.getId())

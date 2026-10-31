@@ -35,16 +35,24 @@ public class SendMessageCommandHandler {
 
     @Transactional
     public SendMessageResult handle(SendMessageCommand command) {
+        if (command.getSenderId() == null) {
+            throw new BusinessException(ChatServiceErrorCode.UNAUTHORIZED);
+        }
+
         Conversation conversation = conversationRepository.findById(command.getConversationId())
                 .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.CONVERSATION_NOT_FOUND));
 
-        if (command.getSenderId() != null) {
-            ConversationMember member = conversationMemberRepository
-                    .findByConversationIdAndUserIdAndStatus(command.getConversationId(), command.getSenderId(), MemberStatus.ACTIVE)
-                    .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.NOT_A_CONVERSATION_MEMBER));
+        ConversationMember senderMember = conversationMemberRepository
+                .findByConversationIdAndUserIdAndStatus(command.getConversationId(), command.getSenderId(),
+                        MemberStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.NOT_A_CONVERSATION_MEMBER));
 
-            // Auto-update lastReadMessageId for sender
-            // Note: message ID will be generated upon save
+        if (command.getReplyToMessageId() != null) {
+            Message replyToMessage = messageRepository.findById(command.getReplyToMessageId())
+                    .orElseThrow(() -> new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND));
+            if (!replyToMessage.getConversationId().equals(command.getConversationId()) || replyToMessage.isDeleted()) {
+                throw new BusinessException(ChatServiceErrorCode.MESSAGE_NOT_FOUND);
+            }
         }
 
         MessageType type = command.getType() != null ? command.getType() : MessageType.TEXT;
@@ -61,22 +69,18 @@ public class SendMessageCommandHandler {
         message = messageRepository.save(message);
 
         // Update last message in conversation
-        conversation.setLastMessageContent(command.getContent() != null ? command.getContent() : "[" + type.name() + "]");
+        conversation.setLastMessageContent(command.getContent() != null && !command.getContent().isBlank()
+                ? command.getContent()
+                : "[" + type.name() + "]");
         conversation.setLastMessageAt(LocalDateTime.now());
         conversation.setLastMessageSenderId(command.getSenderId());
         conversationRepository.save(conversation);
 
         // Update lastReadMessageId for sender
-        if (command.getSenderId() != null) {
-            final Message savedMessage = message;
-            conversationMemberRepository.findByConversationIdAndUserIdAndStatus(command.getConversationId(), command.getSenderId(), MemberStatus.ACTIVE)
-                    .ifPresent(m -> {
-                        m.setLastReadMessageId(savedMessage.getId());
-                        conversationMemberRepository.save(m);
-                    });
-        }
+        senderMember.setLastReadMessageId(message.getId());
+        conversationMemberRepository.save(senderMember);
 
-        // UC-NO02/NO06: notify every other active participant.  The
+        // UC-NO02/NO06: notify every other active participant. The
         // notification service applies each recipient's message preference and
         // then persists and pushes the event over its WebSocket topic.
         final Message savedMessageForNotification = message;
@@ -88,7 +92,8 @@ public class SendMessageCommandHandler {
         return messageFeatureMapper.toSendMessageResult(message);
     }
 
-    private void publishNewMessageNotification(ConversationMember recipient, Conversation conversation, Message message) {
+    private void publishNewMessageNotification(ConversationMember recipient, Conversation conversation,
+            Message message) {
         try {
             Map<String, Object> event = new HashMap<>();
             event.put("recipientId", recipient.getUserId().toString());
@@ -96,7 +101,8 @@ public class SendMessageCommandHandler {
             event.put("type", "NEW_MESSAGE");
             event.put("title", "Tin nhắn mới");
             event.put("content", message.getContent() == null || message.getContent().isBlank()
-                    ? "Bạn nhận được một tin nhắn mới" : message.getContent());
+                    ? "Bạn nhận được một tin nhắn mới"
+                    : message.getContent());
             event.put("targetId", conversation.getId().toString());
             event.put("targetUrl", "/chat?conversationId=" + conversation.getId());
             kafkaTemplate.send("notification.in-app.send", event);

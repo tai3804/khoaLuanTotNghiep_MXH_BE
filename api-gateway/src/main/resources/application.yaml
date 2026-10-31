@@ -6,79 +6,13 @@ spring:
     name: api-gateway
   cloud:
     gateway:
-      globalcors:
-        cors-configurations:
-          '[/**]':
-            allowedOriginPatterns:
-              - "*"
-            allowedMethods:
-              - GET
-              - POST
-              - PUT
-              - DELETE
-              - OPTIONS
-              - PATCH
-            allowedHeaders: "*"
-            allowCredentials: true
       default-filters:
+        - RemoveRequestHeader=X-Internal-Key
         - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
       discovery:
         locator:
-          enabled: true
+          enabled: false
           lower-case-service-id: true
-      routes:
-        - id: admin-service
-          uri: ${ADMIN_SERVICE_URL:lb://admin-service}
-          predicates:
-            - Path=/api/v1/admin/**,/api/v1/moderation/**
-        - id: auth-service
-          uri: ${AUTH_SERVICE_URL:lb://auth-service}
-          predicates:
-            - Path=/api/v1/auth/**,/api/v1/devices/**
-        - id: user-service
-          uri: ${USER_SERVICE_URL:lb://user-service}
-          predicates:
-            - Path=/api/v1/users/**,/api/v1/groups/**
-        - id: notification-service
-          uri: ${NOTIFICATION_SERVICE_URL:lb://notification-service}
-          predicates:
-            - Path=/api/v1/notifications/**
-        - id: notification-service-ws
-          uri: ${NOTIFICATION_SERVICE_URL:lb://notification-service}
-          predicates:
-            - Path=/ws-notifications/**
-        - id: media-service
-          uri: ${MEDIA_SERVICE_URL:lb://media-service}
-          predicates:
-            - Path=/api/v1/media/**
-        - id: feed-service
-          uri: ${FEED_SERVICE_URL:lb://feed-service}
-          predicates:
-            - Path=/api/v1/feeds/**
-        - id: post-service
-          uri: ${POST_SERVICE_URL:lb://post-service}
-          predicates:
-            - Path=/api/v1/posts/**,/api/v1/stories/**
-        - id: chat-service
-          uri: ${CHAT_SERVICE_URL:lb://chat-service}
-          predicates:
-            - Path=/api/v1/chat/**
-        - id: chat-service-ws
-          uri: ${CHAT_SERVICE_URL:lb://chat-service}
-          predicates:
-            - Path=/ws-chat/**
-        - id: call-service
-          uri: ${CALL_SERVICE_URL:lb://call-service}
-          predicates:
-            - Path=/api/v1/calls/**,/api/v1/call/**
-        - id: call-service-ws
-          uri: ${CALL_SERVICE_URL:lb://call-service}
-          predicates:
-            - Path=/ws-call/**
-        - id: ai-service
-          uri: ${AI_SERVICE_URL:lb://ai-service}
-          predicates:
-            - Path=/api/v1/ai/**
 
 eureka:
   client:

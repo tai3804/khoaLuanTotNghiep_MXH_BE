@@ -24,6 +24,6 @@ public interface MediaClient {
             @RequestParam(value = "folder", required = false) String folder
     );
 
-    @DeleteMapping("/api/v1/media/delete")
+    @DeleteMapping("/api/v1/internal/media/delete")
     ApiResponse<Void> deleteFile(@RequestParam("fileKey") String fileKey);
 }

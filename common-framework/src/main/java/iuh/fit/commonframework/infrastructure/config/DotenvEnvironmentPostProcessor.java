@@ -5,6 +5,8 @@ import org.springframework.boot.env.EnvironmentPostProcessor;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.MutablePropertySources;
+import org.springframework.core.env.StandardEnvironment;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -39,11 +41,20 @@ public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor,
                         } else if (value.startsWith("'") && value.endsWith("'") && value.length() >= 2) {
                             value = value.substring(1, value.length() - 1);
                         }
+                        if (key.isEmpty() || value.isEmpty()) {
+                            continue;
+                        }
                         envMap.put(key, value);
                     }
                 }
                 if (!envMap.isEmpty()) {
-                    environment.getPropertySources().addFirst(new MapPropertySource("dotenvProperties", envMap));
+                    MutablePropertySources propertySources = environment.getPropertySources();
+                    MapPropertySource dotenvSource = new MapPropertySource("dotenvProperties", envMap);
+                    if (propertySources.contains(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME)) {
+                        propertySources.addAfter(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME, dotenvSource);
+                    } else {
+                        propertySources.addLast(dotenvSource);
+                    }
                     System.out.println("[Dotenv] Loaded " + envMap.size() + " environment variables from: " + envFile.getAbsolutePath());
                 }
             } catch (Exception e) {

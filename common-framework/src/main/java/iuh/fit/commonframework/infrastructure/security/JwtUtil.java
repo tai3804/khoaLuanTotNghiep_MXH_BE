@@ -44,10 +44,22 @@ public class JwtUtil {
      * Lấy tokenVersion từ JWT trong SecurityContext.
      */
     public Integer getTokenVersion() {
-        Jwt jwt = getJwtFromContext();
-        if (jwt != null && jwt.hasClaim("tokenVersion")) {
-            Long versionLong = jwt.getClaim("tokenVersion");
-            return versionLong != null ? versionLong.intValue() : 1;
+        return extractTokenVersion(getJwtFromContext());
+    }
+
+    public int extractTokenVersion(Jwt jwt) {
+        if (jwt == null || !jwt.hasClaim("tokenVersion")) {
+            return 1;
+        }
+        Object versionObj = jwt.getClaim("tokenVersion");
+        if (versionObj instanceof Number num) {
+            return num.intValue();
+        }
+        if (versionObj instanceof String str) {
+            try {
+                return Integer.parseInt(str.trim());
+            } catch (NumberFormatException ignored) {
+            }
         }
         return 1;
     }
@@ -78,7 +90,10 @@ public class JwtUtil {
      * Kiểm tra Token hợp lệ thủ công (chưa hết hạn)
      */
     public boolean isTokenValid() {
-        Jwt jwt = getJwtFromContext();
+        return isTokenValid(getJwtFromContext());
+    }
+
+    public boolean isTokenValid(Jwt jwt) {
         if (jwt != null) {
             return jwt.getExpiresAt() != null && jwt.getExpiresAt().isAfter(Instant.now());
         }
@@ -89,7 +104,10 @@ public class JwtUtil {
      * Kiểm tra xem Token có bị thu hồi hay không qua RedisCacheService.
      */
     public boolean isTokenRevoked(RedisCacheService redisCacheService) {
-        Jwt jwt = getJwtFromContext();
+        return isTokenRevoked(getJwtFromContext(), redisCacheService);
+    }
+
+    public boolean isTokenRevoked(Jwt jwt, RedisCacheService redisCacheService) {
         if (jwt == null || redisCacheService == null) {
             return false;
         }
@@ -101,8 +119,8 @@ public class JwtUtil {
 
         try {
             UUID userId = UUID.fromString(userIdStr);
-            Integer version = getTokenVersion();
-            return redisCacheService.isTokenRevoked(userId, version != null ? version : 1);
+            int version = extractTokenVersion(jwt);
+            return redisCacheService.isTokenRevoked(userId, version);
         } catch (IllegalArgumentException e) {
             return false;
         }
@@ -112,7 +130,10 @@ public class JwtUtil {
      * Kiểm tra xem Token có bị thu hồi hay không qua StringRedisTemplate.
      */
     public boolean isTokenRevoked(StringRedisTemplate redisTemplate) {
-        Jwt jwt = getJwtFromContext();
+        return isTokenRevoked(getJwtFromContext(), redisTemplate);
+    }
+
+    public boolean isTokenRevoked(Jwt jwt, StringRedisTemplate redisTemplate) {
         if (jwt == null || redisTemplate == null) {
             return false;
         }
@@ -122,14 +143,14 @@ public class JwtUtil {
             return false;
         }
 
-        String redisKey = "user:token_version:" + userId;
+        String redisKey = RedisCacheService.TOKEN_VERSION_PREFIX + userId;
         String cachedVersionStr = redisTemplate.opsForValue().get(redisKey);
 
         if (cachedVersionStr != null) {
             try {
-                int cachedVersion = Integer.parseInt(cachedVersionStr);
-                Integer tokenVersion = getTokenVersion();
-                if (tokenVersion != null && tokenVersion < cachedVersion) {
+                int cachedVersion = Integer.parseInt(cachedVersionStr.replace("\"", "").trim());
+                int tokenVersion = extractTokenVersion(jwt);
+                if (tokenVersion < cachedVersion) {
                     return true;
                 }
             } catch (NumberFormatException ignored) {

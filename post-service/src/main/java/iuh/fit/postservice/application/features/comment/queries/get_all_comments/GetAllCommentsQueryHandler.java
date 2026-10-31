@@ -1,12 +1,19 @@
 package iuh.fit.postservice.application.features.comment.queries.get_all_comments;
 
 import iuh.fit.commonframework.application.dto.PagedResponse;
+import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.commonframework.infrastructure.filter.SortDirection;
+import iuh.fit.commonframework.infrastructure.security.JwtUtil;
+import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.features.comment.commands.create_comment.CreateCommentResult;
 import iuh.fit.postservice.application.mapper.CommentFeatureMapper;
+import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.domain.entities.Comment;
+import iuh.fit.postservice.domain.entities.Post;
+import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.infrastructure.persistence.repository.CommentRepository;
+import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -29,15 +37,36 @@ import java.util.Map;
 public class GetAllCommentsQueryHandler {
 
     CommentRepository commentRepository;
+    PostRepository postRepository;
+    PostVisibilityService postVisibilityService;
+    JwtUtil jwtUtil;
     CommentFeatureMapper commentFeatureMapper;
 
     @Transactional(readOnly = true)
     public PagedResponse<CreateCommentResult> handle(GetAllCommentsQuery query) {
+        if (query.getPostId() == null) {
+            throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
+        }
+
+        Post post = postRepository.findByIdAndDeletedFalse(query.getPostId())
+                .orElseThrow(() -> new BusinessException(PostServiceErrorCode.POST_NOT_FOUND));
+
+        boolean isStaff = isStaffUser();
+        boolean isAuthor = query.getViewerId() != null && Objects.equals(query.getViewerId(), post.getAuthorId());
+        if (!isStaff && !isAuthor) {
+            if (post.isArchived()
+                    || post.getStatus() != PostStatus.PUBLISHED
+                    || !postVisibilityService.canView(post, query.getViewerId())) {
+                throw new BusinessException(PostServiceErrorCode.POST_NOT_FOUND);
+            }
+        }
+
         BaseFilter filter = query.getFilter() != null ? query.getFilter() : new BaseFilter();
 
         Specification<Comment> spec = (root, q, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("deleted"), false));
+            predicates.add(cb.equal(root.get("postId"), query.getPostId()));
 
             if (filter.getKeyword() != null && !filter.getKeyword().isBlank()) {
                 String searchPattern = "%" + filter.getKeyword().toLowerCase().trim() + "%";
@@ -46,10 +75,11 @@ public class GetAllCommentsQueryHandler {
 
             if (filter.getFilters() != null) {
                 for (Map.Entry<String, Object> entry : filter.getFilters().entrySet()) {
-                    if (entry.getKey() != null && entry.getValue() != null) {
+                    if (entry.getKey() != null && entry.getValue() != null && !"postId".equals(entry.getKey())) {
                         try {
                             predicates.add(cb.equal(root.get(entry.getKey()), entry.getValue()));
-                        } catch (IllegalArgumentException ignored) {}
+                        } catch (IllegalArgumentException ignored) {
+                        }
                     }
                 }
             }
@@ -69,5 +99,19 @@ public class GetAllCommentsQueryHandler {
                 .toList();
 
         return commentFeatureMapper.toPagedResponse(commentsPage, content);
+    }
+
+    private boolean isStaffUser() {
+        try {
+            List<String> roles = jwtUtil.getCurrentUserRoles();
+            return roles != null && roles.stream().anyMatch(r ->
+                    "ROLE_ADMIN".equalsIgnoreCase(r) ||
+                    "ADMIN".equalsIgnoreCase(r) ||
+                    "ROLE_MODERATOR".equalsIgnoreCase(r) ||
+                    "MODERATOR".equalsIgnoreCase(r)
+            );
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }

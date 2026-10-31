@@ -40,6 +40,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 
@@ -93,7 +94,11 @@ public class CommentController {
             @PathVariable("postId") UUID postId,
             @PathVariable("commentId") UUID commentId) {
         UUID currentUserId = getCurrentUserId();
-        DeleteCommentCommand command = DeleteCommentCommand.builder().commentId(commentId).userId(currentUserId).build();
+        DeleteCommentCommand command = DeleteCommentCommand.builder()
+                .postId(postId)
+                .commentId(commentId)
+                .userId(currentUserId)
+                .build();
         deleteCommentCommandHandler.handle(command);
         return ResponseEntity.ok(ApiResponse.success(null, MessageConstants.COMMENT_DELETED_SUCCESSFULLY));
     }
@@ -123,6 +128,7 @@ public class CommentController {
         GetPostCommentsQuery query = GetPostCommentsQuery.builder()
                 .postId(postId)
                 .parentCommentId(parentCommentId)
+                .viewerId(getOptionalCurrentUserId())
                 .page(page)
                 .size(size)
                 .build();
@@ -136,10 +142,17 @@ public class CommentController {
     public ResponseEntity<ApiResponse<List<CommentResponse>>> getAllComments(
             @PathVariable("postId") UUID postId,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
-        if (filter.getFilters() != null) {
-            filter.getFilters().put("postId", postId);
+        BaseFilter safeFilter = filter != null ? filter : new BaseFilter();
+        if (safeFilter.getFilters() == null) {
+            safeFilter.setFilters(new HashMap<>());
         }
-        GetAllCommentsQuery query = GetAllCommentsQuery.builder().filter(filter).build();
+        safeFilter.getFilters().put("postId", postId);
+
+        GetAllCommentsQuery query = GetAllCommentsQuery.builder()
+                .postId(postId)
+                .viewerId(getOptionalCurrentUserId())
+                .filter(safeFilter)
+                .build();
         PagedResponse<CreateCommentResult> result = getAllCommentsQueryHandler.handle(query);
         PagedResponse<CommentResponse> pagedResponse = commentPresentationMapper.toPagedResponse(result);
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.COMMENTS_RETRIEVED_SUCCESSFULLY));
@@ -151,5 +164,17 @@ public class CommentController {
             throw new BusinessException(ErrorCode.UNAUTHENTICATED);
         }
         return UUID.fromString(userIdStr);
+    }
+
+    private UUID getOptionalCurrentUserId() {
+        String userIdStr = jwtUtil.getCurrentUserId();
+        if (userIdStr == null || userIdStr.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(userIdStr);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

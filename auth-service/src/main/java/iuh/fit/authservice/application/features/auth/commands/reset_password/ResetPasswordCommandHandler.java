@@ -22,6 +22,8 @@ import java.time.Duration;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ResetPasswordCommandHandler {
 
+    private static final int MAX_RESET_ATTEMPTS = 5;
+
     UserRepository userRepository;
     DeviceRepository deviceRepository;
     PasswordEncoder passwordEncoder;
@@ -29,15 +31,32 @@ public class ResetPasswordCommandHandler {
 
     @Transactional
     public void handle(ResetPasswordCommand command) {
-        User user = userRepository.findByEmail(command.getEmail())
+        String normalizedEmail = command.getEmail() != null ? command.getEmail().trim().toLowerCase() : "";
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.EMAIL_NOT_FOUND));
 
-        String otpRedisKey = "password_reset:" + command.getEmail();
+        String canonicalEmail = user.getEmail().trim().toLowerCase();
+        String otpRedisKey = "password_reset:" + canonicalEmail;
+        String attemptsKey = "password_reset_attempts:" + canonicalEmail;
         String storedOtp = redisCacheService.get(otpRedisKey, String.class);
 
-        if (storedOtp == null || !storedOtp.equals(command.getResetToken())) {
-            log.warn("Invalid or expired OTP reset attempt for email: {}", command.getEmail());
-            throw new BusinessException(AuthErrorCode.INVALID_TOKEN);
+        if (storedOtp == null) {
+            log.warn("Expired or missing OTP reset attempt for email: {}", canonicalEmail);
+            throw new BusinessException(AuthErrorCode.INVALID_OTP);
+        }
+
+        String providedOtp = command.getResetToken() != null ? command.getResetToken().trim() : "";
+        if (!storedOtp.equals(providedOtp)) {
+            Integer currentAttempts = redisCacheService.get(attemptsKey, Integer.class);
+            int attempts = (currentAttempts != null ? currentAttempts : 0) + 1;
+            redisCacheService.set(attemptsKey, attempts, Duration.ofMinutes(15));
+            if (attempts >= MAX_RESET_ATTEMPTS) {
+                redisCacheService.delete(otpRedisKey);
+                redisCacheService.delete(attemptsKey);
+                throw new BusinessException(AuthErrorCode.TOO_MANY_ATTEMPTS);
+            }
+            log.warn("Invalid OTP reset attempt ({}/{}) for email: {}", attempts, MAX_RESET_ATTEMPTS, canonicalEmail);
+            throw new BusinessException(AuthErrorCode.INVALID_OTP);
         }
 
         // 1. Encode & update new password
@@ -48,15 +67,16 @@ public class ResetPasswordCommandHandler {
         user.setTokenVersion(newVersion);
         userRepository.save(user);
 
-        // 3. Delete OTP from Redis
+        // 3. Delete OTP & attempt counter from Redis
         redisCacheService.delete(otpRedisKey);
+        redisCacheService.delete(attemptsKey);
 
         // 4. Delete all device sessions
         deviceRepository.deleteAllByUserId(user.getId());
 
-        // 5. Cache new tokenVersion in Redis with 1-hour TTL via RedisCacheService
-        redisCacheService.setTokenVersion(user.getId(), newVersion, Duration.ofHours(1));
+        // 5. Cache new tokenVersion in Redis with 7-day TTL via RedisCacheService
+        redisCacheService.setTokenVersion(user.getId(), newVersion, Duration.ofDays(7));
 
-        log.info("Password successfully reset for email: {}, new tokenVersion: {}", command.getEmail(), newVersion);
+        log.info("Password successfully reset for userId: {}, new tokenVersion: {}", user.getId(), newVersion);
     }
 }

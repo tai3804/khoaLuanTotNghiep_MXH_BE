@@ -4,8 +4,10 @@ import iuh.fit.commonframework.infrastructure.persistence.jpa.BaseJpaRepository;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.enums.PostPrivacy;
 import iuh.fit.postservice.domain.enums.PostStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -21,10 +23,17 @@ import java.util.UUID;
 public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     Page<Post> findByAuthorIdAndDeletedFalse(UUID authorId, Pageable pageable);
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedFalse(UUID authorId, Pageable pageable);
+    Page<Post> findByAuthorIdAndStatusAndDeletedFalseAndIsArchivedFalse(UUID authorId, PostStatus status, Pageable pageable);
     Page<Post> findByAuthorIdAndDeletedFalseAndIsArchivedTrue(UUID authorId, Pageable pageable);
     List<Post> findByGroupIdAndAppealStatusOrderByUpdatedAtDesc(UUID groupId, iuh.fit.postservice.domain.enums.ModerationAppealStatus appealStatus);
     Page<Post> findByDeletedFalse(Pageable pageable);
+    long countByDeletedFalse();
     Optional<Post> findByIdAndDeletedFalse(UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Post p WHERE p.id = :id AND p.deleted = false")
+    Optional<Post> findByIdAndDeletedFalseForUpdate(@Param("id") UUID id);
+
     List<Post> findByGroupIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, PostStatus status);
 
     /** Bài của một người trong nhóm đã bị quản trị viên gỡ (để họ xem và kháng nghị). */
@@ -71,12 +80,12 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     List<Post> findByGroupIdAndAuthorIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, UUID authorId, PostStatus status);
 
     /** Nhóm bị xóa thì mọi bài của nhóm cũng bị gỡ (không còn nơi nào để hiển thị). */
-    @org.springframework.data.jpa.repository.Modifying
+    @Modifying
     @Query("UPDATE Post p SET p.deleted = true WHERE p.groupId = :groupId AND p.deleted = false")
     int softDeleteByGroupId(@Param("groupId") UUID groupId);
     List<Post> findByAppealStatusOrderByUpdatedAtDesc(iuh.fit.postservice.domain.enums.ModerationAppealStatus status);
 
-    @Query("SELECT p FROM Post p JOIN p.hashtags h WHERE LOWER(h) = LOWER(:hashtag) AND p.deleted = false AND p.status = 'PUBLISHED' ORDER BY p.createdAt DESC")
+    @Query("SELECT p FROM Post p JOIN p.hashtags h WHERE LOWER(h) = LOWER(:hashtag) AND p.deleted = false AND p.isArchived = false AND p.status = 'PUBLISHED' ORDER BY p.createdAt DESC")
     Page<Post> findByHashtag(@Param("hashtag") String hashtag, Pageable pageable);
 
     @Modifying

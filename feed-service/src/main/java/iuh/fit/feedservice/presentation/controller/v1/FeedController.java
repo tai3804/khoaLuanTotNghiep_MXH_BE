@@ -19,6 +19,8 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -53,6 +55,16 @@ public class FeedController {
             @PathVariable UUID userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
+        UUID currentUserId = getCurrentUserId();
+        boolean isSelf = currentUserId.equals(userId);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isStaff = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()) || "ROLE_MODERATOR".equals(a.getAuthority()) || "ROLE_INTERNAL".equals(a.getAuthority()));
+
+        if (!isSelf && !isStaff) {
+            throw new BusinessException(FeedServiceErrorCode.FORBIDDEN);
+        }
+
         GetUserFeedQuery query = feedPresentationMapper.toQuery(userId, page, size);
         PagedResponse<GetUserFeedResult> result = getUserFeedQueryHandler.handle(query);
         PagedResponse<FeedItemResponse> response = feedPresentationMapper.toPagedResponse(result);

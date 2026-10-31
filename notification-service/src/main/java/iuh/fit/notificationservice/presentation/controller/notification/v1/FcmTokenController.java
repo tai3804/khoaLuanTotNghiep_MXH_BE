@@ -25,6 +25,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -64,6 +65,7 @@ public class FcmTokenController {
     }
 
     @PostMapping("/push/send")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INTERNAL')")
     @Operation(summary = "Send FCM push notification", description = "Sends a real-time Web/Mobile FCM push notification to a target user")
     public ResponseEntity<ApiResponse<Integer>> sendPushNotification(
             @Valid @RequestBody SendPushNotificationRequest request) {

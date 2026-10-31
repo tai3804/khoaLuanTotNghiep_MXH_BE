@@ -17,7 +17,6 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
 import org.springframework.security.core.GrantedAuthority;
@@ -60,7 +59,10 @@ public class SecurityConfig {
                         "/v3/api-docs/**",
                         "/swagger-ui/**",
                         "/swagger-ui.html",
-                        "/actuator/**",
+                        "/actuator/health",
+                        "/actuator/health/**",
+                        "/actuator/info",
+                        "/actuator/prometheus",
                         "/api/v1/media/files/**",
                         "/api/v1/admin/settings/public",
                         "/api/v1/admin/settings/public/**",
@@ -89,7 +91,20 @@ public class SecurityConfig {
                                 .sessionManagement(session -> session
                                                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                                 .authorizeHttpRequests(auth -> auth
-                                                .requestMatchers("/api/v1/posts/admin/**", "/api/v1/groups/admin/**").authenticated()
+                                                .requestMatchers(
+                                                                "/api/v1/posts/admin/**",
+                                                                "/api/v1/groups/admin/**",
+                                                                "/api/v1/users/admin/**",
+                                                                "/api/v1/posts/scheduled/**",
+                                                                "/api/v1/posts/analytics/**",
+                                                                "/api/v1/posts/saved/**",
+                                                                "/api/v1/posts/moderation-appeals/**",
+                                                                "/api/v1/posts/group/*/pending",
+                                                                "/api/v1/posts/group/*/my-pending",
+                                                                "/api/v1/posts/group/*/appeals",
+                                                                "/api/v1/posts/group/*/my-appeals",
+                                                                "/api/v1/posts/group/*/reports")
+                                                .authenticated()
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/posts", "/api/v1/posts/**").permitAll()
                                                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                                                 .anyRequest().authenticated())
@@ -115,7 +130,7 @@ public class SecurityConfig {
                 defaultDecoder.setJwtValidator(new JwtTimestampValidator(Duration.ofSeconds(5)));
                 return token -> {
                         Jwt jwt = defaultDecoder.decode(token);
-                        
+
                         String subject = jwt.getSubject();
                         if (subject != null) {
                                 try {
@@ -129,7 +144,7 @@ public class SecurityConfig {
                                                         tokenVersion = Integer.parseInt((String) tokenVersionObj);
                                                 } catch (NumberFormatException ignored) {}
                                         }
-                                        
+
                                         if (redisCacheService.isTokenRevoked(userId, tokenVersion)) {
                                                 throw new JwtValidationException("Token has been revoked (User Banned or Logged Out)", List.of());
                                         }

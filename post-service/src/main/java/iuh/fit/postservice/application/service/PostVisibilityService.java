@@ -23,7 +23,10 @@ public class PostVisibilityService {
     private final UserConnectionClient userConnectionClient;
 
     public boolean canView(Post post, UUID viewerId) {
-        if (viewerId == null || post == null) return false;
+        if (post == null) return false;
+        if (viewerId == null) {
+            return post.getPrivacy() == PostPrivacy.PUBLIC && post.getGroupId() == null;
+        }
         if (viewerId.equals(post.getAuthorId())) return true;
         if (post.getGroupId() != null) {
             UserConnectionClient.GroupFeedVisibility group = loadGroupVisibility(List.of(post)).get(post.getGroupId());

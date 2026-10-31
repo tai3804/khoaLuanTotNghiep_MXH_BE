@@ -40,48 +40,43 @@ public class AdminDataInitializer implements ApplicationRunner {
 
         Optional<User> existingUserOpt = userRepository.findByEmail(adminEmail);
         if (existingUserOpt.isPresent()) {
-            User existingUser = existingUserOpt.get();
-            existingUser.setPassword(passwordEncoder.encode(adminPassword));
-            existingUser.setStatus(UserStatus.ACTIVE);
-            existingUser.setRoles(Set.of("ROLE_ADMIN", "ROLE_USER"));
-            userRepository.save(existingUser);
-            log.info("Default Admin account ({}) exists and password has been synced to '{}'.", adminEmail, adminPassword);
+            log.info("Default Admin account ({}) already exists; preserving existing credentials and status.", adminEmail);
         } else {
             User adminUser = User.builder()
-                .id(null)
-                .email(adminEmail)
-                .password(passwordEncoder.encode(adminPassword))
-                .firstName("Admin")
-                .lastName("Hệ Thống")
-                .middleName("")
-                .status(UserStatus.ACTIVE)
-                .roles(Set.of("ROLE_ADMIN", "ROLE_USER"))
-                .permissions(Set.of("ALL", "ADMIN_ACCESS", "MODERATION_ACCESS"))
-                .mfaEnabled(false)
-                .mfaType(MfaType.NONE)
-                .tokenVersion(1)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .deleted(false)
-                .build();
-
-            User savedAdmin = userRepository.save(adminUser);
-            log.info("Default Admin account created successfully! ID: {}, Identifier: {}, Password: {}", savedAdmin.getId(), adminEmail, adminPassword);
-
-        // Broadcast UserRegisteredEvent for UserProfile creation in user-service
-            try {
-            UserRegisteredEvent event = UserRegisteredEvent.builder()
-                    .userId(savedAdmin.getId())
-                    .email(savedAdmin.getEmail())
-                    .firstName(savedAdmin.getFirstName())
-                    .lastName(savedAdmin.getLastName())
-                    .middleName(savedAdmin.getMiddleName())
-                    .dateOfBirth(LocalDate.of(2000, 1, 1))
-                    .gender("OTHER")
+                    .id(null)
+                    .email(adminEmail)
+                    .password(passwordEncoder.encode(adminPassword))
+                    .firstName("Admin")
+                    .lastName("Hệ Thống")
+                    .middleName("")
+                    .status(UserStatus.ACTIVE)
+                    .roles(Set.of("ROLE_ADMIN", "ROLE_USER"))
+                    .permissions(Set.of("ALL", "ADMIN_ACCESS", "MODERATION_ACCESS"))
+                    .mfaEnabled(false)
+                    .mfaType(MfaType.NONE)
+                    .tokenVersion(1)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .deleted(false)
                     .build();
 
-            kafkaTemplate.send("user.registered", event);
-            log.info("Sent user.registered event for Admin userId: {}", savedAdmin.getId());
+            User savedAdmin = userRepository.save(adminUser);
+            log.info("Default Admin account created successfully! ID: {}, Identifier: {}", savedAdmin.getId(), adminEmail);
+
+            // Broadcast UserRegisteredEvent for UserProfile creation in user-service
+            try {
+                UserRegisteredEvent event = UserRegisteredEvent.builder()
+                        .userId(savedAdmin.getId())
+                        .email(savedAdmin.getEmail())
+                        .firstName(savedAdmin.getFirstName())
+                        .lastName(savedAdmin.getLastName())
+                        .middleName(savedAdmin.getMiddleName())
+                        .dateOfBirth(LocalDate.of(2000, 1, 1))
+                        .gender("OTHER")
+                        .build();
+
+                kafkaTemplate.send("user.registered", event);
+                log.info("Sent user.registered event for Admin userId: {}", savedAdmin.getId());
             } catch (Exception e) {
                 log.warn("Could not publish user.registered Kafka event for admin: {}", e.getMessage());
             }
@@ -91,18 +86,11 @@ public class AdminDataInitializer implements ApplicationRunner {
     }
 
     private void initializeModerator() {
-        // This intentionally runs independently of Admin creation. Existing deployments
-        // normally already have an Admin account, and must still receive the test Moderator.
         String modEmail = "moderator@kltn.local";
         String modPassword = "mod123";
         Optional<User> existingModOpt = userRepository.findByEmail(modEmail);
         if (existingModOpt.isPresent()) {
-            User existingMod = existingModOpt.get();
-            existingMod.setPassword(passwordEncoder.encode(modPassword));
-            existingMod.setStatus(UserStatus.ACTIVE);
-            existingMod.setRoles(Set.of("ROLE_MODERATOR", "ROLE_USER"));
-            userRepository.save(existingMod);
-            log.info("Default Moderator account ({}) exists and password has been synced to '{}'.", modEmail, modPassword);
+            log.info("Default Moderator account ({}) already exists; preserving existing credentials and status.", modEmail);
         } else {
             User modUser = User.builder()
                     .id(null)
@@ -123,7 +111,7 @@ public class AdminDataInitializer implements ApplicationRunner {
                     .build();
 
             User savedMod = userRepository.save(modUser);
-            log.info("Default Moderator account created successfully! ID: {}, Identifier: {}, Password: {}", savedMod.getId(), modEmail, modPassword);
+            log.info("Default Moderator account created successfully! ID: {}, Identifier: {}", savedMod.getId(), modEmail);
 
             try {
                 UserRegisteredEvent event = UserRegisteredEvent.builder()

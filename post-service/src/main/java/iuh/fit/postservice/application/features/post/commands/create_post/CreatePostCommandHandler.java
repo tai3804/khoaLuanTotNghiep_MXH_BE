@@ -5,6 +5,10 @@ import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.event.PostCreatedEvent;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.PostFeatureMapper;
+import iuh.fit.postservice.application.service.GroupNotificationPublisher;
+import iuh.fit.postservice.application.service.PostPublicationHelper;
+import iuh.fit.postservice.application.service.ReputationGuard;
+import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import iuh.fit.postservice.application.util.TagAndHashtagHelper;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
@@ -15,10 +19,6 @@ import iuh.fit.postservice.infrastructure.client.user.UserConnectionClient;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostMediaRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
 import lombok.AccessLevel;
-import iuh.fit.postservice.application.service.GroupNotificationPublisher;
-import iuh.fit.postservice.application.service.LiveNotificationPublisher;
-import iuh.fit.postservice.application.service.ReputationGuard;
-import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
@@ -30,10 +30,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -51,7 +49,7 @@ public class CreatePostCommandHandler {
     RankedFeedCache rankedFeedCache;
     ReputationGuard reputationGuard;
     GroupNotificationPublisher groupNotificationPublisher;
-    LiveNotificationPublisher liveNotificationPublisher;
+    PostPublicationHelper postPublicationHelper;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -62,7 +60,6 @@ public class CreatePostCommandHandler {
         boolean hasPoll = (command.getPoll() != null && command.getPoll().getQuestion() != null && !command.getPoll().getQuestion().isBlank())
                 || (command.getPollJson() != null && !command.getPollJson().isBlank());
 
-        // Quyền đăng bài / phát trực tiếp theo bậc điểm uy tín (giãn cách, giới hạn ngày, cấm ở bậc thấp)
         reputationGuard.checkCanPost(command.getAuthorId(),
                 command.getContent() != null && command.getContent().startsWith(ReputationGuard.LIVE_MARKER));
 
@@ -70,8 +67,6 @@ public class CreatePostCommandHandler {
             throw new BusinessException(PostServiceErrorCode.INVALID_POST_CONTENT);
         }
 
-        // A post assigned to a group must always be authored by an approved member.
-        // The client-side UI is not a security boundary, so enforce this at the service layer.
         boolean requiresGroupApproval = false;
         if (command.getGroupId() != null) {
             try {
@@ -82,7 +77,6 @@ public class CreatePostCommandHandler {
                 boolean isMember = membership != null;
                 if (!isMember) {
                     log.warn("User {} is not an approved member of group {}", command.getAuthorId(), command.getGroupId());
-                    // 403 chứ không phải 401: người dùng vẫn đăng nhập, chỉ là chưa có quyền đăng trong nhóm này
                     throw new BusinessException(PostServiceErrorCode.GROUP_MEMBERSHIP_REQUIRED);
                 }
                 requiresGroupApproval = membership.postApprovalRequired()
@@ -101,18 +95,15 @@ public class CreatePostCommandHandler {
             post.setPrivacy(PostPrivacy.PUBLIC);
         }
 
-        // Only list allowedUserIds when privacy is CUSTOM
         if (post.getPrivacy() != PostPrivacy.CUSTOM) {
             post.setAllowedUserIds(new HashSet<>());
         } else if (post.getAllowedUserIds() == null) {
             post.setAllowedUserIds(new HashSet<>());
         }
 
-        // Extract and assign hashtags
         Set<String> hashtags = TagAndHashtagHelper.extractHashtags(command.getContent());
         post.setHashtags(hashtags);
 
-        // Extract and assign tagged users
         Set<UUID> allTaggedUserIds = new HashSet<>();
         if (command.getTaggedUserIds() != null) {
             allTaggedUserIds.addAll(command.getTaggedUserIds());
@@ -120,7 +111,6 @@ public class CreatePostCommandHandler {
         allTaggedUserIds.addAll(TagAndHashtagHelper.extractMentions(command.getContent()));
         post.setTaggedUserIds(allTaggedUserIds);
 
-        // Assign Poll if present
         if (hasPoll) {
             if (command.getPoll() != null) {
                 post.setPollData(iuh.fit.postservice.application.util.PostPollHelper.buildPollJson(command.getPoll()));
@@ -145,7 +135,6 @@ public class CreatePostCommandHandler {
 
         post.setLastActivityAt(java.time.LocalDateTime.now());
         Post savedPost = postRepository.save(post);
-        // Tác giả vừa đăng: bỏ bản chụp bảng tin đã xếp hạng của họ để thấy ngay bài mới
         rankedFeedCache.evictViewer(savedPost.getAuthorId());
         List<PostMedia> savedMediaList = new ArrayList<>();
 
@@ -192,48 +181,32 @@ public class CreatePostCommandHandler {
             }
         }
 
-        PostCreatedEvent event = PostCreatedEvent.builder()
-                .postId(savedPost.getId())
-                .authorId(savedPost.getAuthorId())
-                .content(savedPost.getContent())
-                .files(mediaPayloads)
-                .build();
+        // Chỉ phát PostCreatedEvent ngay khi cần upload file lên S3 hoặc khi bài được PUBLISHED ngay lập tức.
+        // Bài SCHEDULED / PENDING_APPROVAL không kèm file sẽ phát sự kiện này vào đúng thời điểm được đăng/duyệt.
+        if (hasFiles || savedPost.getStatus() == PostStatus.PUBLISHED) {
+            PostCreatedEvent event = PostCreatedEvent.builder()
+                    .postId(savedPost.getId())
+                    .authorId(savedPost.getAuthorId())
+                    .content(savedPost.getContent())
+                    .files(mediaPayloads)
+                    .build();
 
-        kafkaTemplate.send("post.created", event);
-        log.info("Published PostCreatedEvent to Kafka topic 'post.created' for postId: {}", savedPost.getId());
-
-        // Publish TAG_POST notifications to tagged users
-        if (!allTaggedUserIds.isEmpty()) {
-            for (UUID taggedUserId : allTaggedUserIds) {
-                if (taggedUserId != null && !taggedUserId.equals(savedPost.getAuthorId())) {
-                    try {
-                        Map<String, Object> tagEvent = new HashMap<>();
-                        tagEvent.put("recipientId", taggedUserId.toString());
-                        tagEvent.put("actorId", savedPost.getAuthorId().toString());
-                        tagEvent.put("type", "TAG_POST");
-                        tagEvent.put("title", "Gắn thẻ trong bài viết");
-                        tagEvent.put("content", "Một người dùng đã gắn thẻ bạn trong một bài viết.");
-                        tagEvent.put("targetId", savedPost.getId().toString());
-                        tagEvent.put("targetUrl", "/posts/" + savedPost.getId());
-                        tagEvent.put("avatarUrl", null);
-
-                        kafkaTemplate.send("notification.in-app.send", tagEvent);
-                        log.info("Published TAG_POST notification to tagged user: {}", taggedUserId);
-                    } catch (Exception e) {
-                        log.warn("Failed to publish TAG_POST notification for user {}: {}", taggedUserId, e.getMessage());
-                    }
+            UUID postId = savedPost.getId();
+            boolean trackMediaUpload = hasFiles;
+            kafkaTemplate.send("post.created", event).whenComplete((sendResult, ex) -> {
+                if (ex != null && trackMediaUpload) {
+                    postPublicationHelper.markMediaUploadFailed(postId, ex);
                 }
-            }
+            });
+            log.info("Published PostCreatedEvent to Kafka topic 'post.created' for postId: {} (status={})",
+                    savedPost.getId(), savedPost.getStatus());
         }
 
-        // Thông báo của nhóm: bài chờ duyệt báo cho quản trị viên, bài đăng thẳng báo cho thành viên chọn "mọi bài viết"
-        if (savedPost.getGroupId() != null) {
-            if (savedPost.getStatus() == PostStatus.PENDING_APPROVAL) groupNotificationPublisher.postPending(savedPost);
-            else groupNotificationPublisher.postPublished(savedPost);
+        if (savedPost.getStatus() == PostStatus.PENDING_APPROVAL && savedPost.getGroupId() != null) {
+            groupNotificationPublisher.postPending(savedPost);
+        } else if (savedPost.getStatus() == PostStatus.PUBLISHED) {
+            postPublicationHelper.notifyPostPublished(savedPost);
         }
-
-        // Bài phát trực tiếp: báo cho bạn bè của người phát
-        liveNotificationPublisher.liveStarted(savedPost);
 
         CreatePostResult result = postFeatureMapper.toCreateResult(savedPost, savedMediaList);
         result.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(savedPost.getPollData(), savedPost.getAuthorId()));

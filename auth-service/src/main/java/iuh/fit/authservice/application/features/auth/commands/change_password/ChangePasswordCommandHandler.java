@@ -43,7 +43,7 @@ public class ChangePasswordCommandHandler {
 
         // 1. Encode & update new password
         user.setPassword(passwordEncoder.encode(command.getNewPassword()));
-        
+
         // 2. Increment tokenVersion in DB
         int newVersion = (user.getTokenVersion() != null ? user.getTokenVersion() : 1) + 1;
         user.setTokenVersion(newVersion);
@@ -52,8 +52,8 @@ public class ChangePasswordCommandHandler {
         // 3. Delete all device sessions
         deviceRepository.deleteAllByUserId(user.getId());
 
-        // 4. Cache new tokenVersion in Redis with 1-hour TTL via RedisCacheService
-        redisCacheService.setTokenVersion(user.getId(), newVersion, Duration.ofHours(1));
+        // 4. Cache new tokenVersion in Redis with 7-day TTL via RedisCacheService
+        redisCacheService.setTokenVersion(user.getId(), newVersion, Duration.ofDays(7));
 
         log.info("Password successfully changed for user: {}, new tokenVersion: {}", user.getId(), newVersion);
     }

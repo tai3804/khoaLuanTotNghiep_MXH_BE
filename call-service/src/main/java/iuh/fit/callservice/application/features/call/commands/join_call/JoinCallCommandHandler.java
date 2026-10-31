@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -33,12 +32,20 @@ public class JoinCallCommandHandler {
         CallSession session = callSessionRepository.findById(command.getCallSessionId())
                 .orElseThrow(() -> new BusinessException(CallServiceErrorCode.CALL_SESSION_NOT_FOUND));
 
-        if (session.getStatus() == CallStatus.ENDED) {
+        if (session.getStatus() == CallStatus.ENDED
+                || session.getStatus() == CallStatus.MISSED
+                || session.getStatus() == CallStatus.REJECTED) {
             throw new BusinessException(CallServiceErrorCode.CALL_SESSION_ALREADY_ENDED);
         }
 
         Optional<CallParticipant> participantOpt = callParticipantRepository
                 .findByCallSessionIdAndUserId(command.getCallSessionId(), command.getCurrentUserId());
+
+        if (session.getChannelType() == ChannelType.DIRECT
+                && participantOpt.isEmpty()
+                && !command.getCurrentUserId().equals(session.getHostUserId())) {
+            throw new BusinessException(CallServiceErrorCode.NOT_A_CALL_PARTICIPANT);
+        }
 
         CallParticipant participant;
         if (participantOpt.isPresent()) {
@@ -49,7 +56,8 @@ public class JoinCallCommandHandler {
             participant = CallParticipant.builder()
                     .callSessionId(command.getCallSessionId())
                     .userId(command.getCurrentUserId())
-                    .role(ParticipantRole.PARTICIPANT)
+                    .role(command.getCurrentUserId().equals(session.getHostUserId())
+                            ? ParticipantRole.HOST : ParticipantRole.PARTICIPANT)
                     .status(ParticipantStatus.CONNECTED)
                     .joinedAt(LocalDateTime.now())
                     .build();
