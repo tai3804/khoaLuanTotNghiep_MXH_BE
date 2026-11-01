@@ -15,6 +15,10 @@ import java.util.UUID;
 @Repository
 public interface MessageRepository extends BaseJpaRepository<Message, UUID> {
 
+    Page<Message> findByConversationIdOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
+
+    Page<Message> findByConversationIdAndIdNotInOrderByCreatedAtDesc(UUID conversationId, List<UUID> excludedIds, Pageable pageable);
+
     Page<Message> findByConversationIdAndDeletedFalseOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
 
     Page<Message> findByConversationIdAndDeletedFalseAndIdNotInOrderByCreatedAtDesc(UUID conversationId, List<UUID> excludedIds, Pageable pageable);

@@ -49,11 +49,11 @@ public class GetMessagesHandler {
 
         Page<Message> messagePage;
         if (userDeletedIds.isEmpty()) {
-            messagePage = messageRepository.findByConversationIdAndDeletedFalseOrderByCreatedAtDesc(
+            messagePage = messageRepository.findByConversationIdOrderByCreatedAtDesc(
                     query.getConversationId(), pageRequest
             );
         } else {
-            messagePage = messageRepository.findByConversationIdAndDeletedFalseAndIdNotInOrderByCreatedAtDesc(
+            messagePage = messageRepository.findByConversationIdAndIdNotInOrderByCreatedAtDesc(
                     query.getConversationId(), userDeletedIds, pageRequest
             );
         }
@@ -82,6 +82,12 @@ public class GetMessagesHandler {
 
         List<GetMessagesResult> results = pageMessages.stream().map(message -> {
             GetMessagesResult result = messageFeatureMapper.toGetMessagesResult(message);
+
+            if (message.isDeleted()) {
+                result.setContent("");
+                result.setMediaUrl(null);
+                result.setDeleted(true);
+            }
 
             // Populate reply details without leaking recalled messages
             if (message.getReplyToMessageId() != null && replyMap.containsKey(message.getReplyToMessageId())) {
