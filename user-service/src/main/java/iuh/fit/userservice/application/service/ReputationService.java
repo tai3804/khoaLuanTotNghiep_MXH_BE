@@ -73,7 +73,12 @@ public class ReputationService {
 
     @Transactional(readOnly = true)
     public ReputationResponse getReputation(UUID userId) {
-        UserReputation row = reputationRepository.findByUserId(userId).orElse(null);
+        UserReputation row = null;
+        try {
+            row = reputationRepository.findByUserId(userId).orElse(null);
+        } catch (Exception e) {
+            log.warn("Could not query user_reputation for user {}: {}", userId, e.getMessage());
+        }
         LocalDateTime now = LocalDateTime.now();
         int score = row != null ? effectiveScore(row, now) : initialScore;
         LocalDateTime lockedUntil = row != null && row.getLockedUntil() != null && row.getLockedUntil().isAfter(now)
@@ -109,7 +114,12 @@ public class ReputationService {
     @Transactional(readOnly = true)
     public ReputationPolicy getPolicy(UUID userId) {
         LocalDateTime now = LocalDateTime.now();
-        int score = reputationRepository.findByUserId(userId).map(r -> effectiveScore(r, now)).orElse(initialScore);
+        int score = initialScore;
+        try {
+            score = reputationRepository.findByUserId(userId).map(r -> effectiveScore(r, now)).orElse(initialScore);
+        } catch (Exception e) {
+            log.warn("Could not query user_reputation for policy of user {}: {}", userId, e.getMessage());
+        }
         return policies.of(score);
     }
 
@@ -145,7 +155,12 @@ public class ReputationService {
 
     @Transactional(readOnly = true)
     public Page<ReputationEvent> getHistory(UUID userId, Pageable pageable) {
-        return eventRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+        try {
+            return eventRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+        } catch (Exception e) {
+            log.warn("Could not query reputation_events for user {}: {}", userId, e.getMessage());
+            return org.springframework.data.domain.Page.empty(pageable);
+        }
     }
 
     @Transactional
