@@ -271,10 +271,22 @@ public class AwsS3StorageService {
             return ResponseEntity.notFound().build();
         }
 
+        String cleanKey = fileKey.trim();
+        while (cleanKey.startsWith("/")) {
+            cleanKey = cleanKey.substring(1);
+        }
+        String bucket = awsS3Properties.getBucketName();
+        if (bucket != null && !bucket.isBlank() && cleanKey.startsWith(bucket + "/")) {
+            cleanKey = cleanKey.substring(bucket.length() + 1);
+        }
+        while (cleanKey.startsWith("/")) {
+            cleanKey = cleanKey.substring(1);
+        }
+
         try {
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(awsS3Properties.getBucketName())
-                    .key(fileKey)
+                    .key(cleanKey)
                     .build();
 
             ResponseInputStream<GetObjectResponse> s3is = s3Client.getObject(getObjectRequest);
