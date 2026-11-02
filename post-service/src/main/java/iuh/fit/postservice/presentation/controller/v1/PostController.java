@@ -77,6 +77,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import iuh.fit.postservice.application.service.PostEmbeddingService;
 
 @RestController
 @RequestMapping(ApiConstants.POST_API)
@@ -123,6 +126,7 @@ public class PostController {
     iuh.fit.postservice.application.service.GroupNotificationPublisher groupNotificationPublisher;
     iuh.fit.postservice.application.service.GroupPostModerationService groupPostModerationService;
     iuh.fit.postservice.application.features.post.queries.get_groups_feed.GetGroupsFeedQueryHandler getGroupsFeedQueryHandler;
+    PostEmbeddingService postEmbeddingService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(

@@ -50,6 +50,7 @@ public class CreatePostCommandHandler {
     ReputationGuard reputationGuard;
     GroupNotificationPublisher groupNotificationPublisher;
     PostPublicationHelper postPublicationHelper;
+    iuh.fit.postservice.application.service.PostEmbeddingService postEmbeddingService;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)

@@ -815,4 +815,123 @@ public class GeminiApiClient {
                 .isFallback(true)
                 .build();
     }
+
+    /**
+     * Tạo vector embedding 768 chiều từ văn bản sử dụng mô hình gemini-embedding-001
+     * với outputDimensionality = 768 (tiêu chuẩn chuẩn hoá Transformer cho tìm kiếm ngữ nghĩa).
+     */
+    public List<Float> generateEmbedding(String text) {
+        if (text == null || text.isBlank()) {
+            return Collections.emptyList();
+        }
+        if (!hasValidApiKey()) {
+            log.warn("Gemini API key is not configured. Cannot generate embedding.");
+            return Collections.emptyList();
+        }
+
+        try {
+            String endpoint = String.format("%s/gemini-embedding-001:embedContent?key=%s", apiUrl, apiKey);
+
+            Map<String, Object> requestBodyMap = Map.of(
+                    "model", "models/gemini-embedding-001",
+                    "content", Map.of(
+                            "parts", List.of(Map.of("text", text.trim()))
+                    ),
+                    "outputDimensionality", 768
+            );
+
+            String requestJson = objectMapper.writeValueAsString(requestBodyMap);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(10))
+                    .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                JsonNode rootNode = objectMapper.readTree(response.body());
+                JsonNode valuesNode = rootNode.path("embedding").path("values");
+                if (valuesNode.isArray() && !valuesNode.isEmpty()) {
+                    List<Float> result = new ArrayList<>(valuesNode.size());
+                    for (JsonNode val : valuesNode) {
+                        result.add((float) val.asDouble());
+                    }
+                    return result;
+                }
+            } else {
+                log.warn("Gemini embedContent returned status code {}: {}", response.statusCode(), response.body());
+            }
+        } catch (Exception e) {
+            log.error("Failed to generate Gemini embedding: {}", e.getMessage());
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Tạo vector embedding hàng loạt cho nhiều văn bản (tối ưu hóa khi backfill hoặc nhiều bài viết).
+     */
+    public List<List<Float>> generateBatchEmbeddings(List<String> texts) {
+        if (texts == null || texts.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (!hasValidApiKey()) {
+            log.warn("Gemini API key is not configured. Cannot generate batch embeddings.");
+            return Collections.emptyList();
+        }
+
+        try {
+            String endpoint = String.format("%s/gemini-embedding-001:batchEmbedContents?key=%s", apiUrl, apiKey);
+
+            List<Map<String, Object>> requests = new ArrayList<>();
+            for (String text : texts) {
+                String safeText = (text != null && !text.isBlank()) ? text.trim() : " ";
+                requests.add(Map.of(
+                        "model", "models/gemini-embedding-001",
+                        "content", Map.of("parts", List.of(Map.of("text", safeText))),
+                        "outputDimensionality", 768
+                ));
+            }
+
+            if (requests.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            Map<String, Object> requestBodyMap = Map.of("requests", requests);
+            String requestJson = objectMapper.writeValueAsString(requestBodyMap);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(25))
+                    .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                JsonNode rootNode = objectMapper.readTree(response.body());
+                JsonNode embeddingsNode = rootNode.path("embeddings");
+                if (embeddingsNode.isArray()) {
+                    List<List<Float>> results = new ArrayList<>();
+                    for (JsonNode item : embeddingsNode) {
+                        JsonNode valuesNode = item.path("values");
+                        List<Float> list = new ArrayList<>();
+                        for (JsonNode val : valuesNode) {
+                            list.add((float) val.asDouble());
+                        }
+                        results.add(list);
+                    }
+                    return results;
+                }
+            } else {
+                log.warn("Gemini batchEmbedContents returned status code {}: {}", response.statusCode(), response.body());
+            }
+        } catch (Exception e) {
+            log.error("Failed to generate batch Gemini embeddings: {}", e.getMessage());
+        }
+        return Collections.emptyList();
+    }
 }
