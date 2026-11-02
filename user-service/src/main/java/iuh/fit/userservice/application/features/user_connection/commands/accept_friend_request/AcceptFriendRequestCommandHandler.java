@@ -37,41 +37,99 @@ public class AcceptFriendRequestCommandHandler {
 
     @Transactional
     public void handle(AcceptFriendRequestCommand command) {
-        UserConnection friendConn = userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
-                command.getRequesterId(), command.getUserId(), ConnectionType.FRIEND
-        ).or(() -> userConnectionRepository.findById(command.getRequesterId()))
-        .or(() -> userConnectionRepository.findConnectionBetween(command.getRequesterId(), command.getUserId(), ConnectionType.FRIEND))
-        .orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
-
-        boolean isParticipant = friendConn.getTargetId().equals(command.getUserId()) || friendConn.getRequesterId().equals(command.getUserId());
-        if (!isParticipant) {
-            throw new BusinessException(UserServiceErrorCode.FORBIDDEN);
+        if (command == null || command.getUserId() == null || command.getRequesterId() == null) {
+            throw new BusinessException(UserServiceErrorCode.INVALID_REQUEST);
         }
 
-        if (friendConn.getStatus() == ConnectionStatus.ACCEPTED) {
-            log.info("Friend connection between {} and {} is already ACCEPTED. Skipping duplicate.", command.getRequesterId(), command.getUserId());
-            return;
+        UUID rawUserId = command.getUserId();
+        UUID rawRequesterId = command.getRequesterId();
+
+        // 1. Resolve real userId (Account ID) for current user
+        UUID resolvedUserId = resolveUserId(rawUserId);
+
+        // 2. Resolve real requesterId (could be connectionId, profileId, or userId)
+        UUID resolvedRequesterId = resolveUserId(rawRequesterId);
+
+        // 3. Try to locate existing friend connection
+        UserConnection friendConn = null;
+
+        // 3a. Direct check if rawRequesterId is a UserConnection primary key
+        Optional<UserConnection> connById = userConnectionRepository.findById(rawRequesterId);
+        if (connById.isPresent()) {
+            friendConn = connById.get();
         }
 
-        friendConn.setStatus(ConnectionStatus.ACCEPTED);
-        userConnectionRepository.save(friendConn);
+        // 3b. Search between resolvedUserId and resolvedRequesterId
+        if (friendConn == null) {
+            friendConn = userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
+                    resolvedRequesterId, resolvedUserId, ConnectionType.FRIEND
+            ).or(() -> userConnectionRepository.findConnectionBetween(resolvedRequesterId, resolvedUserId, ConnectionType.FRIEND))
+             .or(() -> userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
+                    resolvedUserId, resolvedRequesterId, ConnectionType.FRIEND
+             )).orElse(null);
+        }
 
-        UUID requesterId = friendConn.getRequesterId().equals(command.getUserId()) ? friendConn.getTargetId() : friendConn.getRequesterId();
+        // 3c. Fallback search with raw IDs in case they were stored un-normalized
+        if (friendConn == null) {
+            friendConn = userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
+                    rawRequesterId, rawUserId, ConnectionType.FRIEND
+            ).or(() -> userConnectionRepository.findConnectionBetween(rawRequesterId, rawUserId, ConnectionType.FRIEND))
+             .or(() -> userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
+                    rawUserId, rawRequesterId, ConnectionType.FRIEND
+             )).orElse(null);
+        }
 
-        // Rule: Accepting friend request means User B also FOLLOWS User A
-        ensureFollow(command.getUserId(), requesterId);
-        // Ensure User A also FOLLOWS User B
-        ensureFollow(requesterId, command.getUserId());
+        UUID finalRequesterId = resolvedRequesterId;
 
-        // Synchronize accurate counters for both users
-        userCounterSyncService.syncCounters(command.getUserId());
-        userCounterSyncService.syncCounters(requesterId);
+        // 4. If connection doesn't exist, create an accepted friend connection
+        if (friendConn == null) {
+            log.info("No prior friend connection found between {} and {}. Creating new ACCEPTED friend connection.",
+                    resolvedRequesterId, resolvedUserId);
+            friendConn = userConnectionApplicationMapper.toEntity(
+                    resolvedRequesterId, resolvedUserId, ConnectionType.FRIEND, ConnectionStatus.ACCEPTED
+            );
+            userConnectionRepository.save(friendConn);
+        } else {
+            // Check authorization: current user must be one of the participants
+            boolean isParticipant = friendConn.getTargetId().equals(resolvedUserId)
+                    || friendConn.getRequesterId().equals(resolvedUserId)
+                    || friendConn.getTargetId().equals(rawUserId)
+                    || friendConn.getRequesterId().equals(rawUserId);
 
-        // Publish ACCEPT_FRIEND notification event to Kafka (UC-NO01)
+            if (!isParticipant) {
+                throw new BusinessException(UserServiceErrorCode.FORBIDDEN);
+            }
+
+            finalRequesterId = (friendConn.getRequesterId().equals(resolvedUserId) || friendConn.getRequesterId().equals(rawUserId))
+                    ? friendConn.getTargetId()
+                    : friendConn.getRequesterId();
+
+            if (friendConn.getStatus() == ConnectionStatus.ACCEPTED) {
+                log.info("Friend connection between {} and {} is already ACCEPTED.", finalRequesterId, resolvedUserId);
+            } else {
+                friendConn.setStatus(ConnectionStatus.ACCEPTED);
+                userConnectionRepository.save(friendConn);
+            }
+        }
+
+        finalRequesterId = resolveUserId(finalRequesterId);
+
+        // 5. Ensure mutual follow
+        ensureFollow(resolvedUserId, finalRequesterId);
+        ensureFollow(finalRequesterId, resolvedUserId);
+
+        // 6. Synchronize accurate counters for both users
+        userCounterSyncService.syncCounters(resolvedUserId);
+        userCounterSyncService.syncCounters(finalRequesterId);
+
+        // 7. Publish ACCEPT_FRIEND notification event to Kafka (UC-NO01)
         try {
             String acceptorName = "Người dùng";
             String acceptorAvatar = null;
-            Optional<UserProfile> acceptorProfile = userProfileRepository.findByUserId(command.getUserId());
+            Optional<UserProfile> acceptorProfile = userProfileRepository.findByUserId(resolvedUserId);
+            if (acceptorProfile.isEmpty()) {
+                acceptorProfile = userProfileRepository.findById(resolvedUserId);
+            }
             if (acceptorProfile.isPresent()) {
                 UserProfile p = acceptorProfile.get();
                 acceptorName = ((p.getLastName() != null ? p.getLastName() : "") + " " + (p.getFirstName() != null ? p.getFirstName() : "")).trim();
@@ -80,20 +138,29 @@ public class AcceptFriendRequestCommandHandler {
             }
 
             Map<String, Object> notifEvent = new HashMap<>();
-            notifEvent.put("recipientId", requesterId.toString());
-            notifEvent.put("actorId", command.getUserId().toString());
+            notifEvent.put("recipientId", finalRequesterId.toString());
+            notifEvent.put("actorId", resolvedUserId.toString());
             notifEvent.put("type", "ACCEPT_FRIEND");
             notifEvent.put("title", "Chấp nhận kết bạn");
             notifEvent.put("content", acceptorName + " đã chấp nhận lời mời kết bạn của bạn.");
-            notifEvent.put("targetId", command.getUserId().toString());
-            notifEvent.put("targetUrl", "/profile/" + command.getUserId());
+            notifEvent.put("targetId", resolvedUserId.toString());
+            notifEvent.put("targetUrl", "/profile/" + resolvedUserId);
             notifEvent.put("avatarUrl", acceptorAvatar);
 
             kafkaTemplate.send("notification.in-app.send", notifEvent);
-            log.info("Published ACCEPT_FRIEND notification event to Kafka for requester: {}", requesterId);
+            log.info("Published ACCEPT_FRIEND notification event to Kafka for requester: {}", finalRequesterId);
         } catch (Exception e) {
             log.warn("Failed to publish ACCEPT_FRIEND notification event: {}", e.getMessage());
         }
+    }
+
+    private UUID resolveUserId(UUID id) {
+        if (id == null) return null;
+        Optional<UserProfile> p = userProfileRepository.findByUserId(id);
+        if (p.isPresent()) return p.get().getUserId();
+        p = userProfileRepository.findById(id);
+        if (p.isPresent()) return p.get().getUserId();
+        return id;
     }
 
     private void ensureFollow(UUID followerId, UUID targetId) {

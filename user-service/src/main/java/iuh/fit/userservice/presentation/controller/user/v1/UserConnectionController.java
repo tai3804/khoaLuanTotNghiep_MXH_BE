@@ -27,6 +27,9 @@ import iuh.fit.userservice.domain.enums.ConnectionStatus;
 import iuh.fit.userservice.domain.enums.ConnectionType;
 import iuh.fit.userservice.domain.repository.UserConnectionRepository;
 import iuh.fit.userservice.domain.repository.UserPrivacySettingRepository;
+import iuh.fit.userservice.domain.repository.UserProfileRepository;
+import iuh.fit.userservice.domain.entities.UserProfile;
+import java.util.Optional;
 import iuh.fit.userservice.presentation.constants.ApiConstants;
 import iuh.fit.userservice.presentation.constants.MessageConstants;
 import iuh.fit.userservice.presentation.dto.response.FriendSuggestionResponse;
@@ -62,6 +65,7 @@ public class UserConnectionController {
     GetFriendSuggestionsHandler getFriendSuggestionsHandler;
     UserConnectionRepository userConnectionRepository;
     UserPrivacySettingRepository userPrivacySettingRepository;
+    UserProfileRepository userProfileRepository;
     iuh.fit.userservice.domain.repository.UserBlockRepository userBlockRepository;
     UserConnectionPresentationMapper userConnectionPresentationMapper;
     JwtUtil jwtUtil;
@@ -70,7 +74,18 @@ public class UserConnectionController {
     @Operation(summary = "Get connection status with target user", description = "Retrieves friendship and follow status between current user and target user", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<ApiResponse<UserConnectionStatusResponse>> getConnectionStatus(@PathVariable UUID targetId) {
         UUID currentUserId = getCurrentUserId();
-        List<UserConnection> connections = userConnectionRepository.findAllConnectionsBetween(currentUserId, targetId);
+        UUID resolvedTargetId = targetId;
+        Optional<UserProfile> targetProfileOpt = userProfileRepository.findByUserId(targetId);
+        if (targetProfileOpt.isEmpty()) {
+            targetProfileOpt = userProfileRepository.findById(targetId);
+            if (targetProfileOpt.isPresent()) {
+                resolvedTargetId = targetProfileOpt.get().getUserId();
+            }
+        }
+        List<UserConnection> connections = userConnectionRepository.findAllConnectionsBetween(currentUserId, resolvedTargetId);
+        if (connections.isEmpty() && !resolvedTargetId.equals(targetId)) {
+            connections = userConnectionRepository.findAllConnectionsBetween(currentUserId, targetId);
+        }
 
         boolean isFriend = false;
         boolean isFollowing = false;
