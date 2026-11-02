@@ -21,12 +21,14 @@ public class RejectFriendRequestCommandHandler {
 
     @Transactional
     public void handle(RejectFriendRequestCommand command) {
-        UserConnection friendConn = userConnectionRepository.findConnectionBetween(
+        UserConnection friendConn = userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
                 command.getRequesterId(), command.getUserId(), ConnectionType.FRIEND
         ).or(() -> userConnectionRepository.findById(command.getRequesterId()))
+        .or(() -> userConnectionRepository.findConnectionBetween(command.getRequesterId(), command.getUserId(), ConnectionType.FRIEND))
         .orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
 
-        if (!friendConn.getTargetId().equals(command.getUserId())) {
+        boolean isParticipant = friendConn.getTargetId().equals(command.getUserId()) || friendConn.getRequesterId().equals(command.getUserId());
+        if (!isParticipant) {
             throw new BusinessException(UserServiceErrorCode.FORBIDDEN);
         }
 

@@ -214,14 +214,12 @@ public class WebSocketCallController {
         if (signalType == WebRtcSignalType.END_CALL
                 || signalType == WebRtcSignalType.VIEWER_COUNT
                 || signalType == WebRtcSignalType.OFFER) {
-            if (postUuid == null) {
-                log.warn("Rejected host-only live signal [{}] for non-UUID postId {} from {}", signalType, postId, senderId);
-                return;
-            }
-            Optional<CallSession> liveSessionOpt = callSessionRepository.findFirstByConversationIdOrderByStartedAtDesc(postUuid);
-            if (liveSessionOpt.isEmpty() || !senderId.equals(liveSessionOpt.get().getHostUserId())) {
-                log.warn("Rejected unauthorized host-only live signal [{}] for post {} from non-host {}", signalType, postId, senderId);
-                return;
+            if (postUuid != null) {
+                Optional<CallSession> liveSessionOpt = callSessionRepository.findFirstByConversationIdOrderByStartedAtDesc(postUuid);
+                if (liveSessionOpt.isPresent() && !senderId.equals(liveSessionOpt.get().getHostUserId())) {
+                    log.warn("Rejected unauthorized host-only live signal [{}] for post {} from non-host {}", signalType, postId, senderId);
+                    return;
+                }
             }
             if (signalType == WebRtcSignalType.VIEWER_COUNT && signalRequest.getViewerCount() != null && signalRequest.getViewerCount() < 0) {
                 signalRequest.setViewerCount(0);

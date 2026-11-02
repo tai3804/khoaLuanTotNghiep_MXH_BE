@@ -37,23 +37,26 @@ public class AcceptFriendRequestCommandHandler {
 
     @Transactional
     public void handle(AcceptFriendRequestCommand command) {
-        UserConnection friendConn = userConnectionRepository.findConnectionBetween(
+        UserConnection friendConn = userConnectionRepository.findFirstByRequesterIdAndTargetIdAndTypeOrderByCreatedAtDesc(
                 command.getRequesterId(), command.getUserId(), ConnectionType.FRIEND
         ).or(() -> userConnectionRepository.findById(command.getRequesterId()))
+        .or(() -> userConnectionRepository.findConnectionBetween(command.getRequesterId(), command.getUserId(), ConnectionType.FRIEND))
         .orElseThrow(() -> new BusinessException(UserServiceErrorCode.CONNECTION_NOT_FOUND));
 
-        if (!friendConn.getTargetId().equals(command.getUserId())) {
+        boolean isParticipant = friendConn.getTargetId().equals(command.getUserId()) || friendConn.getRequesterId().equals(command.getUserId());
+        if (!isParticipant) {
             throw new BusinessException(UserServiceErrorCode.FORBIDDEN);
         }
 
         if (friendConn.getStatus() == ConnectionStatus.ACCEPTED) {
-            throw new BusinessException(UserServiceErrorCode.CONNECTION_ALREADY_EXISTS);
+            log.info("Friend connection between {} and {} is already ACCEPTED. Skipping duplicate.", command.getRequesterId(), command.getUserId());
+            return;
         }
 
         friendConn.setStatus(ConnectionStatus.ACCEPTED);
         userConnectionRepository.save(friendConn);
 
-        UUID requesterId = friendConn.getRequesterId();
+        UUID requesterId = friendConn.getRequesterId().equals(command.getUserId()) ? friendConn.getTargetId() : friendConn.getRequesterId();
 
         // Rule: Accepting friend request means User B also FOLLOWS User A
         ensureFollow(command.getUserId(), requesterId);
