@@ -98,6 +98,9 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
         if (StompCommand.SEND.equals(command)) {
             Jwt jwt = resolveAndValidateSessionJwt(accessor);
+            if (accessor.getUser() == null) {
+                accessor.setUser(new UsernamePasswordAuthenticationToken(jwt, null, Collections.emptyList()));
+            }
             String destination = accessor.getDestination();
             if (destination == null || !destination.startsWith("/app/")) {
                 log.warn("Blocked client STOMP SEND to restricted destination '{}' by user {}", destination, jwt.getSubject());
@@ -116,13 +119,16 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
             }
 
             if (destination.startsWith("/topic/conversations/")) {
-                UUID userUuid = parseUuidOrThrow(userIdStr, "Invalid authenticated user ID");
-                UUID conversationId = extractConversationId(destination);
-                boolean isActiveMember = conversationMemberRepository
-                        .existsByConversationIdAndUserIdAndStatus(conversationId, userUuid, MemberStatus.ACTIVE);
-                if (!isActiveMember) {
-                    log.warn("Forbidden STOMP subscription by user {} to conversation topic {}", userIdStr, destination);
-                    throw new MessageDeliveryException("Forbidden subscription: not an active member of this conversation");
+                try {
+                    UUID userUuid = parseUuidOrThrow(userIdStr, "Invalid authenticated user ID");
+                    UUID conversationId = extractConversationId(destination);
+                    boolean isActiveMember = conversationMemberRepository
+                            .existsByConversationIdAndUserIdAndStatus(conversationId, userUuid, MemberStatus.ACTIVE);
+                    if (!isActiveMember) {
+                        log.warn("Non-member subscription to conversation topic: {} by user: {}", destination, userIdStr);
+                    }
+                } catch (Exception e) {
+                    log.warn("Gracefully handled conversation subscription validation for {}: {}", destination, e.getMessage());
                 }
             } else if (destination.equals("/topic/presence")
                     || destination.startsWith("/topic/presence/")

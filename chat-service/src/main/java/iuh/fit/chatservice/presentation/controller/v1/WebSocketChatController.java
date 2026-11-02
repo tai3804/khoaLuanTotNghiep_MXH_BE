@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Controller;
@@ -34,11 +35,8 @@ public class WebSocketChatController {
     public void sendMessage(
             @DestinationVariable UUID conversationId,
             @Payload SendMessageRequest request,
-            Principal principal) {
-        if (principal == null) {
-            log.error("Unauthenticated WebSocket message attempt to conversation: {}", conversationId);
-            return;
-        }
+            Principal principal,
+            SimpMessageHeaderAccessor headerAccessor) {
 
         UUID senderId = null;
         if (principal instanceof org.springframework.security.authentication.AbstractAuthenticationToken token) {
@@ -47,13 +45,26 @@ public class WebSocketChatController {
             }
         }
 
-        if (senderId == null) {
+        if (senderId == null && principal != null) {
             try {
                 senderId = UUID.fromString(principal.getName());
-            } catch (Exception e) {
-                log.error("Failed to parse senderId from Principal: {}", principal.getName());
-                return;
+            } catch (Exception ignored) {
             }
+        }
+
+        if (senderId == null && headerAccessor != null && headerAccessor.getSessionAttributes() != null) {
+            Object userIdObj = headerAccessor.getSessionAttributes().get("userId");
+            if (userIdObj != null) {
+                try {
+                    senderId = UUID.fromString(userIdObj.toString());
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        if (senderId == null) {
+            log.error("Unauthenticated WebSocket message attempt to conversation: {}", conversationId);
+            return;
         }
 
         SendMessageCommand command = chatPresentationMapper.toSendMessageCommand(request, conversationId, senderId);

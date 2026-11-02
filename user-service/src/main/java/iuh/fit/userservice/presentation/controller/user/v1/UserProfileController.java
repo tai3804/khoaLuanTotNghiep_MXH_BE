@@ -100,6 +100,20 @@ public class UserProfileController {
         return ResponseEntity.ok(ApiResponse.success(response, MessageConstants.USER_PROFILE_RETRIEVED_SUCCESSFULLY));
     }
 
+    @PostMapping("/batch")
+    @Operation(summary = "Get user profiles in batch", description = "Retrieves multiple user profiles in a single database query by list of user IDs")
+    public ResponseEntity<ApiResponse<List<UserProfileResponse>>> getProfilesBatch(
+            @RequestBody List<UUID> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(Collections.emptyList(), "Batch profiles retrieved successfully"));
+        }
+        List<UserProfile> profiles = userProfileRepository.findByUserIdIn(userIds);
+        List<UserProfileResponse> responses = profiles.stream()
+                .map(p -> userProfilePresentationMapper.toResponse(userProfileApplicationMapper.toQueryResult(p)))
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success(responses, "Batch profiles retrieved successfully"));
+    }
+
     @GetMapping("/{userId}")
     @Operation(summary = "Get user profile by ID", description = "Retrieves public profile details of a specific user by ID")
     public ResponseEntity<ApiResponse<UserProfileResponse>> getProfileByUserId(@PathVariable UUID userId) {

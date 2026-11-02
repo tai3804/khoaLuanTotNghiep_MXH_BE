@@ -4,7 +4,6 @@ import iuh.fit.commonframework.domain.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -44,7 +43,4 @@ public class UserReputation extends BaseEntity {
     /** Tài khoản đang bị khóa tới thời điểm này (điểm xuống dưới ngưỡng); null nếu không bị khóa. Khóa không chặn đăng nhập. */
     @Column(name = "locked_until")
     LocalDateTime lockedUntil;
-
-    @Version
-    Long version;
 }
