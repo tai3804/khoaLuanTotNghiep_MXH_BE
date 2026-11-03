@@ -30,7 +30,7 @@ public class PostSearchSupport implements ApplicationRunner {
         initVector();
     }
 
-    private void initUnaccent() {
+    private synchronized void initUnaccent() {
         try {
             jdbcTemplate.execute("CREATE EXTENSION IF NOT EXISTS unaccent");
             Integer found = jdbcTemplate.queryForObject("SELECT count(*) FROM pg_extension WHERE extname = 'unaccent'", Integer.class);
@@ -42,7 +42,7 @@ public class PostSearchSupport implements ApplicationRunner {
         }
     }
 
-    private void initVector() {
+    private synchronized void initVector() {
         try {
             jdbcTemplate.execute("CREATE EXTENSION IF NOT EXISTS vector");
             Integer found = jdbcTemplate.queryForObject("SELECT count(*) FROM pg_extension WHERE extname = 'vector'", Integer.class);
@@ -64,6 +64,16 @@ public class PostSearchSupport implements ApplicationRunner {
                     ON post_embeddings USING hnsw (embedding vector_cosine_ops)
                 """);
 
+                // Tạo bảng lưu trữ ý định tìm kiếm của người dùng để bẻ lái đề xuất Bảng tin (Search-biased Recommendation)
+                jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS user_search_interests (
+                        user_id UUID PRIMARY KEY,
+                        query_text VARCHAR(255) NOT NULL,
+                        embedding vector(768) NOT NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """);
+
                 log.info("pgvector extension and post_embeddings table with HNSW index successfully initialized!");
             } else {
                 log.warn("pgvector extension is not available in PostgreSQL.");
@@ -75,10 +85,16 @@ public class PostSearchSupport implements ApplicationRunner {
     }
 
     public boolean isUnaccentAvailable() {
+        if (!unaccentAvailable) {
+            initUnaccent();
+        }
         return unaccentAvailable;
     }
 
     public boolean isVectorAvailable() {
+        if (!vectorAvailable) {
+            initVector();
+        }
         return vectorAvailable;
     }
 
@@ -87,7 +103,7 @@ public class PostSearchSupport implements ApplicationRunner {
         String k = keyword == null ? "" : keyword.trim();
         if (k.length() > 100) k = k.substring(0, 100);
         k = k.toLowerCase(Locale.ROOT);
-        if (unaccentAvailable) {
+        if (isUnaccentAvailable()) {
             k = Normalizer.normalize(k, Normalizer.Form.NFD).replaceAll("\\p{M}+", "").replace('đ', 'd');
         }
         k = k.replace("!", "!!").replace("%", "!%").replace("_", "!_");

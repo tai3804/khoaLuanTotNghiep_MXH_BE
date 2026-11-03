@@ -14,12 +14,11 @@ import java.util.UUID;
  * affinity   = bạn bè 3,0 | đang theo dõi 2,0 | bài của chính mình 0,5 (+1,5 trong 2 giờ đầu)
  *            + nhóm mình tham gia 1,5
  *            + min(3, 1,2 · ln(1 + số lần mình tương tác với tác giả trong 30 ngày qua))
+ *            + 3,5 · CosineSimilarity(bài viết, chủ đề vừa tìm kiếm) (Retargeting)
  * engagement = ln(1 + thích + 2·bình luận + 3·chia sẻ)
  * freshness  = 0,5 ^ (tuổi bài / 24 giờ)                 // nửa đời 24 giờ
  * score      = (affinity + 0,6·engagement + 0,4) · (0,2 + 0,8·freshness) · chất lượng
  * </pre>
- * Nhờ vậy bài của bạn bè/người hay tương tác vẫn đáng xem sau vài ngày, nhưng bài ít thân thiết cần vừa mới vừa nhiều
- * tương tác mới chen lên được. Bài cũ gần như không bao giờ vượt bài mới có cùng mức thân thiết.
  *
  * <h3>Chế độ TRENDING ("Nổi bật")</h3>
  * Không dùng độ thân thiết, chỉ xét tốc độ tương tác, giống công thức "gravity" của Hacker News:
@@ -59,7 +58,18 @@ public final class PostRelevanceScorer {
             boolean fromFollowing,
             boolean fromMemberGroup,
             int interactionsWithAuthor30d,
-            boolean pinned) {
+            boolean pinned,
+            double searchSimilarity,
+            String searchInterestTopic) {
+
+        public Signals(
+                double ageHours, long likes, long comments, long shares,
+                boolean hasMedia, int contentLength, boolean own,
+                boolean fromFriend, boolean fromFollowing, boolean fromMemberGroup,
+                int interactionsWithAuthor30d, boolean pinned) {
+            this(ageHours, likes, comments, shares, hasMedia, contentLength, own,
+                 fromFriend, fromFollowing, fromMemberGroup, interactionsWithAuthor30d, pinned, 0.0, null);
+        }
     }
 
     public record Scored(double score, String reason) {
@@ -95,6 +105,17 @@ public final class PostRelevanceScorer {
         double interaction = Math.min(INTERACTION_CAP, 1.2 * Math.log(1.0 + Math.max(0, s.interactionsWithAuthor30d())));
         affinity += interaction;
         if (interaction > strongest) { strongest = interaction; reason = "interacted"; }
+
+        // Boost theo chủ đề người dùng vừa tìm kiếm gần đây (Search-biased Retargeting)
+        if (s.searchSimilarity() >= 0.40) {
+            double searchBoost = s.searchSimilarity() * 3.5;
+            affinity += searchBoost;
+            if (searchBoost > strongest || s.searchSimilarity() >= 0.55) {
+                strongest = searchBoost;
+                String topic = s.searchInterestTopic() != null ? s.searchInterestTopic() : "chủ đề bạn quan tâm";
+                reason = "Gợi ý theo chủ đề bạn vừa tìm: " + topic;
+            }
+        }
 
         double engagement = engagement(s.likes(), s.comments(), s.shares());
         if (affinity < 1.0 && engagement >= 2.0) reason = "popular";

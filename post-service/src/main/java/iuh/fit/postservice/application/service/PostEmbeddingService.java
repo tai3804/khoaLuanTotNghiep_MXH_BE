@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -25,6 +26,7 @@ public class PostEmbeddingService {
     private final AiServiceClient aiServiceClient;
 
     public record PostVectorMatch(UUID postId, double similarity) {}
+    public record UserSearchInterest(String queryText, String vectorStr) {}
 
     /**
      * Chuyển mảng List<Float> thành chuỗi định dạng PostgreSQL vector: [v1,v2,...,vn]
@@ -106,9 +108,6 @@ public class PostEmbeddingService {
         }
     }
 
-    /**
-     * Gọi AI Service để lấy vector embedding 768 chiều cho một câu truy vấn
-     */
     /**
      * Tìm các bài viết có ngữ nghĩa tương tự với một bài viết cụ thể (Dùng cho tính năng Đề xuất / Bài viết liên quan)
      */
@@ -224,5 +223,87 @@ public class PostEmbeddingService {
             return 0;
         }
     }
-}
 
+    /**
+     * Lưu trữ ý định tìm kiếm gần nhất của người dùng vào bảng user_search_interests
+     */
+    public void saveUserSearchInterest(UUID userId, String queryText, List<Float> vector) {
+        if (userId == null || queryText == null || queryText.isBlank() || vector == null || vector.isEmpty() || !postSearchSupport.isVectorAvailable()) {
+            return;
+        }
+        try {
+            String vectorStr = toVectorString(vector);
+            String sql = """
+                INSERT INTO user_search_interests (user_id, query_text, embedding, updated_at)
+                VALUES (?, ?, cast(? as vector), CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id) DO UPDATE
+                SET query_text = EXCLUDED.query_text, embedding = EXCLUDED.embedding, updated_at = CURRENT_TIMESTAMP
+            """;
+            jdbcTemplate.update(sql, userId, queryText.trim(), vectorStr);
+            log.info("Saved search interest for user {}: '{}'", userId, queryText.trim());
+        } catch (Exception e) {
+            log.warn("Failed to save search interest for user {}: {}", userId, e.getMessage());
+        }
+    }
+
+    /**
+     * Lấy ý định tìm kiếm gần nhất của người dùng trong vòng N giờ
+     */
+    public Optional<UserSearchInterest> getRecentSearchInterest(UUID userId, int withinHours) {
+        if (userId == null || !postSearchSupport.isVectorAvailable()) {
+            return Optional.empty();
+        }
+        try {
+            String sql = """
+                SELECT query_text, cast(embedding as text) as vec
+                FROM user_search_interests
+                WHERE user_id = ?
+                  AND updated_at >= NOW() - (? * INTERVAL '1 hour')
+                ORDER BY updated_at DESC
+                LIMIT 1
+            """;
+            List<UserSearchInterest> list = jdbcTemplate.query(sql, (rs, rowNum) -> {
+                String q = rs.getString("query_text");
+                String vec = rs.getString("vec");
+                return new UserSearchInterest(q, vec);
+            }, userId, withinHours);
+
+            return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
+        } catch (Exception e) {
+            log.warn("Failed to get search interest for user {}: {}", userId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Tính toán độ tương đồng ngữ nghĩa giữa vector tìm kiếm và danh sách bài viết ứng viên trên Bảng tin
+     */
+    public Map<UUID, Double> computeSimilaritiesForPosts(List<UUID> postIds, String vectorStr) {
+        if (postIds == null || postIds.isEmpty() || vectorStr == null || vectorStr.isBlank() || !postSearchSupport.isVectorAvailable()) {
+            return Collections.emptyMap();
+        }
+        try {
+            String inPlaceholders = String.join(",", Collections.nCopies(postIds.size(), "?::uuid"));
+            String sql = String.format("""
+                SELECT post_id, (1 - (embedding <=> cast(? as vector))) AS similarity
+                FROM post_embeddings
+                WHERE post_id IN (%s)
+            """, inPlaceholders);
+
+            List<Object> params = new ArrayList<>(postIds.size() + 1);
+            params.add(vectorStr);
+            for (UUID id : postIds) {
+                params.add(id.toString());
+            }
+
+            return jdbcTemplate.query(sql, (rs, rowNum) -> {
+                UUID pid = UUID.fromString(rs.getString("post_id"));
+                double sim = rs.getDouble("similarity");
+                return Map.entry(pid, sim);
+            }, params.toArray()).stream().collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a));
+        } catch (Exception e) {
+            log.warn("Failed to compute similarities for candidate posts: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+}

@@ -1,6 +1,7 @@
 package iuh.fit.postservice.application.service.ranking;
 
 import iuh.fit.commonframework.application.dto.ApiResponse;
+import iuh.fit.postservice.application.service.PostEmbeddingService;
 import iuh.fit.postservice.application.service.PostSeenService;
 import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.application.service.PostVisibilityService;
@@ -57,6 +58,7 @@ public class FeedRankingService {
     private final RankedFeedCache rankedFeedCache;
     private final PostSeenService postSeenService;
     private final ReputationGuard reputationGuard;
+    private final PostEmbeddingService postEmbeddingService;
 
     public RankedFeedSnapshot snapshot(UUID viewerId, Mode mode) {
         return snapshot(viewerId, mode, false, false);
@@ -117,10 +119,30 @@ public class FeedRankingService {
         Map<UUID, Double> reputationWeights = reputationGuard.feedWeights(
                 visible.stream().map(Post::getAuthorId).filter(a -> !a.equals(viewerId)).distinct().toList());
 
+        // 3c. Ý định tìm kiếm gần đây (Search-biased Retargeting)
+        String searchInterestTopic = null;
+        Map<UUID, Double> searchSimilarities = Collections.emptyMap();
+        if (viewerId != null && mode == Mode.RELEVANCE) {
+            try {
+                Optional<PostEmbeddingService.UserSearchInterest> interestOpt = postEmbeddingService.getRecentSearchInterest(viewerId, 24);
+                if (interestOpt.isPresent()) {
+                    searchInterestTopic = interestOpt.get().queryText();
+                    searchSimilarities = postEmbeddingService.computeSimilaritiesForPosts(
+                            visible.stream().map(Post::getId).toList(),
+                            interestOpt.get().vectorStr());
+                    log.debug("User {} recent search interest: '{}', matched {} posts",
+                            viewerId, searchInterestTopic, searchSimilarities.size());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to apply search-biased retargeting for user {}: {}", viewerId, e.getMessage());
+            }
+        }
+
         // 4. Chấm điểm
         List<Item> scored = new ArrayList<>(visible.size());
         for (Post p : visible) {
             double ageHours = Duration.between(p.getCreatedAt(), now).toMinutes() / 60.0;
+            double searchSim = searchSimilarities.getOrDefault(p.getId(), 0.0);
             Signals signals = new Signals(
                     ageHours, p.getLikeCount(), p.getCommentCount(), p.getShareCount(),
                     postsWithMedia.contains(p.getId()),
@@ -130,7 +152,9 @@ public class FeedRankingService {
                     followingIds.contains(p.getAuthorId()),
                     p.getGroupId() != null && memberGroups.contains(p.getGroupId()),
                     interactions.getOrDefault(p.getAuthorId(), 0),
-                    p.isPinned());
+                    p.isPinned(),
+                    searchSim,
+                    searchInterestTopic);
             Scored s = PostRelevanceScorer.score(mode, signals);
             double weight = reputationWeights.getOrDefault(p.getAuthorId(), 1.0);
             scored.add(new Item(p.getId(), p.getAuthorId(), s.score() * weight, s.reason()));

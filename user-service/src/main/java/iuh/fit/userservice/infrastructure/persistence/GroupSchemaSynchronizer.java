@@ -32,10 +32,13 @@ public class GroupSchemaSynchronizer implements ApplicationRunner {
     private volatile boolean vectorAvailable = false;
 
     public boolean isVectorAvailable() {
+        if (!vectorAvailable) {
+            initVector();
+        }
         return vectorAvailable;
     }
 
-    private void initVector() {
+    private synchronized void initVector() {
         try {
             jdbcTemplate.execute("CREATE EXTENSION IF NOT EXISTS vector");
             Integer found = jdbcTemplate.queryForObject("SELECT count(*) FROM pg_extension WHERE extname = 'vector'", Integer.class);

@@ -133,6 +133,7 @@ public class PostController {
     iuh.fit.postservice.application.service.GroupPostModerationService groupPostModerationService;
     iuh.fit.postservice.application.features.post.queries.get_groups_feed.GetGroupsFeedQueryHandler getGroupsFeedQueryHandler;
     PostEmbeddingService postEmbeddingService;
+    iuh.fit.postservice.application.service.ranking.RankedFeedCache rankedFeedCache;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(
@@ -292,6 +293,17 @@ public class PostController {
         try {
             List<Float> queryVector = postEmbeddingService.getQueryEmbedding(cleanQuery);
             if (queryVector != null && !queryVector.isEmpty()) {
+                UUID searchViewerId = getOptionalCurrentUserId();
+                if (searchViewerId != null) {
+                    try {
+                        postEmbeddingService.saveUserSearchInterest(searchViewerId, cleanQuery, queryVector);
+                        if (rankedFeedCache != null) {
+                            rankedFeedCache.evictViewer(searchViewerId);
+                        }
+                    } catch (Exception e) {
+                        log.debug("Could not record search interest: {}", e.getMessage());
+                    }
+                }
                 int pageSize = filter != null && filter.getSize() > 0 ? filter.getSize() : 20;
                 int pageIndex = filter != null && filter.getPage() > 0 ? filter.getPage() - 1 : 0;
                 int fetchLimit = Math.min(Math.max(pageSize * (pageIndex + 1) * 2, 60), 150);

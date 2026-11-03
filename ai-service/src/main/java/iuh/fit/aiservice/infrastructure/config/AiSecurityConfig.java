@@ -41,7 +41,8 @@ public class AiSecurityConfig {
                                 "/actuator/health/**",
                                 "/actuator/info",
                                 "/actuator/prometheus",
-                                "/api/v1/internal/**")
+                                "/api/v1/internal/**",
+                                "/api/v1/ai/embeddings/**")
                         .permitAll()
                         .requestMatchers(
                                 "/api/v1/ai/keywords",
