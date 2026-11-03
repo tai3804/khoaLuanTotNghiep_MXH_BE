@@ -45,6 +45,11 @@ public class JoinCallCommandHandler {
         Optional<CallParticipant> participantOpt = callParticipantRepository
                 .findByCallSessionIdAndUserId(command.getCallSessionId(), command.getCurrentUserId());
 
+        // Check if user is banned from this live stream session
+        if (participantOpt.isPresent() && participantOpt.get().getStatus() == ParticipantStatus.BANNED) {
+            throw new BusinessException(CallServiceErrorCode.USER_BANNED_FROM_CALL);
+        }
+
         if (session.getChannelType() == ChannelType.DIRECT
                 && participantOpt.isEmpty()
                 && !command.getCurrentUserId().equals(session.getHostUserId())) {

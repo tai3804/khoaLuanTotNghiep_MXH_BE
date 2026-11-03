@@ -6,5 +6,6 @@ public enum ParticipantStatus {
     CONNECTED,
     DECLINED,
     LEFT,
-    BUSY
+    BUSY,
+    BANNED
 }

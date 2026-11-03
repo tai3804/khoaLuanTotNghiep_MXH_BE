@@ -14,5 +14,6 @@ public enum WebRtcSignalType {
     TOGGLE_VIDEO,
     VIEWER_COUNT,
     LIVE_COMMENT,
-    LIVE_REACTION
+    LIVE_REACTION,
+    KICK_PARTICIPANT
 }

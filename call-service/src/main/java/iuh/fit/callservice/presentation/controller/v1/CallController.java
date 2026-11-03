@@ -34,11 +34,15 @@ import iuh.fit.callservice.presentation.dto.request.InitiateCallRequest;
 import iuh.fit.callservice.presentation.dto.request.ToggleMediaRequest;
 import iuh.fit.callservice.presentation.dto.response.CallHistoryResponse;
 import iuh.fit.callservice.presentation.dto.response.CallSessionResponse;
+import iuh.fit.callservice.presentation.dto.response.WebRtcSignalResponse;
 import iuh.fit.callservice.presentation.mapper.CallPresentationMapper;
 import iuh.fit.callservice.domain.entities.CallParticipant;
 import iuh.fit.callservice.domain.entities.CallSession;
 import iuh.fit.callservice.domain.enums.CallStatus;
 import iuh.fit.callservice.domain.enums.ChannelType;
+import iuh.fit.callservice.domain.enums.ParticipantRole;
+import iuh.fit.callservice.domain.enums.ParticipantStatus;
+import iuh.fit.callservice.domain.enums.WebRtcSignalType;
 import iuh.fit.callservice.infrastructure.persistence.repository.CallParticipantRepository;
 import iuh.fit.callservice.infrastructure.persistence.repository.CallSessionRepository;
 import jakarta.validation.Valid;
@@ -47,9 +51,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -71,6 +79,7 @@ public class CallController {
     CallPresentationMapper callPresentationMapper;
     CallSessionRepository callSessionRepository;
     CallParticipantRepository callParticipantRepository;
+    SimpMessagingTemplate messagingTemplate;
     JwtUtil jwtUtil;
 
     @PostMapping("/initiate")
@@ -219,6 +228,81 @@ public class CallController {
             endCallCommandHandler.handle(command);
         }
         return ResponseEntity.ok(ApiResponse.success(null, "Post call session ended successfully"));
+    }
+
+    @PostMapping("/post/{postId}/ban/{targetUserId}")
+    @Operation(summary = "Ban viewer from live stream (Host only)", description = "Bans a participant from active live stream session and broadcasts kick signal")
+    public ResponseEntity<ApiResponse<Void>> banViewerFromPost(
+            @PathVariable UUID postId,
+            @PathVariable UUID targetUserId) {
+        UUID currentUserId = getCurrentUserId();
+        if (currentUserId.equals(targetUserId)) {
+            throw new BusinessException(CallServiceErrorCode.CANNOT_BAN_SELF);
+        }
+
+        CallSession session = callSessionRepository.findByConversationIdAndStatusIn(postId, List.of(CallStatus.INITIATED, CallStatus.ACTIVE))
+                .stream().findFirst()
+                .orElseThrow(() -> new BusinessException(CallServiceErrorCode.CALL_SESSION_NOT_FOUND));
+
+        if (!currentUserId.equals(session.getHostUserId())) {
+            throw new BusinessException(CallServiceErrorCode.UNAUTHORIZED_CALL_HOST);
+        }
+
+        CallParticipant participant = callParticipantRepository.findByCallSessionIdAndUserId(session.getId(), targetUserId)
+                .orElseGet(() -> CallParticipant.builder()
+                        .callSessionId(session.getId())
+                        .userId(targetUserId)
+                        .role(ParticipantRole.PARTICIPANT)
+                        .build());
+
+        participant.setStatus(ParticipantStatus.BANNED);
+        participant.setLeftAt(LocalDateTime.now());
+        callParticipantRepository.save(participant);
+
+        List<CallParticipant> allParticipants = callParticipantRepository.findByCallSessionId(session.getId());
+        long connectedCount = allParticipants.stream()
+                .filter(p -> p.getStatus() == ParticipantStatus.CONNECTED)
+                .count();
+
+        WebRtcSignalResponse kickSignal = WebRtcSignalResponse.builder()
+                .callSessionId(session.getId())
+                .senderId(currentUserId)
+                .targetUserId(targetUserId)
+                .signalType(WebRtcSignalType.KICK_PARTICIPANT)
+                .viewerCount((int) connectedCount)
+                .timestamp(Instant.now())
+                .build();
+
+        try {
+            messagingTemplate.convertAndSend("/topic/live/" + postId, kickSignal);
+            messagingTemplate.convertAndSendToUser(targetUserId.toString(), "/queue/call-signal", kickSignal);
+        } catch (Exception ignored) {}
+
+        return ResponseEntity.ok(ApiResponse.success(null, "Viewer banned successfully"));
+    }
+
+    @PostMapping("/post/{postId}/unban/{targetUserId}")
+    @Operation(summary = "Unban viewer from live stream (Host only)", description = "Unbans a participant from live stream session")
+    public ResponseEntity<ApiResponse<Void>> unbanViewerFromPost(
+            @PathVariable UUID postId,
+            @PathVariable UUID targetUserId) {
+        UUID currentUserId = getCurrentUserId();
+        CallSession session = callSessionRepository.findByConversationIdAndStatusIn(postId, List.of(CallStatus.INITIATED, CallStatus.ACTIVE))
+                .stream().findFirst()
+                .orElseThrow(() -> new BusinessException(CallServiceErrorCode.CALL_SESSION_NOT_FOUND));
+
+        if (!currentUserId.equals(session.getHostUserId())) {
+            throw new BusinessException(CallServiceErrorCode.UNAUTHORIZED_CALL_HOST);
+        }
+
+        Optional<CallParticipant> participantOpt = callParticipantRepository.findByCallSessionIdAndUserId(session.getId(), targetUserId);
+        if (participantOpt.isPresent() && participantOpt.get().getStatus() == ParticipantStatus.BANNED) {
+            CallParticipant participant = participantOpt.get();
+            participant.setStatus(ParticipantStatus.LEFT);
+            callParticipantRepository.save(participant);
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(null, "Viewer unbanned successfully"));
     }
 
     private UUID getCurrentUserId() {

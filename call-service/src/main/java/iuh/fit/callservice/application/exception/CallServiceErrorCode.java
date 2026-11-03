@@ -17,6 +17,8 @@ public enum CallServiceErrorCode implements BaseError {
     UNAUTHORIZED_CALL_HOST(403, "Only the call host can perform this action", 403),
     CALL_SESSION_ALREADY_ENDED(400, "Call session has already ended", 400),
     CANNOT_CALL_SELF(400, "Cannot initiate a call with yourself", 400),
+    USER_BANNED_FROM_CALL(403, "You have been banned from this live stream session by the host", 403),
+    CANNOT_BAN_SELF(400, "Host cannot ban themselves", 400),
     UNAUTHORIZED(401, "Unauthenticated", 401);
 
     int code;
