@@ -8,12 +8,15 @@ import iuh.fit.callservice.domain.entities.CallSession;
 import iuh.fit.callservice.domain.enums.*;
 import iuh.fit.callservice.infrastructure.persistence.repository.CallParticipantRepository;
 import iuh.fit.callservice.infrastructure.persistence.repository.CallSessionRepository;
+import iuh.fit.callservice.presentation.dto.response.WebRtcSignalResponse;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +29,7 @@ public class JoinCallCommandHandler {
     CallSessionRepository callSessionRepository;
     CallParticipantRepository callParticipantRepository;
     CallFeatureMapper callFeatureMapper;
+    SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public JoinCallResult handle(JoinCallCommand command) {
@@ -73,6 +77,23 @@ public class JoinCallCommandHandler {
         List<JoinCallResult.ParticipantResult> participantResults = allParticipants.stream()
                 .map(callFeatureMapper::toJoinParticipantResult)
                 .toList();
+
+        // Broadcast real viewer count to live room if session is associated with a post
+        if (session.getConversationId() != null) {
+            long connectedCount = allParticipants.stream()
+                    .filter(p -> p.getStatus() == ParticipantStatus.CONNECTED)
+                    .count();
+            WebRtcSignalResponse countSignal = WebRtcSignalResponse.builder()
+                    .callSessionId(session.getId())
+                    .senderId(command.getCurrentUserId())
+                    .signalType(WebRtcSignalType.VIEWER_COUNT)
+                    .viewerCount((int) connectedCount)
+                    .timestamp(Instant.now())
+                    .build();
+            try {
+                messagingTemplate.convertAndSend("/topic/live/" + session.getConversationId(), countSignal);
+            } catch (Exception ignored) {}
+        }
 
         return callFeatureMapper.toJoinCallResult(session, participantResults);
     }

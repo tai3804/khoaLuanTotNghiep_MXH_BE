@@ -94,5 +94,19 @@ public class LeaveCallCommandHandler {
         } catch (Exception e) {
             log.error("Failed to broadcast leave/end signal: {}", e.getMessage());
         }
+
+        // Broadcast updated viewer count to live stream topic
+        if (session.getConversationId() != null) {
+            WebRtcSignalResponse countSignal = WebRtcSignalResponse.builder()
+                    .callSessionId(session.getId())
+                    .senderId(command.getCurrentUserId())
+                    .signalType(WebRtcSignalType.VIEWER_COUNT)
+                    .viewerCount((int) connectedCount)
+                    .timestamp(Instant.now())
+                    .build();
+            try {
+                messagingTemplate.convertAndSend("/topic/live/" + session.getConversationId(), countSignal);
+            } catch (Exception ignored) {}
+        }
     }
 }

@@ -197,6 +197,18 @@ public class CallController {
         return ResponseEntity.ok(ApiResponse.success(callPresentationMapper.toResponse(result), "Joined post call session successfully"));
     }
 
+    @PostMapping("/post/{postId}/leave")
+    @Operation(summary = "Leave call session for post", description = "Leaves the active call session associated with a post")
+    public ResponseEntity<ApiResponse<Void>> leaveCallByPost(@PathVariable UUID postId) {
+        UUID currentUserId = getCurrentUserId();
+        List<CallSession> sessions = callSessionRepository.findByConversationIdAndStatusIn(postId, List.of(CallStatus.INITIATED, CallStatus.ACTIVE));
+        for (CallSession session : sessions) {
+            LeaveCallCommand command = callPresentationMapper.toLeaveCommand(session.getId(), currentUserId);
+            leaveCallCommandHandler.handle(command);
+        }
+        return ResponseEntity.ok(ApiResponse.success(null, "Left post call session successfully"));
+    }
+
     @PostMapping("/post/{postId}/end")
     @Operation(summary = "End call session for post", description = "Ends the active call session associated with a post (Host only)")
     public ResponseEntity<ApiResponse<Void>> endCallByPost(@PathVariable UUID postId) {
