@@ -6,6 +6,7 @@ import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.application.mapper.UserProfileApplicationMapper;
 import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.repository.UserProfileRepository;
+import iuh.fit.userservice.application.service.UserEmbeddingService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -23,6 +24,7 @@ public class UpdateUserProfileCommandHandler {
     UserProfileRepository userProfileRepository;
     UserProfileApplicationMapper userProfileApplicationMapper;
     KafkaTemplate<String, Object> kafkaTemplate;
+    UserEmbeddingService userEmbeddingService;
 
     @Transactional
     public UpdateUserProfileResult handle(UpdateUserProfileCommand command) {
@@ -34,6 +36,7 @@ public class UpdateUserProfileCommandHandler {
 
         userProfileApplicationMapper.updateEntityFromCommand(command, userProfile);
         UserProfile savedProfile = userProfileRepository.save(userProfile);
+        userEmbeddingService.vectorizeUserProfileAsync(savedProfile.getUserId(), savedProfile);
 
         String newAvatar = savedProfile.getAvatarUrl();
         String newCover = savedProfile.getCoverUrl();

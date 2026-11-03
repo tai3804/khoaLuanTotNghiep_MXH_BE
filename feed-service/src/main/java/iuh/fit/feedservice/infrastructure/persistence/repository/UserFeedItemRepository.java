@@ -24,4 +24,9 @@ public interface UserFeedItemRepository extends BaseJpaRepository<UserFeedItem, 
     void deleteByUserIdAndPostId(UUID userId, UUID postId);
 
     boolean existsByUserIdAndPostId(UUID userId, UUID postId);
+
+    @org.springframework.data.jpa.repository.Query("SELECT u.userId FROM UserFeedItem u WHERE u.postId = :postId AND u.userId IN :userIds")
+    java.util.Set<UUID> findExistingUserIds(
+            @org.springframework.data.repository.query.Param("postId") UUID postId,
+            @org.springframework.data.repository.query.Param("userIds") java.util.Collection<UUID> userIds);
 }

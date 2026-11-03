@@ -207,6 +207,9 @@ public class CreatePostCommandHandler {
             groupNotificationPublisher.postPending(savedPost);
         } else if (savedPost.getStatus() == PostStatus.PUBLISHED) {
             postPublicationHelper.notifyPostPublished(savedPost);
+            if (savedPost.getContent() != null && !savedPost.getContent().isBlank()) {
+                postEmbeddingService.vectorizePostAsync(savedPost.getId(), savedPost.getContent());
+            }
         }
 
         CreatePostResult result = postFeatureMapper.toCreateResult(savedPost, savedMediaList);

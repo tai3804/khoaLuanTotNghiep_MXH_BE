@@ -5,6 +5,7 @@ import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.application.mapper.UserProfileMapper;
 import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.repository.UserProfileRepository;
+import iuh.fit.userservice.application.service.UserEmbeddingService;
 import iuh.fit.userservice.presentation.dto.event.UserRegisteredEvent;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class UserRegisteredEventListener {
 
     UserProfileRepository userProfileRepository;
     UserProfileMapper userProfileMapper;
+    UserEmbeddingService userEmbeddingService;
 
     @KafkaListener(topics = "user.registered", groupId = "user-service-group")
     public void handleUserRegisteredEvent(UserRegisteredEvent event) {
@@ -45,10 +47,12 @@ public class UserRegisteredEventListener {
                         existingProfile.setGender(userProfileMapper.mapGender(event.getGender()));
                     }
                     userProfileRepository.save(existingProfile);
+                    userEmbeddingService.vectorizeUserProfileAsync(existingProfile.getUserId(), existingProfile);
                     log.info("Successfully merged and updated UserProfile for userId: {}", event.getUserId());
                 }, () -> {
                     UserProfile newProfile = userProfileMapper.toEntity(event);
                     userProfileRepository.save(newProfile);
+                    userEmbeddingService.vectorizeUserProfileAsync(newProfile.getUserId(), newProfile);
                     log.info("Successfully created UserProfile for userId: {}", event.getUserId());
                 });
     }

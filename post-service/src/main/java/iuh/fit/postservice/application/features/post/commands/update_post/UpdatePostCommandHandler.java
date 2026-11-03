@@ -1,5 +1,7 @@
 package iuh.fit.postservice.application.features.post.commands.update_post;
 
+import iuh.fit.postservice.application.service.PostEmbeddingService;
+
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.postservice.application.exception.PostServiceErrorCode;
 import iuh.fit.postservice.application.mapper.PostFeatureMapper;
@@ -34,6 +36,7 @@ public class UpdatePostCommandHandler {
     PostMediaRepository postMediaRepository;
     PostFeatureMapper postFeatureMapper;
     MediaClient mediaClient;
+    PostEmbeddingService postEmbeddingService;
 
     @Transactional
     @CacheEvict(cacheNames = {"post-feed-v2", "post-user-feed-v2", "post-detail-v2"}, allEntries = true)
@@ -120,6 +123,9 @@ public class UpdatePostCommandHandler {
         }
 
         Post updatedPost = postRepository.save(post);
+        if (updatedPost.getContent() != null && !updatedPost.getContent().isBlank()) {
+            postEmbeddingService.vectorizePostAsync(updatedPost.getId(), updatedPost.getContent());
+        }
         List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(updatedPost.getId());
 
         return postFeatureMapper.toUpdateResult(updatedPost, mediaList);

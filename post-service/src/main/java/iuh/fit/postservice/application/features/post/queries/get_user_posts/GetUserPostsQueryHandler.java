@@ -46,13 +46,21 @@ public class GetUserPostsQueryHandler {
         );
 
         Set<java.util.UUID> visiblePostIds = postVisibilityService.visiblePostIds(postsPage.getContent(), query.getViewerId(), false);
-        List<GetPostDetailResult> content = postsPage.getContent().stream()
-                .filter(post -> visiblePostIds.contains(post.getId())).map(post -> {
-                    List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
-                    GetPostDetailResult res = postFeatureMapper.toGetDetailResult(post, mediaList);
-                    res.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
-                    return res;
-                }).toList();
+        List<Post> visiblePosts = postsPage.getContent().stream()
+                .filter(post -> visiblePostIds.contains(post.getId()))
+                .toList();
+
+        List<java.util.UUID> postIds = visiblePosts.stream().map(Post::getId).toList();
+        java.util.Map<java.util.UUID, List<PostMedia>> mediaMap = postIds.isEmpty() ? java.util.Collections.emptyMap()
+                : postMediaRepository.findByPostIdInOrderBySortOrderAsc(postIds).stream()
+                        .collect(java.util.stream.Collectors.groupingBy(PostMedia::getPostId));
+
+        List<GetPostDetailResult> content = visiblePosts.stream().map(post -> {
+            List<PostMedia> mediaList = mediaMap.getOrDefault(post.getId(), java.util.Collections.emptyList());
+            GetPostDetailResult res = postFeatureMapper.toGetDetailResult(post, mediaList);
+            res.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
+            return res;
+        }).toList();
 
         return postFeatureMapper.toPagedResponse(postsPage, content);
     }

@@ -58,7 +58,7 @@ public class PostEmbeddingService {
             String vectorStr = toVectorString(vector);
             String sql = """
                 INSERT INTO post_embeddings (post_id, embedding, updated_at)
-                VALUES (?, ?::vector, CURRENT_TIMESTAMP)
+                VALUES (?, cast(? as vector), CURRENT_TIMESTAMP)
                 ON CONFLICT (post_id) DO UPDATE
                 SET embedding = EXCLUDED.embedding, updated_at = CURRENT_TIMESTAMP
             """;
@@ -87,10 +87,10 @@ public class PostEmbeddingService {
             // Operator <=> trong pgvector là khoảng cách Cosine (Cosine Distance)
             // Độ tương đồng Cosine (Similarity) = 1 - Cosine Distance
             String sql = """
-                SELECT post_id, (1 - (embedding <=> ?::vector)) AS similarity
+                SELECT post_id, (1 - (embedding <=> cast(? as vector))) AS similarity
                 FROM post_embeddings
-                WHERE (1 - (embedding <=> ?::vector)) >= ?
-                ORDER BY embedding <=> ?::vector ASC
+                WHERE (1 - (embedding <=> cast(? as vector))) >= ?
+                ORDER BY embedding <=> cast(? as vector) ASC
                 LIMIT ?
             """;
 
@@ -109,6 +109,38 @@ public class PostEmbeddingService {
     /**
      * Gọi AI Service để lấy vector embedding 768 chiều cho một câu truy vấn
      */
+    /**
+     * Tìm các bài viết có ngữ nghĩa tương tự với một bài viết cụ thể (Dùng cho tính năng Đề xuất / Bài viết liên quan)
+     */
+    public List<PostVectorMatch> findRelatedPosts(UUID postId, int limit, double minSimilarity) {
+        if (postId == null || !postSearchSupport.isVectorAvailable()) {
+            return Collections.emptyList();
+        }
+
+        try {
+            int safeLimit = Math.max(1, Math.min(limit, 50));
+            String sql = """
+                SELECT p2.post_id, (1 - (p2.embedding <=> p1.embedding)) AS similarity
+                FROM post_embeddings p1
+                JOIN post_embeddings p2 ON p1.post_id != p2.post_id
+                WHERE p1.post_id = ?
+                  AND (1 - (p2.embedding <=> p1.embedding)) >= ?
+                ORDER BY p2.embedding <=> p1.embedding ASC
+                LIMIT ?
+            """;
+
+            return jdbcTemplate.query(sql, (rs, rowNum) -> {
+                UUID matchedPostId = UUID.fromString(rs.getString("post_id"));
+                double sim = rs.getDouble("similarity");
+                return new PostVectorMatch(matchedPostId, sim);
+            }, postId, minSimilarity, safeLimit);
+
+        } catch (Exception e) {
+            log.error("Error finding related posts for {}: {}", postId, e.getMessage(), e);
+            return Collections.emptyList();
+        }
+    }
+
     public List<Float> getQueryEmbedding(String query) {
         if (query == null || query.isBlank()) {
             return Collections.emptyList();

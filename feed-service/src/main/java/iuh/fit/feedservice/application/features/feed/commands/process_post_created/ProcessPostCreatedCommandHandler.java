@@ -42,9 +42,12 @@ public class ProcessPostCreatedCommandHandler {
             log.warn("Failed to fetch audience IDs from user-service for author {}: {}", command.getAuthorId(), e.getMessage());
         }
 
+        Set<UUID> alreadyExistingUserIds = recipientUserIds.isEmpty() ? Collections.emptySet()
+                : userFeedItemRepository.findExistingUserIds(command.getPostId(), recipientUserIds);
+
         List<UserFeedItem> feedItems = new ArrayList<>();
         for (UUID userId : recipientUserIds) {
-            if (userId != null && !userFeedItemRepository.existsByUserIdAndPostId(userId, command.getPostId())) {
+            if (userId != null && !alreadyExistingUserIds.contains(userId)) {
                 feedItems.add(UserFeedItem.builder()
                         .userId(userId)
                         .postId(command.getPostId())

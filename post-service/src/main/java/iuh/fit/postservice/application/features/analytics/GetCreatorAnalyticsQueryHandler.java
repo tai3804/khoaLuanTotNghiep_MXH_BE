@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -95,11 +96,19 @@ public class GetCreatorAnalyticsQueryHandler {
                 : 0.0;
 
         // 3. Top performing posts (by views and interactions)
-        List<TopPostMetricDto> topPosts = allPosts.stream()
+        List<Post> topPostCandidates = allPosts.stream()
                 .sorted((a, b) -> Long.compare(b.getViewCount(), a.getViewCount()))
                 .limit(8)
+                .toList();
+
+        List<UUID> topPostIds = topPostCandidates.stream().map(Post::getId).toList();
+        Map<UUID, List<PostMedia>> topMediaMap = topPostIds.isEmpty() ? Map.of()
+                : postMediaRepository.findByPostIdInOrderBySortOrderAsc(topPostIds).stream()
+                        .collect(Collectors.groupingBy(PostMedia::getPostId));
+
+        List<TopPostMetricDto> topPosts = topPostCandidates.stream()
                 .map(post -> {
-                    List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
+                    List<PostMedia> mediaList = topMediaMap.getOrDefault(post.getId(), List.of());
                     String firstUrl = (mediaList != null && !mediaList.isEmpty()) ? mediaList.get(0).getFileUrl() : null;
 
                     long pEngagements = post.getLikeCount() + post.getCommentCount() + post.getShareCount();

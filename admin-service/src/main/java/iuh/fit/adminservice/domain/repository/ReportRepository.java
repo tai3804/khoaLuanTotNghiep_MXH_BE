@@ -38,4 +38,6 @@ public interface ReportRepository extends BaseJpaRepository<Report, UUID> {
     long countByTargetTypeAndTargetIdAndStatus(TargetType targetType, UUID targetId, ReportStatus status);
 
     long countByStatusInAndResolvedAtBetween(Collection<ReportStatus> statuses, LocalDateTime start, LocalDateTime end);
+
+    List<Report> findByCreatedAtAfter(LocalDateTime since);
 }

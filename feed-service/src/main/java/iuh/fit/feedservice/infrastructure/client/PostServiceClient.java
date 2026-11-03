@@ -5,7 +5,10 @@ import iuh.fit.feedservice.infrastructure.client.dto.PostResponseDto;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
+import java.util.List;
 import java.util.UUID;
 
 @FeignClient(name = "post-service", url = "${POST_SERVICE_URL:}", path = "/api/v1/posts")
@@ -13,4 +16,7 @@ public interface PostServiceClient {
 
     @GetMapping("/{postId}")
     ApiResponse<PostResponseDto> getPostById(@PathVariable("postId") UUID postId);
+
+    @PostMapping("/batch")
+    ApiResponse<List<PostResponseDto>> getPostsBatch(@RequestBody List<UUID> postIds);
 }

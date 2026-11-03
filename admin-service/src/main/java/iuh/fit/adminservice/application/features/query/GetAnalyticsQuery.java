@@ -96,9 +96,9 @@ public class GetAnalyticsQuery {
             log.warn("Could not aggregate post timestamps for heatmap: {}", e.getMessage());
         }
 
-        // 2. Process real timestamps from reports
+        // 2. Process real timestamps from reports (limited to recent 30 days to avoid full table heap saturation)
         try {
-            List<Report> reports = reportRepository.findAll();
+            List<Report> reports = reportRepository.findByCreatedAtAfter(LocalDateTime.now().minusDays(30));
             for (Report report : reports) {
                 LocalDateTime dt = report.getCreatedAt();
                 if (dt != null) {

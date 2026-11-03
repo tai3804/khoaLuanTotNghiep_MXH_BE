@@ -64,6 +64,7 @@ public class GroupServiceImpl implements GroupService {
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final GroupEventPublisher groupEventPublisher;
     private final ReputationService reputationService;
+    private final GroupEmbeddingService groupEmbeddingService;
 
     // ------------------------------------------------------------------ nhóm
 
@@ -104,6 +105,7 @@ public class GroupServiceImpl implements GroupService {
             }
         }
         refreshMemberCount(group);
+        groupEmbeddingService.vectorizeGroupAsync(group.getId(), group.getName(), group.getDescription());
         return viewFor(group, creatorId, true);
     }
 
@@ -123,6 +125,35 @@ public class GroupServiceImpl implements GroupService {
 
         Sort bySize = Sort.by(Sort.Order.desc("memberCount"), Sort.Order.desc("createdAt"));
         Sort byActivity = Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.asc("name"));
+
+        if (keyword != null && !keyword.isBlank() && ("all".equals(normalizedScope) || "discover".equals(normalizedScope))) {
+            try {
+                List<Float> queryVector = groupEmbeddingService.getQueryEmbedding(keyword);
+                if (queryVector != null && !queryVector.isEmpty()) {
+                    List<GroupEmbeddingService.GroupVectorMatch> matches = groupEmbeddingService.searchSimilar(queryVector, pageSize * 2, 0.35);
+                    if (matches != null && !matches.isEmpty()) {
+                        List<UUID> matchedIds = matches.stream().map(GroupEmbeddingService.GroupVectorMatch::groupId).toList();
+                        Map<UUID, Double> scoreMap = matches.stream()
+                                .collect(Collectors.toMap(GroupEmbeddingService.GroupVectorMatch::groupId, GroupEmbeddingService.GroupVectorMatch::similarity, (a, b) -> a));
+                        List<Group> vectorGroups = groupRepository.findAllById(matchedIds).stream()
+                                .filter(g -> g != null && !g.isDeleted())
+                                .sorted((g1, g2) -> Double.compare(scoreMap.getOrDefault(g2.getId(), 0.0), scoreMap.getOrDefault(g1.getId(), 0.0)))
+                                .toList();
+                        if (!vectorGroups.isEmpty()) {
+                            int total = vectorGroups.size();
+                            int from = Math.min(pageIndex * pageSize, total);
+                            int to = Math.min(from + pageSize, total);
+                            List<Group> pagedVectorGroups = vectorGroups.subList(from, to);
+                            Map<UUID, GroupMember> mine = membershipsOf(viewerId, pagedVectorGroups);
+                            return new org.springframework.data.domain.PageImpl<>(pagedVectorGroups, PageRequest.of(pageIndex, pageSize), total)
+                                    .map(g -> view(g, mine.get(g.getId())));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Group vector search failed for '{}', falling back to keyword search: {}", keyword, e.getMessage());
+            }
+        }
         Page<Group> groups = switch (normalizedScope) {
             case "joined" -> groupRepository.searchByMembership(pattern, viewerId, GroupMemberStatus.APPROVED,
                     PageRequest.of(pageIndex, pageSize, byActivity));
@@ -162,7 +193,9 @@ public class GroupServiceImpl implements GroupService {
         if (request.getPostApprovalRequired() != null) group.setPostApprovalRequired(request.getPostApprovalRequired());
         if (request.getRules() != null) group.setRules(request.getRules());
         if (request.getMembershipQuestions() != null) group.setMembershipQuestions(joinQuestions(request.getMembershipQuestions()));
-        return viewFor(groupRepository.save(group), currentUserId, true);
+        Group savedGroup = groupRepository.save(group);
+        groupEmbeddingService.vectorizeGroupAsync(savedGroup.getId(), savedGroup.getName(), savedGroup.getDescription());
+        return viewFor(savedGroup, currentUserId, true);
     }
 
     @Override

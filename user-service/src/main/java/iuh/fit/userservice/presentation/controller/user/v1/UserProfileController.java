@@ -15,6 +15,8 @@ import iuh.fit.userservice.application.features.user_profile.queries.get_user_pr
 import iuh.fit.userservice.application.features.user_profile.queries.get_user_profile.GetUserProfileQueryHandler;
 import iuh.fit.userservice.application.features.user_profile.queries.get_user_profile.GetUserProfileResult;
 import iuh.fit.userservice.application.features.user_profile.queries.search_users.SearchUsersHandler;
+import iuh.fit.userservice.application.service.UserEmbeddingService;
+import java.util.Map;
 import iuh.fit.userservice.application.features.user_profile.queries.search_users.SearchUsersQuery;
 import iuh.fit.userservice.application.mapper.UserProfileApplicationMapper;
 import iuh.fit.userservice.domain.entities.ProfileViewHistory;
@@ -69,6 +71,37 @@ public class UserProfileController {
     ProfileViewHistoryRepository profileViewHistoryRepository;
     UserConnectionRepository userConnectionRepository;
     JwtUtil jwtUtil;
+    UserEmbeddingService userEmbeddingService;
+
+    @PostMapping("/embeddings/backfill")
+    @Operation(summary = "Backfill embeddings for users", description = "Generates and saves embeddings for user profiles", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<Map<String, Object>>> backfillEmbeddings(
+            @RequestParam(defaultValue = "50") int limit) {
+        int count = userEmbeddingService.backfillEmbeddings(limit);
+        return ResponseEntity.ok(ApiResponse.success(Map.of("processed", count), "Nạp vector cho người dùng thành công"));
+    }
+
+    @GetMapping("/recommended-similar")
+    @Operation(summary = "Get recommended users with similar profile", description = "Finds users with similar bio/interests based on vector embedding", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<ApiResponse<List<UserProfileResponse>>> getSimilarUsers(
+            @RequestParam(defaultValue = "5") int limit) {
+        String userIdStr = jwtUtil.getCurrentUserId();
+        if (userIdStr == null) {
+            return ResponseEntity.ok(ApiResponse.success(List.of(), ""));
+        }
+        UUID myId = UUID.fromString(userIdStr);
+        List<UserEmbeddingService.UserVectorMatch> matches = userEmbeddingService.findSimilarUsers(myId, limit, 0.40);
+        if (matches == null || matches.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(List.of(), ""));
+        }
+        List<UUID> matchedIds = matches.stream().map(UserEmbeddingService.UserVectorMatch::userId).toList();
+        List<UserProfile> profiles = userProfileRepository.findByUserIdIn(matchedIds);
+        List<UserProfileResponse> responses = profiles.stream()
+                .map(userProfileApplicationMapper::toQueryResult)
+                .map(userProfilePresentationMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success(responses, "Lấy danh sách người dùng tương đồng thành công"));
+    }
 
     @GetMapping("/search")
     @Operation(summary = "Search users by name", description = "Retrieves paginated list of user profiles matching the keyword query in BaseFilter", security = @SecurityRequirement(name = "bearerAuth"))

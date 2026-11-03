@@ -5,6 +5,8 @@ import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.application.service.GroupService;
+import iuh.fit.userservice.application.service.GroupEmbeddingService;
+import java.util.Map;
 import iuh.fit.userservice.domain.enums.GroupNotificationLevel;
 import iuh.fit.userservice.domain.enums.GroupRole;
 import iuh.fit.userservice.presentation.dto.request.CreateGroupRequest;
@@ -32,8 +34,16 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class GroupController {
 
+    @PostMapping("/embeddings/backfill")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> backfillEmbeddings(
+            @RequestParam(defaultValue = "50") int limit) {
+        int count = groupEmbeddingService.backfillEmbeddings(limit);
+        return ResponseEntity.ok(ApiResponse.success(Map.of("processed", count), "Nạp vector cho nhóm thành công"));
+    }
+
     GroupService groupService;
     JwtUtil jwtUtil;
+    GroupEmbeddingService groupEmbeddingService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<GroupResponse>> createGroup(@Valid @RequestBody CreateGroupRequest request) {

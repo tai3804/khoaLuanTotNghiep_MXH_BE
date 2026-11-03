@@ -1,5 +1,8 @@
 package iuh.fit.postservice.presentation.controller.v1;
 
+import java.util.Collections;
+import java.util.ArrayList;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -81,6 +84,9 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import iuh.fit.postservice.application.service.PostEmbeddingService;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @RestController
 @RequestMapping(ApiConstants.POST_API)
 @RequiredArgsConstructor
@@ -174,6 +180,41 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
     }
 
+    @PostMapping("/batch")
+    @Operation(summary = "Get posts in batch", description = "Retrieves multiple posts by a list of IDs in a single query with eager-loaded media")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getPostsBatch(
+            @RequestBody List<UUID> postIds) {
+        if (postIds == null || postIds.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(Collections.emptyList(), "Batch posts retrieved successfully"));
+        }
+        List<Post> posts = postRepository.findAllById(postIds);
+        UUID viewerId = getOptionalCurrentUserId();
+        Set<UUID> visibleIds = postVisibilityService.visiblePostIds(posts, viewerId, false);
+        List<Post> visiblePosts = posts.stream().filter(p -> visibleIds.contains(p.getId()) && !p.isDeleted()).toList();
+
+        List<UUID> visiblePostIds = visiblePosts.stream().map(Post::getId).toList();
+        Map<UUID, List<PostMedia>> mediaMap = visiblePostIds.isEmpty() ? Collections.emptyMap()
+                : postMediaRepository.findByPostIdInOrderBySortOrderAsc(visiblePostIds).stream()
+                        .collect(Collectors.groupingBy(PostMedia::getPostId));
+
+        Map<UUID, PostResponse> postResponseMap = visiblePosts.stream().map(post -> {
+            List<PostMedia> mediaList = mediaMap.getOrDefault(post.getId(), Collections.emptyList());
+            GetPostDetailResult detail = postFeatureMapper.toGetDetailResult(post, mediaList);
+            detail.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), viewerId));
+            return postPresentationMapper.toResponse(detail);
+        }).collect(Collectors.toMap(PostResponse::getId, p -> p, (a, b) -> a));
+
+        List<PostResponse> orderedResponses = new ArrayList<>();
+        for (UUID id : postIds) {
+            PostResponse resp = postResponseMap.get(id);
+            if (resp != null) {
+                orderedResponses.add(resp);
+            }
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(orderedResponses, "Batch posts retrieved successfully"));
+    }
+
     @PostMapping("/seen")
     @Operation(summary = "Mark posts as seen", description = "Records that the authenticated user has viewed these posts on the feed, so GET /posts?unseenOnly=true skips them on later loads. Unknown post ids are ignored.")
     public ResponseEntity<ApiResponse<Map<String, Object>>> markPostsSeen(
@@ -182,13 +223,134 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.success(Map.of("recorded", recorded), "Posts marked as seen"));
     }
 
+    @PostMapping("/{postId}/embedding")
+    @Operation(summary = "Save post embedding vector", description = "Saves or updates 768-dimensional embedding vector for semantic search")
+    public ResponseEntity<ApiResponse<Boolean>> savePostEmbedding(
+            @PathVariable("postId") UUID postId,
+            @RequestBody List<Float> embedding) {
+        boolean saved = postEmbeddingService.saveEmbedding(postId, embedding);
+        return ResponseEntity.ok(ApiResponse.success(saved, "Post embedding saved successfully"));
+    }
+
+    @PostMapping("/embeddings/backfill")
+    @Operation(summary = "Backfill embeddings for posts", description = "Generates and saves embeddings for posts that do not have embeddings yet")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> backfillEmbeddings(
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        int count = postEmbeddingService.backfillEmbeddings(limit);
+        return ResponseEntity.ok(ApiResponse.success(Map.of("processed", count), "Backfill completed successfully"));
+    }
+
+    @GetMapping("/{postId}/related")
+    @Operation(summary = "Get related posts", description = "Finds semantically similar posts using vector cosine distance")
+    public ResponseEntity<ApiResponse<List<PostResponse>>> getRelatedPosts(
+            @PathVariable("postId") UUID postId,
+            @RequestParam(value = "limit", defaultValue = "5") int limit) {
+        List<PostEmbeddingService.PostVectorMatch> matches = postEmbeddingService.findRelatedPosts(postId, limit, 0.40);
+        if (matches == null || matches.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(List.of(), "No related posts found"));
+        }
+        List<UUID> matchedIds = matches.stream().map(PostEmbeddingService.PostVectorMatch::postId).toList();
+        Map<UUID, Double> scoreMap = matches.stream()
+                .collect(Collectors.toMap(PostEmbeddingService.PostVectorMatch::postId, PostEmbeddingService.PostVectorMatch::similarity, (a, b) -> a));
+
+        List<Post> posts = postRepository.findAllById(matchedIds).stream()
+                .filter(p -> p != null && !p.isDeleted() && !p.isArchived() && p.getStatus() == PostStatus.PUBLISHED)
+                .sorted((p1, p2) -> Double.compare(scoreMap.getOrDefault(p2.getId(), 0.0), scoreMap.getOrDefault(p1.getId(), 0.0)))
+                .toList();
+
+        UUID viewerId = getOptionalCurrentUserId();
+        Set<UUID> visibleIds = postVisibilityService.visiblePostIds(posts, viewerId, false);
+        List<Post> visiblePosts = posts.stream().filter(p -> visibleIds.contains(p.getId())).toList();
+
+        Map<UUID, List<PostMedia>> mediaMap = postMediaRepository.findByPostIdInOrderBySortOrderAsc(visiblePosts.stream().map(Post::getId).toList()).stream()
+                .collect(Collectors.groupingBy(PostMedia::getPostId));
+
+        List<PostResponse> responses = visiblePosts.stream()
+                .map(p -> postPresentationMapper.toResponse(postFeatureMapper.toGetDetailResult(p, mediaMap.getOrDefault(p.getId(), List.of()))))
+                .toList();
+
+        return ResponseEntity.ok(ApiResponse.success(responses, "Related posts retrieved successfully"));
+    }
+
     @GetMapping("/search")
-    @Operation(summary = "Search posts by keyword", description = "Retrieves paginated list of posts matching the keyword query")
+    @Operation(summary = "Search posts by keyword or semantic query", description = "Retrieves paginated list of posts matching the keyword query or semantic context")
     public ResponseEntity<ApiResponse<List<PostResponse>>> searchPosts(
             @RequestParam(value = "query", required = false, defaultValue = "") String query,
+            @RequestParam(value = "mode", required = false, defaultValue = "hybrid") String mode,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
+        String cleanQuery = query != null ? query.trim() : "";
+        if (cleanQuery.isEmpty() || "keyword".equalsIgnoreCase(mode)) {
+            BaseFilter searchFilter = filter != null ? filter : new BaseFilter();
+            searchFilter.setKeyword(cleanQuery);
+            GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter).viewerId(getOptionalCurrentUserId()).build();
+            PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(searchQuery);
+            PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
+            return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+        }
+
+        // Semantic / Hybrid Search via pgvector and Gemini
+        try {
+            List<Float> queryVector = postEmbeddingService.getQueryEmbedding(cleanQuery);
+            if (queryVector != null && !queryVector.isEmpty()) {
+                int pageSize = filter != null && filter.getSize() > 0 ? filter.getSize() : 20;
+                int pageIndex = filter != null && filter.getPage() > 0 ? filter.getPage() - 1 : 0;
+                int fetchLimit = Math.min(Math.max(pageSize * (pageIndex + 1) * 2, 60), 150);
+
+                List<PostEmbeddingService.PostVectorMatch> vectorMatches = postEmbeddingService.searchSimilar(queryVector, fetchLimit, 0.35);
+                if (vectorMatches != null && !vectorMatches.isEmpty()) {
+                    List<UUID> matchedIds = vectorMatches.stream().map(PostEmbeddingService.PostVectorMatch::postId).toList();
+                    Map<UUID, Double> scoreMap = vectorMatches.stream()
+                            .collect(Collectors.toMap(PostEmbeddingService.PostVectorMatch::postId, PostEmbeddingService.PostVectorMatch::similarity, (a, b) -> a));
+
+                    List<Post> posts = postRepository.findAllById(matchedIds).stream()
+                            .filter(p -> p != null && !p.isDeleted() && !p.isArchived() && p.getStatus() == PostStatus.PUBLISHED)
+                            .sorted((p1, p2) -> Double.compare(scoreMap.getOrDefault(p2.getId(), 0.0), scoreMap.getOrDefault(p1.getId(), 0.0)))
+                            .toList();
+
+                    UUID viewerId = getOptionalCurrentUserId();
+                    Set<UUID> visibleIds = postVisibilityService.visiblePostIds(posts, viewerId, false);
+                    List<Post> visiblePosts = posts.stream().filter(p -> visibleIds.contains(p.getId())).toList();
+
+                    if (!visiblePosts.isEmpty()) {
+                        int total = visiblePosts.size();
+                        int from = Math.min(pageIndex * pageSize, total);
+                        int to = Math.min(from + pageSize, total);
+                        List<Post> pagedVisiblePosts = visiblePosts.subList(from, to);
+
+                        List<UUID> pagedIds = pagedVisiblePosts.stream().map(Post::getId).toList();
+                        Map<UUID, List<PostMedia>> mediaByPost = postMediaRepository.findByPostIdInOrderBySortOrderAsc(pagedIds).stream()
+                                .collect(Collectors.groupingBy(PostMedia::getPostId));
+
+                        List<GetPostDetailResult> content = pagedVisiblePosts.stream()
+                                .map(p -> {
+                                    GetPostDetailResult detail = postFeatureMapper.toGetDetailResult(p, mediaByPost.getOrDefault(p.getId(), List.of()));
+                                    detail.setRelevanceScore(scoreMap.get(p.getId()));
+                                    detail.setRelevanceReason("Tìm kiếm ngữ nghĩa AI (Độ tương đồng: " + Math.round(scoreMap.getOrDefault(p.getId(), 0.0) * 100) + "%)");
+                                    detail.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(p.getPollData(), viewerId));
+                                    return detail;
+                                })
+                                .toList();
+
+                        PagedResponse<GetPostDetailResult> pagedResult = PagedResponse.<GetPostDetailResult>builder()
+                                .content(content)
+                                .page(pageIndex)
+                                .size(pageSize)
+                                .totalElements(total)
+                                .totalPages((int) Math.ceil((double) total / pageSize))
+                                .last(to >= total)
+                                .build();
+
+                        return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(pagedResult), MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Vector search failed for query '{}', falling back to keyword search: {}", cleanQuery, e.getMessage());
+        }
+
+        // Fallback to keyword unaccent search
         BaseFilter searchFilter = filter != null ? filter : new BaseFilter();
-        searchFilter.setKeyword(query);
+        searchFilter.setKeyword(cleanQuery);
         GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter).viewerId(getOptionalCurrentUserId()).build();
         PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(searchQuery);
         PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
@@ -540,8 +702,12 @@ public class PostController {
         }
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Order.desc("createdAt")));
         org.springframework.data.domain.Page<Post> postsPage = postRepository.findByAuthorIdAndDeletedFalseAndIsArchivedTrue(userId, pageable);
+        List<UUID> archivedPostIds = postsPage.getContent().stream().map(Post::getId).toList();
+        Map<UUID, List<PostMedia>> archivedMediaMap = archivedPostIds.isEmpty() ? Collections.emptyMap()
+                : postMediaRepository.findByPostIdInOrderBySortOrderAsc(archivedPostIds).stream()
+                        .collect(Collectors.groupingBy(PostMedia::getPostId));
         List<GetPostDetailResult> content = postsPage.getContent().stream().map(post -> {
-            List<PostMedia> mediaList = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
+            List<PostMedia> mediaList = archivedMediaMap.getOrDefault(post.getId(), Collections.emptyList());
             return postFeatureMapper.toGetDetailResult(post, mediaList);
         }).toList();
         PagedResponse<GetPostDetailResult> pagedResult = postFeatureMapper.toPagedResponse(postsPage, content);
@@ -853,10 +1019,15 @@ public class PostController {
                 currentUserId, PostStatus.SCHEDULED, pageable
         );
 
+        List<UUID> scheduledPostIds = pagedPosts.getContent().stream().map(Post::getId).toList();
+        Map<UUID, List<PostMedia>> scheduledMediaMap = scheduledPostIds.isEmpty() ? Collections.emptyMap()
+                : postMediaRepository.findByPostIdInOrderBySortOrderAsc(scheduledPostIds).stream()
+                        .collect(Collectors.groupingBy(PostMedia::getPostId));
+
         List<PostResponse> responses = pagedPosts.getContent().stream()
-                .map(post -> {
-                    var media = postMediaRepository.findByPostIdOrderBySortOrderAsc(post.getId());
-                    var detail = postFeatureMapper.toGetDetailResult(post, media);
+                .<PostResponse>map(post -> {
+                    List<PostMedia> media = scheduledMediaMap.getOrDefault(post.getId(), Collections.emptyList());
+                    GetPostDetailResult detail = postFeatureMapper.toGetDetailResult(post, media);
                     return postPresentationMapper.toResponse(detail);
                 })
                 .toList();

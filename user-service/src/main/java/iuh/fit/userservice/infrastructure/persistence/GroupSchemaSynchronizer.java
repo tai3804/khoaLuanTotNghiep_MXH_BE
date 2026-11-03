@@ -29,8 +29,58 @@ public class GroupSchemaSynchronizer implements ApplicationRunner {
 
     private final JdbcTemplate jdbcTemplate;
 
+    private volatile boolean vectorAvailable = false;
+
+    public boolean isVectorAvailable() {
+        return vectorAvailable;
+    }
+
+    private void initVector() {
+        try {
+            jdbcTemplate.execute("CREATE EXTENSION IF NOT EXISTS vector");
+            Integer found = jdbcTemplate.queryForObject("SELECT count(*) FROM pg_extension WHERE extname = 'vector'", Integer.class);
+            vectorAvailable = found != null && found > 0;
+
+            if (vectorAvailable) {
+                jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS group_embeddings (
+                        group_id UUID PRIMARY KEY,
+                        embedding vector(768) NOT NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """);
+
+                jdbcTemplate.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_group_embeddings_hnsw
+                    ON group_embeddings USING hnsw (embedding vector_cosine_ops)
+                """);
+
+                jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS user_embeddings (
+                        user_id UUID PRIMARY KEY,
+                        embedding vector(768) NOT NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """);
+
+                jdbcTemplate.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_user_embeddings_hnsw
+                    ON user_embeddings USING hnsw (embedding vector_cosine_ops)
+                """);
+
+                log.info("pgvector extension and group_embeddings table with HNSW index successfully initialized for groups!");
+            } else {
+                log.warn("pgvector extension is not available in PostgreSQL user_db.");
+            }
+        } catch (Exception e) {
+            vectorAvailable = false;
+            log.warn("Could not enable pgvector extension for groups: {}", e.getMessage());
+        }
+    }
+
     @Override
     public void run(ApplicationArguments args) {
+        initVector();
         try {
             jdbcTemplate.execute("CREATE EXTENSION IF NOT EXISTS unaccent");
             log.info("Extension unaccent is available for group search");

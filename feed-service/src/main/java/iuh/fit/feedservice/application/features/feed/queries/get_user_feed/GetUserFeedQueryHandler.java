@@ -15,8 +15,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -31,16 +30,39 @@ public class GetUserFeedQueryHandler {
         Pageable pageable = PageRequest.of(query.getPage(), query.getSize());
         Page<UserFeedItem> feedItemsPage = userFeedItemRepository.findByUserIdOrderByCreatedAtDesc(query.getUserId(), pageable);
 
-        List<GetUserFeedResult> results = new ArrayList<>();
-        for (UserFeedItem item : feedItemsPage.getContent()) {
-            PostResponseDto postDetail = null;
+        List<UUID> postIds = feedItemsPage.getContent().stream()
+                .map(UserFeedItem::getPostId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        Map<UUID, PostResponseDto> postMap = new HashMap<>();
+        if (!postIds.isEmpty()) {
             try {
-                ApiResponse<PostResponseDto> response = postServiceClient.getPostById(item.getPostId());
-                if (response != null && response.getData() != null) {
-                    postDetail = response.getData();
+                ApiResponse<List<PostResponseDto>> batchResponse = postServiceClient.getPostsBatch(postIds);
+                if (batchResponse != null && batchResponse.getData() != null) {
+                    for (PostResponseDto dto : batchResponse.getData()) {
+                        if (dto != null && dto.getId() != null) {
+                            postMap.put(dto.getId(), dto);
+                        }
+                    }
                 }
             } catch (Exception e) {
-                log.debug("Post {} not accessible or deleted: {}", item.getPostId(), e.getMessage());
+                log.warn("Batch fetch posts failed, falling back to individual fetch: {}", e.getMessage());
+            }
+        }
+
+        List<GetUserFeedResult> results = new ArrayList<>();
+        for (UserFeedItem item : feedItemsPage.getContent()) {
+            PostResponseDto postDetail = postMap.get(item.getPostId());
+            if (postDetail == null) {
+                try {
+                    ApiResponse<PostResponseDto> response = postServiceClient.getPostById(item.getPostId());
+                    if (response != null && response.getData() != null) {
+                        postDetail = response.getData();
+                    }
+                } catch (Exception e) {
+                    log.debug("Post {} not accessible or deleted: {}", item.getPostId(), e.getMessage());
+                }
             }
 
             if (postDetail != null) {
