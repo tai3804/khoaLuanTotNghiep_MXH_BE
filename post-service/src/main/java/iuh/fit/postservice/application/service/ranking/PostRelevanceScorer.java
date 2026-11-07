@@ -28,14 +28,14 @@ public final class PostRelevanceScorer {
 
     public enum Mode { RELEVANCE, TRENDING }
 
-    static final double FRIEND = 3.0;
-    static final double FOLLOWING = 2.0;
-    static final double OWN = 0.5;
+    public static final double FRIEND = 3.0;
+    public static final double FOLLOWING = 2.0;
+    public static final double OWN = 0.5;
     /** Bài mình vừa đăng trong vòng 2 giờ được cộng thêm để luôn nằm gần đầu bảng tin của chính mình. */
     static final double OWN_FRESH_BONUS = 1.5;
     static final double OWN_FRESH_HOURS = 2.0;
-    static final double MEMBER_GROUP = 1.5;
-    static final double INTERACTION_CAP = 3.0;
+    public static final double MEMBER_GROUP = 1.5;
+    public static final double INTERACTION_CAP = 3.0;
     static final double FRESHNESS_HALF_LIFE_HOURS = 24.0;
     static final double TRENDING_GRAVITY = 1.3;
 

@@ -176,7 +176,7 @@ public class FeedRankingService {
     }
 
     /** Bạn bè / người đang theo dõi từ user-service. Lỗi thì xếp hạng không có độ thân thiết thay vì làm hỏng bảng tin. */
-    private void loadSocialGraph(Set<UUID> friendIds, Set<UUID> followingIds) {
+    public void loadSocialGraph(Set<UUID> friendIds, Set<UUID> followingIds) {
         try {
             ApiResponse<Map<String, List<UUID>>> response = userConnectionClient.getSocialGraph();
             Map<String, List<UUID>> data = response == null ? null : response.getData();
@@ -189,7 +189,7 @@ public class FeedRankingService {
     }
 
     /** Tổng số lần mình thả cảm xúc, bình luận, chia sẻ bài của từng tác giả trong 30 ngày qua. */
-    private Map<UUID, Integer> loadInteractions(UUID viewerId, LocalDateTime now) {
+    public Map<UUID, Integer> loadInteractions(UUID viewerId, LocalDateTime now) {
         LocalDateTime since = now.minusDays(INTERACTION_WINDOW_DAYS);
         Map<UUID, Integer> totals = new HashMap<>();
         try {

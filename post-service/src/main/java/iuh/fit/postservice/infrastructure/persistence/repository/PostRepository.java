@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -113,6 +114,14 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     List<Post> findByStatusAndScheduledPublishAtLessThanEqualAndDeletedFalse(PostStatus status, java.time.Instant now);
 
     Page<Post> findByAuthorIdAndStatusAndDeletedFalseOrderByScheduledPublishAtAsc(UUID authorId, PostStatus status, Pageable pageable);
+
+    /**
+     * Nạp nhiều bài cùng lúc kèm các tập EAGER (hashtag, người được gắn thẻ, người được phép xem) bằng MỘT câu SQL.
+     * {@code findAllById} sẽ bắn thêm 3 truy vấn cho mỗi bài (N+1), rất chậm khi CSDL ở xa (cloud).
+     */
+    @EntityGraph(attributePaths = {"allowedUserIds", "taggedUserIds", "hashtags"})
+    @Query("SELECT DISTINCT p FROM Post p WHERE p.id IN :ids")
+    List<Post> findAllWithCollectionsByIdIn(@Param("ids") java.util.Collection<UUID> ids);
 
     /** Tập bài viết ứng viên để xếp hạng bảng tin: bài đã đăng, chưa xoá, chưa ẩn, mới nhất trước. */
     @Query("SELECT p FROM Post p WHERE p.deleted = false AND p.status = 'PUBLISHED' AND p.isArchived = false AND p.createdAt >= :cutoff ORDER BY p.createdAt DESC")

@@ -1,4 +1,4 @@
-﻿package iuh.fit.aiservice.infrastructure.gemini;
+package iuh.fit.aiservice.infrastructure.gemini;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,7 +40,7 @@ public class GeminiApiClient {
             .build();
 
     /**
-     * PhĂ¢n tĂ­ch ngá»¯ cáº£nh ná»™i dung bĂ i viáº¿t/bĂ¬nh luáº­n báº±ng Google Gemini Flash
+     * Phân tích ngữ cảnh nội dung bài viết/bình luận bằng Google Gemini Flash
      */
     public GeminiModerationResult evaluate(String content) {
         if (content == null || content.isBlank()) {
@@ -50,7 +50,7 @@ public class GeminiApiClient {
                     .category("NONE")
                     .severity("LOW")
                     .suggestedAction("ALLOW")
-                    .reason("Ná»™i dung trá»‘ng")
+                    .reason("Nội dung trống")
                     .extractedKeywords(Collections.emptyList())
                     .isFallback(false)
                     .build();
@@ -66,30 +66,30 @@ public class GeminiApiClient {
                 String endpoint = String.format("%s/%s:generateContent?key=%s", apiUrl, candidateModel, apiKey);
 
                 String systemPrompt = """
-                        Báº¡n lĂ  má»™t AI kiá»ƒm duyá»‡t ná»™i dung máº¡ng xĂ£ há»™i Tiáº¿ng Viá»‡t thĂ´ng minh vĂ  cĂ´ng tĂ¢m.
-                        Nhiá»‡m vá»¥ cá»§a báº¡n lĂ  phĂ¢n tĂ­ch vÄƒn báº£n bĂ i viáº¿t hoáº·c bĂ¬nh luáº­n vĂ  tráº£ vá» káº¿t quáº£ JSON thuáº§n tĂºy (khĂ´ng bá»c trong markdown hay ```json).
+                        Bạn là một AI kiểm duyệt nội dung mạng xã hội Tiếng Việt thông minh và công tâm.
+                        Nhiệm vụ của bạn là phân tích văn bản bài viết hoặc bình luận và trả về kết quả JSON thuần túy (không bọc trong markdown hay ```json).
                         
-                        Quy táº¯c nháº­n diá»‡n quan trá»ng (TRĂNH Báº®T OAN):
-                        1. TUYá»†T Äá»I KHĂ”NG Ä‘Ă¡nh giĂ¡ Ä‘á»™c háº¡i cĂ¡c tháº» gáº¯n tĂªn ngÆ°á»i dĂ¹ng (vĂ­ dá»¥: @Äiá»m, @Äiá»ƒm, @Duy, @Dung, @Huá»‡, @[TĂªn Báº¡n]...).
-                        2. TUYá»†T Äá»I KHĂ”NG nháº§m láº«n cĂ¡c tá»« ngá»¯ ngá»¯ phĂ¡p hoáº·c tá»« vá»±ng lĂ nh máº¡nh thĂ´ng dá»¥ng tiáº¿ng Viá»‡t (Ä‘iá»ƒm sá»‘, Ä‘iá»m bĂ¡o, Ä‘á»‹a Ä‘iá»ƒm, giĂ¡o dá»¥c, du lá»‹ch, nguá»“n gá»‘c, con ong, cĂ¡i lon, cĂ¡c báº¡n...) vá»›i tá»« cáº¥m/tá»¥c tÄ©u.
-                        3. Chá»‰ xá»­ lĂ½ vi pháº¡m khi cĂ³ hĂ nh vi chá»­i bá»›i, lÄƒng máº¡, xĂºc pháº¡m danh dá»± ngÆ°á»i khĂ¡c, Ä‘e dá»a báº¡o lá»±c, ná»™i dung 18+ Ä‘á»“i trá»¥y hoáº·c lá»«a Ä‘áº£o cá» báº¡c rĂµ rĂ ng.
+                        Quy tắc nhận diện quan trọng (TRÁNH BẮT OAN):
+                        1. TUYỆT ĐỐI KHÔNG đánh giá độc hại các thẻ gắn tên người dùng (ví dụ: @Điềm, @Điểm, @Duy, @Dung, @Huệ, @[Tên Bạn]...).
+                        2. TUYỆT ĐỐI KHÔNG nhầm lẫn các từ ngữ ngữ pháp hoặc từ vựng lành mạnh thông dụng tiếng Việt (điểm số, điềm báo, địa điểm, giáo dục, du lịch, nguồn gốc, con ong, cái lon, các bạn...) với từ cấm/tục tĩu.
+                        3. Chỉ xử lý vi phạm khi có hành vi chửi bới, lăng mạ, xúc phạm danh dự người khác, đe dọa bạo lực, nội dung 18+ đồi trụy hoặc lừa đảo cờ bạc rõ ràng.
                         
-                        CĂ¡c trÆ°á»ng káº¿t quáº£ JSON:
-                        - toxicityScore: Äiá»ƒm Ä‘á»™c háº¡i tá»« 0.0 (hoĂ n toĂ n an toĂ n) Ä‘áº¿n 1.0 (cá»±c ká»³ Ä‘á»™c háº¡i/nguy hiá»ƒm). Náº¿u ná»™i dung bĂ¬nh thÆ°á»ng, hĂ£y tráº£ vá» 0.0.
-                        - category: 1 trong cĂ¡c loáº¡i: NONE, PROFANITY (tá»« tá»¥c tÄ©u), HATE_SPEECH (thĂ¹ ghĂ©t), HARASSMENT (quáº¥y rá»‘i/xĂºc pháº¡m), SEXUAL (18+/khiĂªu dĂ¢m), VIOLENCE (báº¡o lá»±c/Ä‘e dá»a), SPAM_SCAM (lá»«a Ä‘áº£o/cá» báº¡c).
-                        - severity: 1 trong cĂ¡c má»©c: LOW, MEDIUM, HIGH, CRITICAL. (Náº¿u an toĂ n, Ä‘á»ƒ LOW).
-                        - suggestedAction: 1 trong cĂ¡c hĂ nh Ä‘á»™ng: ALLOW (cho phĂ©p), WARN_USER (cáº£nh bĂ¡o tĂ¡c giáº£), AUTO_HIDE (tá»± Ä‘á»™ng áº©n bĂ i), DELETE_POST (xĂ³a bĂ i viáº¿t). (Náº¿u an toĂ n, luĂ´n lĂ  ALLOW).
-                        - reason: Giáº£i thĂ­ch ngáº¯n gá»n lĂ½ do báº±ng tiáº¿ng Viá»‡t (1 cĂ¢u, dĂ¹ng tá»« 'Ná»™i dung bĂ i viáº¿t' hoáº·c 'BĂ i viáº¿t', vĂ­ dá»¥: 'Ná»™i dung bĂ i viáº¿t chá»©a tá»« ngá»¯ thĂ´ tá»¥c, xĂºc pháº¡m'). Tuyá»‡t Ä‘á»‘i khĂ´ng dĂ¹ng tá»« 'BĂ¬nh luáº­n' khi giáº£i thĂ­ch bĂ i viáº¿t.
-                        - extractedKeywords: Máº£ng cĂ¡c tá»« ngá»¯ nháº¡y cáº£m thá»±c sá»± cĂ³ trong bĂ i viáº¿t (chá»¯ thÆ°á»ng), Ä‘á»ƒ rá»—ng [] náº¿u bĂ i viáº¿t an toĂ n.
+                        Các trường kết quả JSON:
+                        - toxicityScore: Điểm độc hại từ 0.0 (hoàn toàn an toàn) đến 1.0 (cực kỳ độc hại/nguy hiểm). Nếu nội dung bình thường, hãy trả về 0.0.
+                        - category: 1 trong các loại: NONE, PROFANITY (từ tục tĩu), HATE_SPEECH (thù ghét), HARASSMENT (quấy rối/xúc phạm), SEXUAL (18+/khiêu dâm), VIOLENCE (bạo lực/đe dọa), SPAM_SCAM (lừa đảo/cờ bạc).
+                        - severity: 1 trong các mức: LOW, MEDIUM, HIGH, CRITICAL. (Nếu an toàn, để LOW).
+                        - suggestedAction: 1 trong các hành động: ALLOW (cho phép), WARN_USER (cảnh báo tác giả), AUTO_HIDE (tự động ẩn bài), DELETE_POST (xóa bài viết). (Nếu an toàn, luôn là ALLOW).
+                        - reason: Giải thích ngắn gọn lý do bằng tiếng Việt (1 câu, dùng từ 'Nội dung bài viết' hoặc 'Bài viết', ví dụ: 'Nội dung bài viết chứa từ ngữ thô tục, xúc phạm'). Tuyệt đối không dùng từ 'Bình luận' khi giải thích bài viết.
+                        - extractedKeywords: Mảng các từ ngữ nhạy cảm thực sự có trong bài viết (chữ thường), để rỗng [] nếu bài viết an toàn.
                         
-                        VĂ­ dá»¥ Ä‘á»‹nh dáº¡ng an toĂ n:
-                        {"toxicityScore": 0.0, "category": "NONE", "severity": "LOW", "suggestedAction": "ALLOW", "reason": "Ná»™i dung an toĂ n, gáº¯n tháº» báº¡n bĂ¨ bĂ¬nh thÆ°á»ng", "extractedKeywords": []}
+                        Ví dụ định dạng an toàn:
+                        {"toxicityScore": 0.0, "category": "NONE", "severity": "LOW", "suggestedAction": "ALLOW", "reason": "Nội dung an toàn, gắn thẻ bạn bè bình thường", "extractedKeywords": []}
                         """;
 
                 Map<String, Object> requestBodyMap = Map.of(
                         "contents", List.of(
                                 Map.of("role", "user", "parts", List.of(
-                                        Map.of("text", systemPrompt + "\n\nNá»™i dung cáº§n phĂ¢n tĂ­ch:\n" + content)
+                                        Map.of("text", systemPrompt + "\n\nNội dung cần phân tích:\n" + content)
                                 ))
                         ),
                         "generationConfig", Map.of(
@@ -129,7 +129,7 @@ public class GeminiApiClient {
         try {
             JsonNode rootNode = objectMapper.readTree(responseBody);
 
-            // Kiá»ƒm tra safety block á»Ÿ má»©c promptFeedback
+            // Kiểm tra safety block ở mức promptFeedback
             JsonNode promptFeedback = rootNode.path("promptFeedback");
             String blockReason = promptFeedback.path("blockReason").asText("");
             if (!blockReason.isBlank()) {
@@ -139,7 +139,7 @@ public class GeminiApiClient {
                         .category("SAFETY_BLOCK")
                         .severity("CRITICAL")
                         .suggestedAction("AUTO_HIDE")
-                        .reason("Ná»™i dung bá»‹ cháº·n bá»Ÿi chĂ­nh sĂ¡ch an toĂ n AI: " + blockReason)
+                        .reason("Nội dung bị chặn bởi chính sách an toàn AI: " + blockReason)
                         .extractedKeywords(Collections.emptyList())
                         .isFallback(false)
                         .build();
@@ -159,7 +159,7 @@ public class GeminiApiClient {
                         .category("SAFETY_BLOCK")
                         .severity("CRITICAL")
                         .suggestedAction("AUTO_HIDE")
-                        .reason("Ná»™i dung vi pháº¡m chĂ­nh sĂ¡ch an toĂ n (" + finishReason + ")")
+                        .reason("Nội dung vi phạm chính sách an toàn (" + finishReason + ")")
                         .extractedKeywords(Collections.emptyList())
                         .isFallback(false)
                         .build();
@@ -222,28 +222,28 @@ public class GeminiApiClient {
         FastSensitiveWordFilter.FastScanResult scan = fastFilter.scan(content);
 
         String action = "ALLOW";
-        String reason = "Ná»™i dung an toĂ n, phĂ¹ há»£p vá»›i tiĂªu chuáº©n cá»™ng Ä‘á»“ng.";
+        String reason = "Nội dung an toàn, phù hợp với tiêu chuẩn cộng đồng.";
 
         if (scan.isToxic()) {
             String keywordsStr = String.join(", ", scan.getMatchedKeywords());
             String category = scan.getPrimaryCategory() != null ? scan.getPrimaryCategory() : "PROFANITY";
 
             String categoryDesc = switch (category.toUpperCase()) {
-                case "PROFANITY" -> "sá»­ dá»¥ng tá»« ngá»¯ dung tá»¥c hoáº·c thiáº¿u chuáº©n má»±c";
-                case "HATE_SPEECH" -> "chá»©a ngĂ´n tá»« kĂ­ch Ä‘á»™ng, phĂ¢n biá»‡t hoáº·c thĂ¹ ghĂ©t";
-                case "HARASSMENT" -> "cĂ³ dáº¥u hiá»‡u cĂ´ng kĂ­ch, quáº¥y rá»‘i hoáº·c xĂºc pháº¡m danh dá»±";
-                case "VIOLENCE" -> "chá»©a ná»™i dung báº¡o lá»±c hoáº·c Ä‘e dá»a an toĂ n cĂ¡ nhĂ¢n";
-                case "SPAM_SCAM" -> "cĂ³ dáº¥u hiá»‡u quáº£ng cĂ¡o rĂ¡c, lá»«a Ä‘áº£o hoáº·c cá» báº¡c";
-                case "SEXUAL" -> "chá»©a ná»™i dung 18+ nháº¡y cáº£m hoáº·c khiĂªu dĂ¢m";
-                default -> "chá»©a tá»« ngá»¯ vi pháº¡m quy táº¯c á»©ng xá»­ vÄƒn minh";
+                case "PROFANITY" -> "sử dụng từ ngữ dung tục hoặc thiếu chuẩn mực";
+                case "HATE_SPEECH" -> "chứa ngôn từ kích động, phân biệt hoặc thù ghét";
+                case "HARASSMENT" -> "có dấu hiệu công kích, quấy rối hoặc xúc phạm danh dự";
+                case "VIOLENCE" -> "chứa nội dung bạo lực hoặc đe dọa an toàn cá nhân";
+                case "SPAM_SCAM" -> "có dấu hiệu quảng cáo rác, lừa đảo hoặc cờ bạc";
+                case "SEXUAL" -> "chứa nội dung 18+ nhạy cảm hoặc khiêu dâm";
+                default -> "chứa từ ngữ vi phạm quy tắc ứng xử văn minh";
             };
 
             if ("CRITICAL".equalsIgnoreCase(scan.getHighestSeverity()) || scan.getToxicityScore() >= 0.85) {
                 action = "DELETE_POST";
-                reason = String.format("Vi pháº¡m nghiĂªm trá»ng chuáº©n má»±c cá»™ng Ä‘á»“ng do %s (tá»« khĂ³a: %s). Há»‡ thá»‘ng Ä‘Ă£ tá»± Ä‘á»™ng gá»¡ bá» Ä‘á»ƒ báº£o vá»‡ an toĂ n cho thĂ nh viĂªn.", categoryDesc, keywordsStr);
+                reason = String.format("Vi phạm nghiêm trọng chuẩn mực cộng đồng do %s (từ khóa: %s). Hệ thống đã tự động gỡ bỏ để bảo vệ an toàn cho thành viên.", categoryDesc, keywordsStr);
             } else {
                 action = "AUTO_HIDE";
-                reason = String.format("BĂ i viáº¿t Ä‘Ă£ bá»‹ táº¡m áº©n do %s (tá»« khĂ³a: %s). Báº¡n cĂ³ thá»ƒ chá»‰nh sá»­a láº¡i bĂ i viáº¿t Ä‘á»ƒ phĂ¹ há»£p vá»›i vÄƒn hĂ³a máº¡ng xĂ£ há»™i.", categoryDesc, keywordsStr);
+                reason = String.format("Bài viết đã bị tạm ẩn do %s (từ khóa: %s). Bạn có thể chỉnh sửa lại bài viết để phù hợp với văn hóa mạng xã hội.", categoryDesc, keywordsStr);
             }
         }
 
@@ -360,7 +360,7 @@ public class GeminiApiClient {
     }
 
     /**
-     * TrĂ² chuyá»‡n Ä‘a lÆ°á»£t cĂ³ nhá»› ngá»¯ cáº£nh (Multi-turn Contextual Conversation)
+     * Trò chuyện đa lượt có nhớ ngữ cảnh (Multi-turn Contextual Conversation)
      */
     public String chatWithHistory(String currentMessage, List<?> rawHistory, String fallbackText) {
         if (!hasValidApiKey()) {
@@ -412,12 +412,12 @@ public class GeminiApiClient {
                 Map<String, Object> requestBodyMap = new LinkedHashMap<>();
                 requestBodyMap.put("system_instruction", Map.of(
                         "parts", List.of(Map.of("text", """
-                                Báº¡n lĂ  Trá»£ lĂ½ AI KLTN Social thĂ´ng minh, thĂ¢n thiá»‡n, Ä‘á»“ng hĂ nh cĂ¹ng sinh viĂªn vĂ  giá»›i tráº».
-                                Phong cĂ¡ch giao tiáº¿p:
-                                - Tráº£ lá»i sĂºc tĂ­ch, tá»± nhiĂªn, vÄƒn minh, cĂ³ emoji phĂ¹ há»£p nhÆ°ng khĂ´ng láº¡m dá»¥ng.
-                                - Äi tháº³ng vĂ o trá»ng tĂ¢m cĂ¢u há»i cá»§a ngÆ°á»i dĂ¹ng, TUYá»†T Äá»I khĂ´ng láº·p láº¡i cĂ¢u chĂ o khuĂ´n máº«u á»Ÿ má»—i lÆ°á»£t tráº£ lá»i.
-                                - Há»— trá»£ chuyĂªn sĂ¢u vá»: Láº­p trĂ¬nh (Spring Boot, React, Microservices...), Há»c táº­p, LĂ m Ä‘á»“ Ă¡n KLTN, SĂ¡ng táº¡o bĂ i viáº¿t, Giáº£i tá»a Ă¡p lá»±c.
-                                - Sá»­ dá»¥ng Markdown Ä‘áº¹p máº¯t (gáº¡ch Ä‘áº§u dĂ²ng, in Ä‘áº­m tá»« khĂ³a quan trá»ng).
+                                Bạn là Trợ lý AI KLTN Social thông minh, thân thiện, đồng hành cùng sinh viên và giới trẻ.
+                                Phong cách giao tiếp:
+                                - Trả lời súc tích, tự nhiên, văn minh, có emoji phù hợp nhưng không lạm dụng.
+                                - Đi thẳng vào trọng tâm câu hỏi của người dùng, TUYỆT ĐỐI không lặp lại câu chào khuôn mẫu ở mỗi lượt trả lời.
+                                - Hỗ trợ chuyên sâu về: Lập trình (Spring Boot, React, Microservices...), Học tập, Làm đồ án KLTN, Sáng tạo bài viết, Giải tỏa áp lực.
+                                - Sử dụng Markdown đẹp mắt (gạch đầu dòng, in đậm từ khóa quan trọng).
                                 """))
                 ));
                 requestBodyMap.put("contents", contents);
@@ -459,7 +459,7 @@ public class GeminiApiClient {
     }
 
     /**
-     * Táº£i áº£nh tá»« URL chuyá»ƒn thĂ nh inline_data Base64 cho Gemini Multimodal Vision (ngÄƒn SSRF + giá»›i háº¡n 10MB)
+     * Tải ảnh từ URL chuyển thành inline_data Base64 cho Gemini Multimodal Vision (ngăn SSRF + giới hạn 10MB)
      */
     private Optional<Map<String, Object>> fetchImageInlinePart(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank() || !imageUrl.startsWith("http")) {
@@ -519,7 +519,7 @@ public class GeminiApiClient {
     }
 
     /**
-     * TĂ³m táº¯t cuá»™c trĂ² chuyá»‡n Äa phÆ°Æ¡ng thá»©c (Multimodal: Text + HĂ¬nh áº£nh) báº±ng Gemini
+     * Tóm tắt cuộc trò chuyện Đa phương thức (Multimodal: Text + Hình ảnh) bằng Gemini
      */
     public MessageSummaryDto.SummarizeMessagesResponse summarizeMessagesWithGemini(
             MessageSummaryDto.SummarizeMessagesRequest request,
@@ -530,18 +530,18 @@ public class GeminiApiClient {
         }
 
         List<MessageSummaryDto.MessageItem> messages = request.getMessages();
-        String convName = request.getConversationName() != null ? request.getConversationName() : "Cuá»™c trĂ² chuyá»‡n";
+        String convName = request.getConversationName() != null ? request.getConversationName() : "Cuộc trò chuyện";
         boolean isGroup = Boolean.TRUE.equals(request.getIsGroup());
 
         StringBuilder chatTranscript = new StringBuilder();
-        chatTranscript.append(String.format("TĂªn cuá»™c há»™i thoáº¡i: %s (%s)\n", convName, isGroup ? "NhĂ³m chat" : "Chat 1-1"));
-        chatTranscript.append("Danh sĂ¡ch cĂ¡c tin nháº¯n gáº§n nháº¥t:\n");
+        chatTranscript.append(String.format("Tên cuộc hội thoại: %s (%s)\n", convName, isGroup ? "Nhóm chat" : "Chat 1-1"));
+        chatTranscript.append("Danh sách các tin nhắn gần nhất:\n");
 
         List<String> imageUrlsToFetch = new ArrayList<>();
         int imageCount = 0;
 
         for (MessageSummaryDto.MessageItem item : messages) {
-            String sender = item.getSenderName() != null ? item.getSenderName() : "ThĂ nh viĂªn";
+            String sender = item.getSenderName() != null ? item.getSenderName() : "Thành viên";
             String time = item.getTime() != null ? item.getTime() : "";
             String text = item.getText() != null ? item.getText() : "";
             String media = item.getMediaUrl() != null ? item.getMediaUrl() : "";
@@ -555,7 +555,7 @@ public class GeminiApiClient {
                 if (imageUrlsToFetch.size() < 3 && imgUrl.startsWith("http")) {
                     imageUrlsToFetch.add(imgUrl);
                 }
-                chatTranscript.append(String.format("[%s] %s: [ÄĂƒ Gá»¬I 1 HĂŒNH áº¢NH ÄĂNH KĂˆM]\n", time, sender));
+                chatTranscript.append(String.format("[%s] %s: [ĐÃ GỬI 1 HÌNH ẢNH ĐÍNH KÈM]\n", time, sender));
             } else {
                 chatTranscript.append(String.format("[%s] %s: %s\n", time, sender, text));
             }
@@ -564,18 +564,18 @@ public class GeminiApiClient {
         List<Map<String, Object>> parts = new ArrayList<>();
 
         String systemInstruction = """
-                Báº¡n lĂ  Trá»£ lĂ½ AI phĂ¢n tĂ­ch vĂ  tĂ³m táº¯t cuá»™c trĂ² chuyá»‡n máº¡ng xĂ£ há»™i (há»— trá»£ cáº£ vÄƒn báº£n vĂ  hĂ¬nh áº£nh Ä‘Ă­nh kĂ¨m).
-                Nhiá»‡m vá»¥ cá»§a báº¡n:
-                1. Äá»c ká»¹ dĂ²ng thá»i gian tin nháº¯n vĂ  quan sĂ¡t trá»±c tiáº¿p cĂ¡c hĂ¬nh áº£nh Ä‘Ă­nh kĂ¨m (náº¿u cĂ³).
-                2. TĂ³m táº¯t ná»™i dung chĂ­nh xĂ¡c, ngáº¯n gá»n, sĂºc tĂ­ch (1-2 Ä‘oáº¡n).
-                3. MĂ´ táº£ ná»™i dung hĂ¬nh áº£nh Ä‘Ă­nh kĂ¨m (áº£nh chá»¥p bĂ i há»c, slide, tĂ i liá»‡u, sÆ¡ Ä‘á»“, áº£nh Ä‘á»i thÆ°á»ng...).
-                4. TrĂ­ch xuáº¥t danh sĂ¡ch cĂ¡c viá»‡c cáº§n lĂ m, deadline, lá»‹ch háº¹n (actionItems).
+                Bạn là Trợ lý AI phân tích và tóm tắt cuộc trò chuyện mạng xã hội (hỗ trợ cả văn bản và hình ảnh đính kèm).
+                Nhiệm vụ của bạn:
+                1. Đọc kỹ dòng thời gian tin nhắn và quan sát trực tiếp các hình ảnh đính kèm (nếu có).
+                2. Tóm tắt nội dung chính xác, ngắn gọn, súc tích (1-2 đoạn).
+                3. Mô tả nội dung hình ảnh đính kèm (ảnh chụp bài học, slide, tài liệu, sơ đồ, ảnh đời thường...).
+                4. Trích xuất danh sách các việc cần làm, deadline, lịch hẹn (actionItems).
                 
-                Äá»‹nh dáº¡ng tráº£ vá» Báº®T BUá»˜C lĂ  JSON thuáº§n tĂºy (khĂ´ng bá»c trong markdown ```json):
+                Định dạng trả về BẮT BUỘC là JSON thuần túy (không bọc trong markdown ```json):
                 {
-                  "summary": "TĂ³m táº¯t ngáº¯n gá»n cĂ¡c váº¥n Ä‘á» chĂ­nh Ä‘Ă£ tháº£o luáº­n...",
-                  "mediaDescription": "MĂ´ táº£ chi tiáº¿t ná»™i dung cĂ¡c áº£nh Ä‘Ă­nh kĂ¨m (hoáº·c 'KhĂ´ng cĂ³ hĂ¬nh áº£nh Ä‘Ă­nh kĂ¨m' náº¿u khĂ´ng cĂ³)...",
-                  "actionItems": ["Viá»‡c 1 cáº§n lĂ m (kĂ¨m ngÆ°á»i phá»¥ trĂ¡ch / deadline náº¿u cĂ³)", "Viá»‡c 2..."]
+                  "summary": "Tóm tắt ngắn gọn các vấn đề chính đã thảo luận...",
+                  "mediaDescription": "Mô tả chi tiết nội dung các ảnh đính kèm (hoặc 'Không có hình ảnh đính kèm' nếu không có)...",
+                  "actionItems": ["Việc 1 cần làm (kèm người phụ trách / deadline nếu có)", "Việc 2..."]
                 }
                 """;
 
@@ -663,7 +663,7 @@ public class GeminiApiClient {
     }
 
     /**
-     * Kiá»ƒm duyá»‡t hĂ¬nh áº£nh Ä‘a phÆ°Æ¡ng thá»©c (Multimodal Vision Moderation) báº±ng Google Gemini Vision
+     * Kiểm duyệt hình ảnh đa phương thức (Multimodal Vision Moderation) bằng Google Gemini Vision
      */
     public GeminiModerationResult evaluateImageWithVision(String imageUrl, String caption) {
         if (imageUrl == null || imageUrl.isBlank()) {
@@ -673,7 +673,7 @@ public class GeminiApiClient {
                     .category("NONE")
                     .severity("LOW")
                     .suggestedAction("ALLOW")
-                    .reason("KhĂ´ng cĂ³ hĂ¬nh áº£nh Ä‘á»ƒ phĂ¢n tĂ­ch")
+                    .reason("Không có hình ảnh để phân tích")
                     .extractedKeywords(Collections.emptyList())
                     .build();
         }
@@ -686,7 +686,7 @@ public class GeminiApiClient {
                     .category("NONE")
                     .severity("LOW")
                     .suggestedAction("ALLOW")
-                    .reason("Há»‡ thá»‘ng kiá»ƒm duyá»‡t hĂ¬nh áº£nh hoáº¡t Ä‘á»™ng á»Ÿ cháº¿ Ä‘á»™ cÆ¡ báº£n (API key chÆ°a cáº¥u hĂ¬nh)")
+                    .reason("Hệ thống kiểm duyệt hình ảnh hoạt động ở chế độ cơ bản (API key chưa cấu hình)")
                     .extractedKeywords(Collections.emptyList())
                     .isFallback(true)
                     .build();
@@ -700,35 +700,35 @@ public class GeminiApiClient {
                     .category("NONE")
                     .severity("LOW")
                     .suggestedAction("ALLOW")
-                    .reason("KhĂ´ng thá»ƒ táº£i hĂ¬nh áº£nh tá»« URL Ä‘á»ƒ phĂ¢n tĂ­ch")
+                    .reason("Không thể tải hình ảnh từ URL để phân tích")
                     .extractedKeywords(Collections.emptyList())
                     .isFallback(true)
                     .build();
         }
 
         String prompt = """
-                Báº¡n lĂ  má»™t chuyĂªn gia AI kiá»ƒm duyá»‡t hĂ¬nh áº£nh vĂ  ná»™i dung Ä‘a phÆ°Æ¡ng tiá»‡n máº¡ng xĂ£ há»™i.
-                Nhiá»‡m vá»¥ cá»§a báº¡n lĂ  quan sĂ¡t trá»±c tiáº¿p bá»©c áº£nh Ä‘Æ°á»£c cung cáº¥p cĂ¹ng chĂº thĂ­ch bĂ i viáº¿t (náº¿u cĂ³) vĂ  Ä‘Ă¡nh giĂ¡ tĂ­nh an toĂ n.
+                Bạn là một chuyên gia AI kiểm duyệt hình ảnh và nội dung đa phương tiện mạng xã hội.
+                Nhiệm vụ của bạn là quan sát trực tiếp bức ảnh được cung cấp cùng chú thích bài viết (nếu có) và đánh giá tính an toàn.
                 
-                TiĂªu chuáº©n kiá»ƒm duyá»‡t vi pháº¡m:
-                1. SEXUAL (18+ / khiĂªu dĂ¢m): áº¢nh khá»a thĂ¢n, lá»™ bá»™ pháº­n nháº¡y cáº£m, Ä‘á»“ lĂ³t khiĂªu dĂ¢m, hĂ nh vi tĂ¬nh dá»¥c.
-                2. VIOLENCE (báº¡o lá»±c): VÅ© khĂ­ nguy hiá»ƒm, cáº£nh tÆ°á»£ng mĂ¡u me, hĂ nh vi ngÆ°á»£c Ä‘Ă£i, tai náº¡n kinh dá»‹.
-                3. HATE_SPEECH (thĂ¹ ghĂ©t): Biá»ƒu tÆ°á»£ng phĂ¡t xĂ­t, phĂ¢n biá»‡t chá»§ng tá»™c, xĂºc pháº¡m tĂ´n giĂ¡o hoáº·c vÄƒn hĂ³a.
-                4. SPAM_SCAM (lá»«a Ä‘áº£o): Banner cá» báº¡c, cĂ¡ Ä‘á»™ bĂ³ng Ä‘Ă¡, thĂ´ng tin lá»«a Ä‘áº£o tĂ i chĂ­nh.
+                Tiêu chuẩn kiểm duyệt vi phạm:
+                1. SEXUAL (18+ / khiêu dâm): Ảnh khỏa thân, lộ bộ phận nhạy cảm, đồ lót khiêu dâm, hành vi tình dục.
+                2. VIOLENCE (bạo lực): Vũ khí nguy hiểm, cảnh tượng máu me, hành vi ngược đãi, tai nạn kinh dị.
+                3. HATE_SPEECH (thù ghét): Biểu tượng phát xít, phân biệt chủng tộc, xúc phạm tôn giáo hoặc văn hóa.
+                4. SPAM_SCAM (lừa đảo): Banner cờ bạc, cá độ bóng đá, thông tin lừa đảo tài chính.
                 
-                Äá»‹nh dáº¡ng tráº£ vá» Báº®T BUá»˜C lĂ  JSON thuáº§n tĂºy (khĂ´ng bá»c trong markdown ```json):
+                Định dạng trả về BẮT BUỘC là JSON thuần túy (không bọc trong markdown ```json):
                 {
                   "toxicityScore": 0.0,
                   "category": "NONE",
                   "severity": "LOW",
                   "suggestedAction": "ALLOW",
-                  "reason": "Giáº£i thĂ­ch ngáº¯n gá»n 1 cĂ¢u báº±ng Tiáº¿ng Viá»‡t vá» ná»™i dung bá»©c áº£nh vĂ  lĂ½ do Ä‘Æ°a ra Ä‘Ă¡nh giĂ¡",
+                  "reason": "Giải thích ngắn gọn 1 câu bằng Tiếng Việt về nội dung bức ảnh và lý do đưa ra đánh giá",
                   "extractedKeywords": []
                 }
                 """;
 
         List<Map<String, Object>> parts = new ArrayList<>();
-        parts.add(Map.of("text", prompt + "\n\nChĂº thĂ­ch áº£nh: " + (caption != null ? caption : "")));
+        parts.add(Map.of("text", prompt + "\n\nChú thích ảnh: " + (caption != null ? caption : "")));
         parts.add(imagePartOpt.get());
 
         for (String candidateModel : getCandidateModels()) {
@@ -780,7 +780,7 @@ public class GeminiApiClient {
                         String category = parsed.path("category").asText("NONE");
                         String severity = parsed.path("severity").asText("LOW");
                         String suggestedAction = parsed.path("suggestedAction").asText("ALLOW");
-                        String reason = parsed.path("reason").asText("HĂ¬nh áº£nh an toĂ n vĂ  phĂ¹ há»£p");
+                        String reason = parsed.path("reason").asText("Hình ảnh an toàn và phù hợp");
                         List<String> keywords = new ArrayList<>();
                         JsonNode kwNode = parsed.path("extractedKeywords");
                         if (kwNode.isArray()) {
@@ -810,14 +810,14 @@ public class GeminiApiClient {
                 .category("NONE")
                 .severity("LOW")
                 .suggestedAction("ALLOW")
-                .reason("HĂ¬nh áº£nh an toĂ n (fallback)")
+                .reason("Hình ảnh an toàn (fallback)")
                 .extractedKeywords(Collections.emptyList())
                 .isFallback(true)
                 .build();
     }
 
     /**
-     * Danh sĂ¡ch cĂ¡c model embedding dá»± phĂ²ng theo thá»© tá»± Æ°u tiĂªn cá»§a Google Gemini
+     * Danh sách các model embedding dự phòng theo thứ tự ưu tiên của Google Gemini
      */
     private static final List<String> EMBEDDING_CANDIDATE_MODELS = List.of(
             "text-embedding-004",
@@ -826,8 +826,8 @@ public class GeminiApiClient {
     );
 
     /**
-     * Táº¡o vector embedding 768 chiá»u tá»« vÄƒn báº£n sá»­ dá»¥ng mĂ´ hĂ¬nh Gemini Embedding
-     * vá»›i outputDimensionality = 768 (tiĂªu chuáº©n chuáº©n hoĂ¡ Transformer cho tĂ¬m kiáº¿m ngá»¯ nghÄ©a).
+     * Tạo vector embedding 768 chiều từ văn bản sử dụng mô hình Gemini Embedding
+     * với outputDimensionality = 768 (tiêu chuẩn chuẩn hoá Transformer cho tìm kiếm ngữ nghĩa).
      */
     public List<Float> generateEmbedding(String text) {
         if (text == null || text.isBlank()) {
@@ -884,7 +884,7 @@ public class GeminiApiClient {
     }
 
     /**
-     * Táº¡o vector embedding hĂ ng loáº¡t cho nhiá»u vÄƒn báº£n (tá»‘i Æ°u hĂ³a khi backfill hoáº·c nhiá»u bĂ i viáº¿t).
+     * Tạo vector embedding hàng loạt cho nhiều văn bản (tối ưu hóa khi backfill hoặc nhiều bài viết).
      */
     public List<List<Float>> generateBatchEmbeddings(List<String> texts) {
         if (texts == null || texts.isEmpty()) {

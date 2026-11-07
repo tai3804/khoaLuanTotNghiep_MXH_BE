@@ -83,6 +83,7 @@ import java.util.UUID;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import iuh.fit.postservice.application.service.PostEmbeddingService;
+import iuh.fit.postservice.application.service.search.PostSearchService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -134,6 +135,7 @@ public class PostController {
     iuh.fit.postservice.application.features.post.queries.get_groups_feed.GetGroupsFeedQueryHandler getGroupsFeedQueryHandler;
     PostEmbeddingService postEmbeddingService;
     iuh.fit.postservice.application.service.ranking.RankedFeedCache rankedFeedCache;
+    iuh.fit.postservice.application.service.search.PostSearchService postSearchService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(
@@ -289,75 +291,59 @@ public class PostController {
             return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
         }
 
-        // Semantic / Hybrid Search via pgvector and Gemini
+        // Hybrid search: inverted index + embedding ANN + social graph retrieval, fused, then BM25/semantic/social ranking
         try {
-            List<Float> queryVector = postEmbeddingService.getQueryEmbedding(cleanQuery);
-            if (queryVector != null && !queryVector.isEmpty()) {
-                UUID searchViewerId = getOptionalCurrentUserId();
-                if (searchViewerId != null) {
-                    try {
-                        postEmbeddingService.saveUserSearchInterest(searchViewerId, cleanQuery, queryVector);
-                        if (rankedFeedCache != null) {
-                            rankedFeedCache.evictViewer(searchViewerId);
-                        }
-                    } catch (Exception e) {
-                        log.debug("Could not record search interest: {}", e.getMessage());
+            UUID searchViewerId = getOptionalCurrentUserId();
+            PostSearchService.Result found = postSearchService.search(cleanQuery, searchViewerId);
+
+            if (searchViewerId != null && found.queryVector() != null && !found.queryVector().isEmpty()) {
+                try {
+                    postEmbeddingService.saveUserSearchInterest(searchViewerId, cleanQuery, found.queryVector());
+                    if (rankedFeedCache != null) {
+                        rankedFeedCache.evictViewer(searchViewerId);
                     }
-                }
-                int pageSize = filter != null && filter.getSize() > 0 ? filter.getSize() : 20;
-                int pageIndex = filter != null && filter.getPage() > 0 ? filter.getPage() - 1 : 0;
-                int fetchLimit = Math.min(Math.max(pageSize * (pageIndex + 1) * 2, 60), 150);
-
-                List<PostEmbeddingService.PostVectorMatch> vectorMatches = postEmbeddingService.searchSimilar(queryVector, fetchLimit, 0.35);
-                if (vectorMatches != null && !vectorMatches.isEmpty()) {
-                    List<UUID> matchedIds = vectorMatches.stream().map(PostEmbeddingService.PostVectorMatch::postId).toList();
-                    Map<UUID, Double> scoreMap = vectorMatches.stream()
-                            .collect(Collectors.toMap(PostEmbeddingService.PostVectorMatch::postId, PostEmbeddingService.PostVectorMatch::similarity, (a, b) -> a));
-
-                    List<Post> posts = postRepository.findAllById(matchedIds).stream()
-                            .filter(p -> p != null && !p.isDeleted() && !p.isArchived() && p.getStatus() == PostStatus.PUBLISHED)
-                            .sorted((p1, p2) -> Double.compare(scoreMap.getOrDefault(p2.getId(), 0.0), scoreMap.getOrDefault(p1.getId(), 0.0)))
-                            .toList();
-
-                    UUID viewerId = getOptionalCurrentUserId();
-                    Set<UUID> visibleIds = postVisibilityService.visiblePostIds(posts, viewerId, false);
-                    List<Post> visiblePosts = posts.stream().filter(p -> visibleIds.contains(p.getId())).toList();
-
-                    if (!visiblePosts.isEmpty()) {
-                        int total = visiblePosts.size();
-                        int from = Math.min(pageIndex * pageSize, total);
-                        int to = Math.min(from + pageSize, total);
-                        List<Post> pagedVisiblePosts = visiblePosts.subList(from, to);
-
-                        List<UUID> pagedIds = pagedVisiblePosts.stream().map(Post::getId).toList();
-                        Map<UUID, List<PostMedia>> mediaByPost = postMediaRepository.findByPostIdInOrderBySortOrderAsc(pagedIds).stream()
-                                .collect(Collectors.groupingBy(PostMedia::getPostId));
-
-                        List<GetPostDetailResult> content = pagedVisiblePosts.stream()
-                                .map(p -> {
-                                    GetPostDetailResult detail = postFeatureMapper.toGetDetailResult(p, mediaByPost.getOrDefault(p.getId(), List.of()));
-                                    detail.setRelevanceScore(scoreMap.get(p.getId()));
-                                    detail.setRelevanceReason("Tìm kiếm ngữ nghĩa AI (Độ tương đồng: " + Math.round(scoreMap.getOrDefault(p.getId(), 0.0) * 100) + "%)");
-                                    detail.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(p.getPollData(), viewerId));
-                                    return detail;
-                                })
-                                .toList();
-
-                        PagedResponse<GetPostDetailResult> pagedResult = PagedResponse.<GetPostDetailResult>builder()
-                                .content(content)
-                                .page(pageIndex)
-                                .size(pageSize)
-                                .totalElements(total)
-                                .totalPages((int) Math.ceil((double) total / pageSize))
-                                .last(to >= total)
-                                .build();
-
-                        return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(pagedResult), MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
-                    }
+                } catch (Exception e) {
+                    log.debug("Could not record search interest: {}", e.getMessage());
                 }
             }
+
+            List<PostSearchService.Hit> hits = found.hits();
+            if (!hits.isEmpty()) {
+                int pageSize = filter != null && filter.getSize() > 0 ? filter.getSize() : 20;
+                int pageIndex = filter != null && filter.getPage() > 0 ? filter.getPage() - 1 : 0;
+                int total = hits.size();
+                int from = Math.min(pageIndex * pageSize, total);
+                int to = Math.min(from + pageSize, total);
+                List<PostSearchService.Hit> pageHits = hits.subList(from, to);
+
+                List<UUID> pagedIds = pageHits.stream().map(h -> h.post().getId()).toList();
+                Map<UUID, List<PostMedia>> mediaByPost = postMediaRepository.findByPostIdInOrderBySortOrderAsc(pagedIds).stream()
+                        .collect(Collectors.groupingBy(PostMedia::getPostId));
+
+                List<GetPostDetailResult> content = pageHits.stream()
+                        .map(h -> {
+                            Post p = h.post();
+                            GetPostDetailResult detail = postFeatureMapper.toGetDetailResult(p, mediaByPost.getOrDefault(p.getId(), List.of()));
+                            detail.setRelevanceScore(h.score());
+                            detail.setRelevanceReason(h.reason());
+                            detail.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(p.getPollData(), searchViewerId));
+                            return detail;
+                        })
+                        .toList();
+
+                PagedResponse<GetPostDetailResult> pagedResult = PagedResponse.<GetPostDetailResult>builder()
+                        .content(content)
+                        .page(pageIndex)
+                        .size(pageSize)
+                        .totalElements(total)
+                        .totalPages((int) Math.ceil((double) total / pageSize))
+                        .last(to >= total)
+                        .build();
+
+                return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(pagedResult), MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+            }
         } catch (Exception e) {
-            log.warn("Vector search failed for query '{}', falling back to keyword search: {}", cleanQuery, e.getMessage());
+            log.warn("Hybrid search failed for query '{}', falling back to keyword search: {}", cleanQuery, e.getMessage());
         }
 
         // Fallback to keyword unaccent search
