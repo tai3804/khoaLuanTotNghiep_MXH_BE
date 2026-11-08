@@ -3,11 +3,14 @@ server:
 
 rate-limit:
   enabled: ${RATE_LIMIT_ENABLED:true}
-  auth-per-minute: ${RATE_LIMIT_AUTH_PER_MINUTE:20}
-  ai-per-minute: ${RATE_LIMIT_AI_PER_MINUTE:30}
-  mutation-per-minute: ${RATE_LIMIT_MUTATION_PER_MINUTE:60}
-  general-per-minute: ${RATE_LIMIT_GENERAL_PER_MINUTE:180}
-  retry-after-seconds: ${RATE_LIMIT_RETRY_AFTER_SECONDS:30}
+  auth-capacity: ${RATE_LIMIT_AUTH_CAPACITY:5}
+  auth-refill-seconds: ${RATE_LIMIT_AUTH_REFILL_SECONDS:30}
+  ai-capacity: ${RATE_LIMIT_AI_CAPACITY:5}
+  ai-refill-seconds: ${RATE_LIMIT_AI_REFILL_SECONDS:10}
+  mutation-capacity: ${RATE_LIMIT_MUTATION_CAPACITY:10}
+  mutation-refill-seconds: ${RATE_LIMIT_MUTATION_REFILL_SECONDS:30}
+  general-capacity: ${RATE_LIMIT_GENERAL_CAPACITY:60}
+  general-refill-seconds: ${RATE_LIMIT_GENERAL_REFILL_SECONDS:1}
 
 spring:
   application:

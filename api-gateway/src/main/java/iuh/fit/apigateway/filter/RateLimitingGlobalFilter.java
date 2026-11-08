@@ -22,21 +22,23 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Bộ lọc giới hạn tần suất yêu cầu (Rate Limiting) tại API Gateway.
- * Sử dụng thuật toán Fixed Window Counter phân cấp theo loại tài nguyên (Auth,
- * AI, Mutation, General),
- * kết hợp cơ chế tự dọn dẹp bộ nhớ định kỳ.
+ * Sử dụng thuật toán Token Bucket (Thùng chứa token nạp dần theo thời gian thực)
+ * phân cấp theo mức độ nhạy cảm của tài nguyên (Auth, AI, Mutation, General),
+ * kết hợp cơ chế dọn dẹp bộ nhớ định kỳ.
  *
  * Toàn bộ tham số cấu hình được nạp động từ file .env / biến môi trường:
  * - RATE_LIMIT_ENABLED (true/false)
- * - RATE_LIMIT_AUTH_PER_MINUTE (mặc định 20)
- * - RATE_LIMIT_AI_PER_MINUTE (mặc định 30)
- * - RATE_LIMIT_MUTATION_PER_MINUTE (mặc định 60)
- * - RATE_LIMIT_GENERAL_PER_MINUTE (mặc định 180)
- * - RATE_LIMIT_RETRY_AFTER_SECONDS (mặc định 30)
+ * - RATE_LIMIT_AUTH_CAPACITY (mặc định 5)
+ * - RATE_LIMIT_AUTH_REFILL_SECONDS (mặc định 30s nạp 1 token)
+ * - RATE_LIMIT_MUTATION_CAPACITY (mặc định 10)
+ * - RATE_LIMIT_MUTATION_REFILL_SECONDS (mặc định 30s nạp 1 token)
+ * - RATE_LIMIT_AI_CAPACITY (mặc định 5)
+ * - RATE_LIMIT_AI_REFILL_SECONDS (mặc định 10s nạp 1 token)
+ * - RATE_LIMIT_GENERAL_CAPACITY (mặc định 60)
+ * - RATE_LIMIT_GENERAL_REFILL_SECONDS (mặc định 1s nạp 1 token)
  */
 @Component
 public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
@@ -46,24 +48,31 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     @Value("${rate-limit.enabled:true}")
     private boolean rateLimitEnabled;
 
-    @Value("${rate-limit.auth-per-minute:20}")
-    private int authLimitPerMinute;
+    @Value("${rate-limit.auth-capacity:5}")
+    private int authCapacity;
 
-    @Value("${rate-limit.ai-per-minute:30}")
-    private int aiLimitPerMinute;
+    @Value("${rate-limit.auth-refill-seconds:30}")
+    private int authRefillSeconds;
 
-    @Value("${rate-limit.mutation-per-minute:60}")
-    private int mutationLimitPerMinute;
+    @Value("${rate-limit.ai-capacity:5}")
+    private int aiCapacity;
 
-    @Value("${rate-limit.general-per-minute:180}")
-    private int generalLimitPerMinute;
+    @Value("${rate-limit.ai-refill-seconds:10}")
+    private int aiRefillSeconds;
 
-    @Value("${rate-limit.retry-after-seconds:30}")
-    private int retryAfterSeconds;
+    @Value("${rate-limit.mutation-capacity:10}")
+    private int mutationCapacity;
 
-    private static final long WINDOW_MS = 60_000L; // 1 phút
+    @Value("${rate-limit.mutation-refill-seconds:30}")
+    private int mutationRefillSeconds;
 
-    private final Map<String, WindowCounter> requestCounts = new ConcurrentHashMap<>();
+    @Value("${rate-limit.general-capacity:60}")
+    private int generalCapacity;
+
+    @Value("${rate-limit.general-refill-seconds:1}")
+    private int generalRefillSeconds;
+
+    private final Map<String, TokenBucket> tokenBuckets = new ConcurrentHashMap<>();
     private final ScheduledExecutorService cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "rate-limit-cleanup");
         t.setDaemon(true);
@@ -71,8 +80,7 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     });
 
     public RateLimitingGlobalFilter() {
-        // Định kỳ mỗi 60 giây dọn dẹp các bucket đã hết hạn trên 2 phút để giải phóng
-        // bộ nhớ
+        // Định kỳ mỗi 60 giây dọn dẹp các bucket đã rảnh rỗi trên 2 phút và đầy token để giải phóng bộ nhớ
         cleanupScheduler.scheduleAtFixedRate(this::cleanupExpiredBuckets, 60, 60, TimeUnit.SECONDS);
     }
 
@@ -101,47 +109,42 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // 2. Bỏ qua WebSocket handshake/info để không làm gián đoạn trò chuyện và cuộc
-        // gọi thời gian thực
+        // 2. Bỏ qua WebSocket handshake/info để không làm gián đoạn trò chuyện và cuộc gọi thời gian thực
         if (isWebSocketPath(path) || path.startsWith("/actuator")) {
             return chain.filter(exchange);
         }
 
-        // 3. Xác định nhóm giới hạn và hạn mức
-        int limit = resolveLimit(path, request.getMethod());
+        // 3. Xác định nhóm giới hạn và cấu hình Token Bucket
+        BucketConfig config = resolveBucketConfig(path, request.getMethod());
         String clientKey = resolveClientKey(request);
-        String bucketKey = pathCategory(path, request.getMethod()) + ":" + clientKey;
+        String bucketKey = config.category() + ":" + clientKey;
 
-        long currentWindow = System.currentTimeMillis() / WINDOW_MS;
-        WindowCounter counter = requestCounts.compute(bucketKey, (k, existing) -> {
-            if (existing == null || existing.window != currentWindow) {
-                return new WindowCounter(currentWindow, new AtomicInteger(1));
+        TokenBucket bucket = tokenBuckets.compute(bucketKey, (k, existing) -> {
+            if (existing == null) {
+                return new TokenBucket(config.capacity(), config.refillSeconds());
             }
-            existing.count.incrementAndGet();
             return existing;
         });
 
-        int currentCount = counter.count.get();
-        int remaining = Math.max(0, limit - currentCount);
-        long resetSeconds = ((currentWindow + 1) * WINDOW_MS - System.currentTimeMillis()) / 1000L;
-        long effectiveRetryAfter = Math.max(1, Math.min(resetSeconds, retryAfterSeconds));
+        ConsumptionResult result = bucket.tryConsume(1.0);
 
         // 4. Nếu vượt quá hạn mức, trả về HTTP 429 Too Many Requests
-        if (currentCount > limit) {
-            log.warn("[RateLimit] Chặn yêu cầu quá giới hạn: key={}, path={}, count={}, limit={}",
-                    bucketKey, path, currentCount, limit);
+        if (!result.allowed()) {
+            log.warn("[RateLimit-TokenBucket] Chặn yêu cầu quá giới hạn: key={}, path={}, retryAfter={}s",
+                    bucketKey, path, result.retryAfter());
 
             exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
             HttpHeaders headers = exchange.getResponse().getHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Retry-After", String.valueOf(effectiveRetryAfter));
-            headers.set("X-RateLimit-Limit", String.valueOf(limit));
+            headers.set("Retry-After", String.valueOf(result.retryAfter()));
+            headers.set("X-RateLimit-Limit", String.valueOf(config.capacity()));
             headers.set("X-RateLimit-Remaining", "0");
-            headers.set("X-RateLimit-Reset", String.valueOf(resetSeconds));
+            headers.set("X-RateLimit-Reset", String.valueOf(result.resetSeconds()));
+            headers.set("Access-Control-Expose-Headers", "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset");
 
             String bodyJson = String.format(
                     "{\"code\":429,\"message\":\"Bạn đang gửi yêu cầu quá nhanh. Vui lòng chờ %d giây trước khi thử lại.\",\"retryAfter\":%d}",
-                    effectiveRetryAfter, effectiveRetryAfter);
+                    result.retryAfter(), result.retryAfter());
             byte[] bytes = bodyJson.getBytes(StandardCharsets.UTF_8);
             return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(bytes)));
         }
@@ -149,9 +152,10 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
         // 5. Gắn các header RateLimit vào phản hồi để client theo dõi
         exchange.getResponse().beforeCommit(() -> {
             HttpHeaders resHeaders = exchange.getResponse().getHeaders();
-            resHeaders.set("X-RateLimit-Limit", String.valueOf(limit));
-            resHeaders.set("X-RateLimit-Remaining", String.valueOf(remaining));
-            resHeaders.set("X-RateLimit-Reset", String.valueOf(resetSeconds));
+            resHeaders.set("X-RateLimit-Limit", String.valueOf(config.capacity()));
+            resHeaders.set("X-RateLimit-Remaining", String.valueOf(result.remaining()));
+            resHeaders.set("X-RateLimit-Reset", String.valueOf(result.resetSeconds()));
+            resHeaders.set("Access-Control-Expose-Headers", "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset");
             return Mono.empty();
         });
 
@@ -162,34 +166,24 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
         return path.startsWith("/ws-chat") || path.startsWith("/ws-notifications") || path.startsWith("/ws-call");
     }
 
-    private int resolveLimit(String path, HttpMethod method) {
+    private BucketConfig resolveBucketConfig(String path, HttpMethod method) {
         if (path.startsWith("/api/v1/auth/login")
                 || path.startsWith("/api/v1/auth/register")
                 || path.startsWith("/api/v1/auth/forgot-password")
                 || path.startsWith("/api/v1/auth/mfa")) {
-            return authLimitPerMinute;
+            return new BucketConfig("auth", authCapacity, authRefillSeconds);
         }
 
         if (path.startsWith("/api/v1/ai")) {
-            return aiLimitPerMinute;
+            return new BucketConfig("ai", aiCapacity, aiRefillSeconds);
         }
 
         if (isMutationMethod(method) && (path.startsWith("/api/v1/posts") || path.startsWith("/api/v1/media")
-                || path.startsWith("/api/v1/groups"))) {
-            return mutationLimitPerMinute;
+                || path.startsWith("/api/v1/groups") || path.startsWith("/api/v1/comments"))) {
+            return new BucketConfig("mutation", mutationCapacity, mutationRefillSeconds);
         }
 
-        return generalLimitPerMinute;
-    }
-
-    private String pathCategory(String path, HttpMethod method) {
-        if (path.startsWith("/api/v1/auth"))
-            return "auth";
-        if (path.startsWith("/api/v1/ai"))
-            return "ai";
-        if (isMutationMethod(method))
-            return "mutation";
-        return "general";
+        return new BucketConfig("general", generalCapacity, generalRefillSeconds);
     }
 
     private boolean isMutationMethod(HttpMethod method) {
@@ -198,8 +192,7 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private String resolveClientKey(ServerHttpRequest request) {
-        // Nếu có Authorization Bearer token, ưu tiên dùng hash token để nhận diện chính
-        // xác người dùng
+        // Nếu có Authorization Bearer token, ưu tiên dùng hash token để nhận diện chính xác người dùng
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader != null && authHeader.startsWith("Bearer ") && authHeader.length() > 20) {
             String token = authHeader.substring(7).trim();
@@ -227,20 +220,62 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
 
     private void cleanupExpiredBuckets() {
         try {
-            long currentWindow = System.currentTimeMillis() / WINDOW_MS;
-            requestCounts.entrySet().removeIf(entry -> (currentWindow - entry.getValue().window) > 2);
+            long now = System.currentTimeMillis();
+            long maxIdleMs = 120_000L; // 2 phút không có hoạt động và đã đầy token
+            tokenBuckets.entrySet().removeIf(entry -> entry.getValue().isIdleAndFull(now, maxIdleMs));
         } catch (Exception e) {
             log.warn("[RateLimit] Lỗi khi dọn dẹp bucket: {}", e.getMessage());
         }
     }
 
-    private static class WindowCounter {
-        final long window;
-        final AtomicInteger count;
+    /**
+     * Cài đặt cấu trúc Token Bucket theo thời gian thực (Thread-Safe).
+     */
+    private static class TokenBucket {
+        private final double capacity;
+        private final double refillSecondsPerToken;
+        private double tokens;
+        private long lastRefillTimestamp;
 
-        WindowCounter(long window, AtomicInteger count) {
-            this.window = window;
-            this.count = count;
+        public TokenBucket(double capacity, double refillSecondsPerToken) {
+            this.capacity = capacity;
+            this.refillSecondsPerToken = Math.max(0.1, refillSecondsPerToken);
+            this.tokens = capacity;
+            this.lastRefillTimestamp = System.currentTimeMillis();
+        }
+
+        public synchronized ConsumptionResult tryConsume(double tokensToConsume) {
+            refill();
+            if (tokens >= tokensToConsume) {
+                tokens -= tokensToConsume;
+                int remaining = (int) Math.floor(tokens);
+                long resetSeconds = Math.max(0, (long) Math.ceil((capacity - tokens) * refillSecondsPerToken));
+                return new ConsumptionResult(true, remaining, resetSeconds, 0);
+            } else {
+                double missing = tokensToConsume - tokens;
+                long retryAfter = Math.max(1, (long) Math.ceil(missing * refillSecondsPerToken));
+                long resetSeconds = Math.max(retryAfter, (long) Math.ceil((capacity - tokens) * refillSecondsPerToken));
+                return new ConsumptionResult(false, 0, resetSeconds, retryAfter);
+            }
+        }
+
+        private void refill() {
+            long now = System.currentTimeMillis();
+            long elapsedMs = now - lastRefillTimestamp;
+            if (elapsedMs > 0) {
+                double elapsedSeconds = elapsedMs / 1000.0;
+                double tokensToAdd = elapsedSeconds / refillSecondsPerToken;
+                tokens = Math.min(capacity, tokens + tokensToAdd);
+                lastRefillTimestamp = now;
+            }
+        }
+
+        public synchronized boolean isIdleAndFull(long now, long maxIdleMs) {
+            refill();
+            return (now - lastRefillTimestamp) > maxIdleMs && tokens >= (capacity - 0.001);
         }
     }
+
+    private record ConsumptionResult(boolean allowed, int remaining, long resetSeconds, long retryAfter) {}
+    private record BucketConfig(String category, int capacity, int refillSeconds) {}
 }

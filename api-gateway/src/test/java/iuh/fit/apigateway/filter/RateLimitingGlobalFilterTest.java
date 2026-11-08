@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Unit Test cho RateLimitingGlobalFilter tại API Gateway")
+@DisplayName("Unit Test cho RateLimitingGlobalFilter (Token Bucket) tại API Gateway")
 class RateLimitingGlobalFilterTest {
 
     private RateLimitingGlobalFilter filter;
@@ -24,15 +24,18 @@ class RateLimitingGlobalFilterTest {
     void setUp() {
         filter = new RateLimitingGlobalFilter();
         ReflectionTestUtils.setField(filter, "rateLimitEnabled", true);
-        ReflectionTestUtils.setField(filter, "authLimitPerMinute", 3);
-        ReflectionTestUtils.setField(filter, "aiLimitPerMinute", 2);
-        ReflectionTestUtils.setField(filter, "mutationLimitPerMinute", 5);
-        ReflectionTestUtils.setField(filter, "generalLimitPerMinute", 10);
-        ReflectionTestUtils.setField(filter, "retryAfterSeconds", 30);
+        ReflectionTestUtils.setField(filter, "authCapacity", 3);
+        ReflectionTestUtils.setField(filter, "authRefillSeconds", 30);
+        ReflectionTestUtils.setField(filter, "aiCapacity", 2);
+        ReflectionTestUtils.setField(filter, "aiRefillSeconds", 10);
+        ReflectionTestUtils.setField(filter, "mutationCapacity", 5);
+        ReflectionTestUtils.setField(filter, "mutationRefillSeconds", 30);
+        ReflectionTestUtils.setField(filter, "generalCapacity", 10);
+        ReflectionTestUtils.setField(filter, "generalRefillSeconds", 1);
     }
 
     @Test
-    @DisplayName("Cho phép yêu cầu đi qua khi chưa vượt quá hạn mức")
+    @DisplayName("Cho phép yêu cầu đi qua khi còn token trong Bucket")
     void shouldAllowRequestUnderLimit() {
         AtomicBoolean filterChainExecuted = new AtomicBoolean(false);
         GatewayFilterChain chain = exchange -> {
@@ -52,11 +55,11 @@ class RateLimitingGlobalFilterTest {
     }
 
     @Test
-    @DisplayName("Chặn và trả về HTTP 429 Too Many Requests khi vượt quá hạn mức")
+    @DisplayName("Chặn và trả về HTTP 429 Too Many Requests khi cạn token (vượt capacity)")
     void shouldBlockAndReturn429WhenLimitExceeded() {
         GatewayFilterChain chain = exchange -> Mono.empty();
 
-        // Gửi 3 yêu cầu trong hạn mức cho endpoint auth (limit = 3)
+        // Tiêu thụ hết 3 token ban đầu trong bucket (authCapacity = 3)
         for (int i = 0; i < 3; i++) {
             MockServerHttpRequest req = MockServerHttpRequest.post("/api/v1/auth/login")
                     .remoteAddress(new java.net.InetSocketAddress("10.0.0.50", 12345))
@@ -65,7 +68,7 @@ class RateLimitingGlobalFilterTest {
             filter.filter(ex, chain).block();
         }
 
-        // Yêu cầu thứ 4 vượt ngưỡng 3 req/phút -> phải bị chặn HTTP 429
+        // Yêu cầu thứ 4 khi cạn token -> phải bị chặn HTTP 429 với Retry-After đúng thời gian nạp token
         MockServerHttpRequest blockedReq = MockServerHttpRequest.post("/api/v1/auth/login")
                 .remoteAddress(new java.net.InetSocketAddress("10.0.0.50", 12345))
                 .build();
@@ -74,11 +77,11 @@ class RateLimitingGlobalFilterTest {
         filter.filter(blockedExchange, chain).block();
 
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, blockedExchange.getResponse().getStatusCode(),
-                "Phải trả về HTTP 429 khi vượt quá rate limit");
+                "Phải trả về HTTP 429 khi hết token trong Token Bucket");
 
         HttpHeaders headers = blockedExchange.getResponse().getHeaders();
         assertNotNull(headers.getFirst("Retry-After"), "Phải có header Retry-After");
-        assertEquals("3", headers.getFirst("X-RateLimit-Limit"), "Header X-RateLimit-Limit phải khớp cấu hình");
+        assertEquals("3", headers.getFirst("X-RateLimit-Limit"), "Header X-RateLimit-Limit phải khớp capacity cấu hình");
         assertEquals("0", headers.getFirst("X-RateLimit-Remaining"), "Header X-RateLimit-Remaining phải bằng 0");
     }
 
