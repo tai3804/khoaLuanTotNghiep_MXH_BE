@@ -79,7 +79,7 @@ jobs:
       - name: Compile & Package Service
         run: |
           chmod +x ./${{ matrix.service }}/mvnw
-          ./${{ matrix.service }}/mvnw -f ${{ matrix.service }}/pom.xml clean package -DskipTests
+          ./${{ matrix.service }}/mvnw -f ${{ matrix.service }}/pom.xml clean package
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
