@@ -83,12 +83,12 @@ public class ToggleReactionCommandHandler {
 
                 String reactionAction;
                 switch (activeType) {
-                    case LOVE -> reactionAction = "đã thả tim ❤️ về bài viết của bạn.";
-                    case HAHA -> reactionAction = "đã bày tỏ haha 😆 về bài viết của bạn.";
-                    case WOW -> reactionAction = "đã bày tỏ wow 😮 về bài viết của bạn.";
-                    case SAD -> reactionAction = "đã bày tỏ buồn 😢 về bài viết của bạn.";
-                    case ANGRY -> reactionAction = "đã bày tỏ phẫn nộ 😡 về bài viết của bạn.";
-                    case LIKE -> reactionAction = "đã thích 👍 bài viết của bạn.";
+                    case LOVE -> reactionAction = "đã thả tim về bài viết của bạn.";
+                    case HAHA -> reactionAction = "đã bày tỏ cảm xúc haha về bài viết của bạn.";
+                    case WOW -> reactionAction = "đã bày tỏ cảm xúc ngạc nhiên về bài viết của bạn.";
+                    case SAD -> reactionAction = "đã bày tỏ cảm xúc buồn về bài viết của bạn.";
+                    case ANGRY -> reactionAction = "đã bày tỏ cảm xúc phẫn nộ về bài viết của bạn.";
+                    case LIKE -> reactionAction = "đã thích bài viết của bạn.";
                     default -> reactionAction = "đã bày tỏ cảm xúc về bài viết của bạn.";
                 }
 

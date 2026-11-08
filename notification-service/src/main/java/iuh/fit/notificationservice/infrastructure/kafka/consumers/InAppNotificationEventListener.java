@@ -36,20 +36,12 @@ public class InAppNotificationEventListener {
             String avatarUrl = (String) event.get("avatarUrl");
             String reactionType = (String) event.get("reactionType");
 
-            // Fallback: Tự động trích xuất reactionType từ targetUrl (?reaction=...) hoặc content
+            // Nếu chưa có, lấy từ query param targetUrl (?reaction=...)
             if ((reactionType == null || reactionType.isBlank()) && targetUrl != null && targetUrl.contains("reaction=")) {
                 int idx = targetUrl.indexOf("reaction=");
                 String sub = targetUrl.substring(idx + 9);
                 int amp = sub.indexOf('&');
                 reactionType = (amp != -1 ? sub.substring(0, amp) : sub).toUpperCase();
-            }
-            if ((reactionType == null || reactionType.isBlank()) && content != null) {
-                if (content.contains("❤️") || content.contains("thả tim") || content.contains("yêu thích")) reactionType = "LOVE";
-                else if (content.contains("😆") || content.contains("haha")) reactionType = "HAHA";
-                else if (content.contains("😮") || content.contains("wow")) reactionType = "WOW";
-                else if (content.contains("😢") || content.contains("buồn")) reactionType = "SAD";
-                else if (content.contains("😡") || content.contains("phẫn nộ")) reactionType = "ANGRY";
-                else if (content.contains("👍") || content.contains("thích")) reactionType = "LIKE";
             }
 
             if (recipientIdStr != null && title != null && content != null && typeStr != null) {
