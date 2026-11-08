@@ -66,7 +66,7 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     @Value("${rate-limit.mutation-refill-seconds:30}")
     private int mutationRefillSeconds;
 
-    @Value("${rate-limit.general-capacity:60}")
+    @Value("${rate-limit.general-capacity:300}")
     private int generalCapacity;
 
     @Value("${rate-limit.general-refill-seconds:1}")
@@ -183,7 +183,9 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
             return new BucketConfig("mutation", mutationCapacity, mutationRefillSeconds);
         }
 
-        return new BucketConfig("general", generalCapacity, generalRefillSeconds);
+        // Với general (GET): Tốc độ nạp 30 token/giây (0.033s/token) để client SPA tải mượt mà nhiều widget cùng lúc mà không bị 429
+        double generalSecondsPerToken = Math.min((double) generalRefillSeconds, 0.033);
+        return new BucketConfig("general", generalCapacity, generalSecondsPerToken);
     }
 
     private boolean isMutationMethod(HttpMethod method) {
@@ -239,7 +241,7 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
 
         public TokenBucket(double capacity, double refillSecondsPerToken) {
             this.capacity = capacity;
-            this.refillSecondsPerToken = Math.max(0.1, refillSecondsPerToken);
+            this.refillSecondsPerToken = Math.max(0.001, refillSecondsPerToken);
             this.tokens = capacity;
             this.lastRefillTimestamp = System.currentTimeMillis();
         }
@@ -277,5 +279,5 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private record ConsumptionResult(boolean allowed, int remaining, long resetSeconds, long retryAfter) {}
-    private record BucketConfig(String category, int capacity, int refillSeconds) {}
+    private record BucketConfig(String category, int capacity, double refillSeconds) {}
 }

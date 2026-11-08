@@ -15,6 +15,7 @@ import java.util.UUID;
 @Repository
 public interface CommentRepository extends BaseJpaRepository<Comment, UUID> {
     Page<Comment> findByPostIdAndParentCommentIdIsNullAndDeletedFalse(UUID postId, Pageable pageable);
+    List<Comment> findByPostIdInAndParentCommentIdIsNullAndDeletedFalseOrderByCreatedAtDesc(List<UUID> postIds);
     Page<Comment> findByParentCommentIdAndDeletedFalse(UUID parentCommentId, Pageable pageable);
     List<Comment> findByParentCommentIdAndDeletedFalse(UUID parentCommentId);
     Optional<Comment> findByIdAndDeletedFalse(UUID id);

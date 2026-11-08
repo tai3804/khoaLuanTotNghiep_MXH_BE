@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,6 +16,8 @@ public interface SavedPostRepository extends BaseJpaRepository<SavedPost, UUID> 
     Optional<SavedPost> findByUserIdAndPostId(UUID userId, UUID postId);
 
     boolean existsByUserIdAndPostId(UUID userId, UUID postId);
+
+    List<SavedPost> findByUserIdAndPostIdIn(UUID userId, List<UUID> postIds);
 
     Page<SavedPost> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 

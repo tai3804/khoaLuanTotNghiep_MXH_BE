@@ -51,6 +51,7 @@ public class GetAllPostsQueryHandler {
     FeedRankingService feedRankingService;
     PostSeenService postSeenService;
     PostSearchSupport postSearchSupport;
+    iuh.fit.postservice.application.service.PostEnrichmentService postEnrichmentService;
 
     @Transactional(readOnly = true)
     // Kết quả "chỉ bài chưa xem" phụ thuộc lượt xem vừa ghi nên không cache 30 giây như các truy vấn khác
@@ -179,6 +180,7 @@ public class GetAllPostsQueryHandler {
                 })
                 .toList();
 
+        postEnrichmentService.enrichPosts(content, query.getViewerId());
         return postFeatureMapper.toPagedResponse(postsPage, content);
     }
 
@@ -223,6 +225,8 @@ public class GetAllPostsQueryHandler {
             result.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
             content.add(result);
         }
+
+        postEnrichmentService.enrichPosts(content, query.getViewerId());
 
         int totalPages = (int) Math.ceil((double) total / size);
         return PagedResponse.<GetPostDetailResult>builder()

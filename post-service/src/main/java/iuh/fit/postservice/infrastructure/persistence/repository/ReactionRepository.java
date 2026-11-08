@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 @Repository
 public interface ReactionRepository extends BaseJpaRepository<Reaction, UUID> {
     Optional<Reaction> findByPostIdAndUserId(UUID postId, UUID userId);
+    List<Reaction> findByPostIdIn(List<UUID> postIds);
     Page<Reaction> findByPostId(UUID postId, Pageable pageable);
     long countByPostId(UUID postId);
 

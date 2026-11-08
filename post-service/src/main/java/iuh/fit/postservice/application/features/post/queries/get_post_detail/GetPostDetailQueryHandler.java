@@ -34,6 +34,7 @@ public class GetPostDetailQueryHandler {
     PostVisibilityService postVisibilityService;
     JwtUtil jwtUtil;
     UserConnectionClient userConnectionClient;
+    iuh.fit.postservice.application.service.PostEnrichmentService postEnrichmentService;
 
     @Transactional(readOnly = true)
     @Cacheable(
@@ -70,6 +71,7 @@ public class GetPostDetailQueryHandler {
 
         GetPostDetailResult result = postFeatureMapper.toGetDetailResult(post, mediaList);
         result.setPoll(iuh.fit.postservice.application.util.PostPollHelper.toResponse(post.getPollData(), query.getViewerId()));
+        postEnrichmentService.enrichPost(result, query.getViewerId());
         return result;
     }
 

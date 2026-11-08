@@ -7,6 +7,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 import iuh.fit.postservice.presentation.dto.response.PostPollResponse;
+import iuh.fit.postservice.presentation.dto.response.CommentResponse;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -49,4 +50,10 @@ public class GetPostDetailResult {
     Double relevanceScore;
     String relevanceReason;
     PostPollResponse poll;
+
+    boolean liked;
+    String myReaction;
+    List<String> topReactionTypes;
+    boolean saved;
+    List<CommentResponse> previewComments;
 }

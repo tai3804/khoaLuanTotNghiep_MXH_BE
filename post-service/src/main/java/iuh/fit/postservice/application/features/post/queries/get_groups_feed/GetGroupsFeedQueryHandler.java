@@ -41,9 +41,15 @@ public class GetGroupsFeedQueryHandler {
     private final PostRepository postRepository;
     private final PostMediaRepository postMediaRepository;
     private final PostFeatureMapper postFeatureMapper;
+    private final iuh.fit.postservice.application.service.PostEnrichmentService postEnrichmentService;
 
     @Transactional(readOnly = true)
     public PagedResponse<GetPostDetailResult> handle(int page, int size, String sort) {
+        return handle(page, size, sort, null);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<GetPostDetailResult> handle(int page, int size, String sort, UUID viewerId) {
         List<UUID> groupIds = joinedGroupIds();
         int pageIndex = Math.max(page, 1) - 1;
         int pageSize = Math.min(Math.max(size, 1), MAX_SIZE);
@@ -62,6 +68,7 @@ public class GetGroupsFeedQueryHandler {
         List<GetPostDetailResult> content = posts.getContent().stream()
                 .map(post -> postFeatureMapper.toGetDetailResult(post, mediaByPost.getOrDefault(post.getId(), List.of())))
                 .toList();
+        postEnrichmentService.enrichPosts(content, viewerId);
         return postFeatureMapper.toPagedResponse(posts, content);
     }
 

@@ -9,7 +9,7 @@ rate-limit:
   ai-refill-seconds: ${RATE_LIMIT_AI_REFILL_SECONDS:10}
   mutation-capacity: ${RATE_LIMIT_MUTATION_CAPACITY:10}
   mutation-refill-seconds: ${RATE_LIMIT_MUTATION_REFILL_SECONDS:30}
-  general-capacity: ${RATE_LIMIT_GENERAL_CAPACITY:60}
+  general-capacity: ${RATE_LIMIT_GENERAL_CAPACITY:300}
   general-refill-seconds: ${RATE_LIMIT_GENERAL_REFILL_SECONDS:1}
 
 spring:

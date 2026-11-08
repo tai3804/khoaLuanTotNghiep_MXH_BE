@@ -48,6 +48,18 @@ public class PostResponse {
     String relevanceReason;
     PostPollResponse poll;
 
+    @JsonProperty("isLiked")
+    boolean liked;
+
+    String myReaction;
+
+    List<String> topReactionTypes;
+
+    @JsonProperty("isSaved")
+    boolean saved;
+
+    List<CommentResponse> previewComments;
+
     /** Bài đang được ghim đầu trang của nhóm. */
     @JsonProperty("groupPinned")
     public boolean isGroupPinned() {
