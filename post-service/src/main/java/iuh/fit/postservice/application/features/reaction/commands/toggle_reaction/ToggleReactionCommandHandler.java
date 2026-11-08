@@ -78,6 +78,7 @@ public class ToggleReactionCommandHandler {
                 notifEvent.put("recipientId", post.getAuthorId().toString());
                 notifEvent.put("actorId", command.getUserId().toString());
                 notifEvent.put("type", "LIKE_POST");
+                notifEvent.put("reactionType", activeType.name());
                 notifEvent.put("title", "Tương tác bài viết");
 
                 String reactionAction;

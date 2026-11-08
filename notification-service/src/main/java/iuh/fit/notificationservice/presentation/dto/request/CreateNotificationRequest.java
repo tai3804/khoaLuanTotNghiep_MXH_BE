@@ -31,4 +31,5 @@ public class CreateNotificationRequest {
     String targetId;
     String targetUrl;
     String avatarUrl;
+    String reactionType;
 }

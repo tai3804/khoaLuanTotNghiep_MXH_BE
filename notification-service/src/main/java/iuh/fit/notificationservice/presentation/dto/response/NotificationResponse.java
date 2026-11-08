@@ -24,6 +24,7 @@ public class NotificationResponse {
     String targetId;
     String targetUrl;
     String avatarUrl;
+    String reactionType;
     @JsonProperty("isRead")
     boolean isRead;
     Instant readAt;

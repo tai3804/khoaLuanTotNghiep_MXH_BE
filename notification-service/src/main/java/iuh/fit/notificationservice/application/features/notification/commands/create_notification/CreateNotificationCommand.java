@@ -21,4 +21,5 @@ public class CreateNotificationCommand {
     String targetId;
     String targetUrl;
     String avatarUrl;
+    String reactionType;
 }

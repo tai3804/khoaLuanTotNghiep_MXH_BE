@@ -57,6 +57,7 @@ public class CreateNotificationHandler {
                 .targetId(command.getTargetId())
                 .targetUrl(command.getTargetUrl())
                 .avatarUrl(command.getAvatarUrl())
+                .reactionType(command.getReactionType())
                 .isRead(false)
                 .build();
 

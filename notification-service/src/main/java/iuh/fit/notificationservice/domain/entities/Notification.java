@@ -51,6 +51,9 @@ public class Notification {
     @Column(name = "avatar_url")
     String avatarUrl;
 
+    @Column(name = "reaction_type", length = 30)
+    String reactionType;
+
     @Column(name = "is_read", nullable = false)
     @Builder.Default
     boolean isRead = false;

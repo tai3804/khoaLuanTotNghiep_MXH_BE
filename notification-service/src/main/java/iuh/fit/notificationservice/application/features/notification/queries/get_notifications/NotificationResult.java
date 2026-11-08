@@ -23,6 +23,7 @@ public class NotificationResult {
     String targetId;
     String targetUrl;
     String avatarUrl;
+    String reactionType;
     boolean isRead;
     Instant readAt;
     Instant createdAt;
