@@ -26,7 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Bộ lọc giới hạn tần suất yêu cầu (Rate Limiting) tại API Gateway.
- * Sử dụng thuật toán Fixed Window Counter phân cấp theo loại tài nguyên (Auth, AI, Mutation, General),
+ * Sử dụng thuật toán Fixed Window Counter phân cấp theo loại tài nguyên (Auth,
+ * AI, Mutation, General),
  * kết hợp cơ chế tự dọn dẹp bộ nhớ định kỳ.
  *
  * Toàn bộ tham số cấu hình được nạp động từ file .env / biến môi trường:
@@ -42,22 +43,22 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitingGlobalFilter.class);
 
-    @Value("${RATE_LIMIT_ENABLED:true}")
+    @Value("${rate-limit.enabled:true}")
     private boolean rateLimitEnabled;
 
-    @Value("${RATE_LIMIT_AUTH_PER_MINUTE:20}")
+    @Value("${rate-limit.auth-per-minute:20}")
     private int authLimitPerMinute;
 
-    @Value("${RATE_LIMIT_AI_PER_MINUTE:30}")
+    @Value("${rate-limit.ai-per-minute:30}")
     private int aiLimitPerMinute;
 
-    @Value("${RATE_LIMIT_MUTATION_PER_MINUTE:60}")
+    @Value("${rate-limit.mutation-per-minute:60}")
     private int mutationLimitPerMinute;
 
-    @Value("${RATE_LIMIT_GENERAL_PER_MINUTE:180}")
+    @Value("${rate-limit.general-per-minute:180}")
     private int generalLimitPerMinute;
 
-    @Value("${RATE_LIMIT_RETRY_AFTER_SECONDS:30}")
+    @Value("${rate-limit.retry-after-seconds:30}")
     private int retryAfterSeconds;
 
     private static final long WINDOW_MS = 60_000L; // 1 phút
@@ -70,7 +71,8 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     });
 
     public RateLimitingGlobalFilter() {
-        // Định kỳ mỗi 60 giây dọn dẹp các bucket đã hết hạn trên 2 phút để giải phóng bộ nhớ
+        // Định kỳ mỗi 60 giây dọn dẹp các bucket đã hết hạn trên 2 phút để giải phóng
+        // bộ nhớ
         cleanupScheduler.scheduleAtFixedRate(this::cleanupExpiredBuckets, 60, 60, TimeUnit.SECONDS);
     }
 
@@ -99,7 +101,8 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // 2. Bỏ qua WebSocket handshake/info để không làm gián đoạn trò chuyện và cuộc gọi thời gian thực
+        // 2. Bỏ qua WebSocket handshake/info để không làm gián đoạn trò chuyện và cuộc
+        // gọi thời gian thực
         if (isWebSocketPath(path) || path.startsWith("/actuator")) {
             return chain.filter(exchange);
         }
@@ -138,8 +141,7 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
 
             String bodyJson = String.format(
                     "{\"code\":429,\"message\":\"Bạn đang gửi yêu cầu quá nhanh. Vui lòng chờ %d giây trước khi thử lại.\",\"retryAfter\":%d}",
-                    effectiveRetryAfter, effectiveRetryAfter
-            );
+                    effectiveRetryAfter, effectiveRetryAfter);
             byte[] bytes = bodyJson.getBytes(StandardCharsets.UTF_8);
             return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(bytes)));
         }
@@ -172,7 +174,8 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
             return aiLimitPerMinute;
         }
 
-        if (isMutationMethod(method) && (path.startsWith("/api/v1/posts") || path.startsWith("/api/v1/media") || path.startsWith("/api/v1/groups"))) {
+        if (isMutationMethod(method) && (path.startsWith("/api/v1/posts") || path.startsWith("/api/v1/media")
+                || path.startsWith("/api/v1/groups"))) {
             return mutationLimitPerMinute;
         }
 
@@ -180,9 +183,12 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private String pathCategory(String path, HttpMethod method) {
-        if (path.startsWith("/api/v1/auth")) return "auth";
-        if (path.startsWith("/api/v1/ai")) return "ai";
-        if (isMutationMethod(method)) return "mutation";
+        if (path.startsWith("/api/v1/auth"))
+            return "auth";
+        if (path.startsWith("/api/v1/ai"))
+            return "ai";
+        if (isMutationMethod(method))
+            return "mutation";
         return "general";
     }
 
@@ -192,7 +198,8 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private String resolveClientKey(ServerHttpRequest request) {
-        // Nếu có Authorization Bearer token, ưu tiên dùng hash token để nhận diện chính xác người dùng
+        // Nếu có Authorization Bearer token, ưu tiên dùng hash token để nhận diện chính
+        // xác người dùng
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader != null && authHeader.startsWith("Bearer ") && authHeader.length() > 20) {
             String token = authHeader.substring(7).trim();

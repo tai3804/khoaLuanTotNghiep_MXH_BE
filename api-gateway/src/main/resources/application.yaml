@@ -1,6 +1,14 @@
 server:
   port: ${SERVER_PORT:8080}
 
+rate-limit:
+  enabled: ${RATE_LIMIT_ENABLED:true}
+  auth-per-minute: ${RATE_LIMIT_AUTH_PER_MINUTE:20}
+  ai-per-minute: ${RATE_LIMIT_AI_PER_MINUTE:30}
+  mutation-per-minute: ${RATE_LIMIT_MUTATION_PER_MINUTE:60}
+  general-per-minute: ${RATE_LIMIT_GENERAL_PER_MINUTE:180}
+  retry-after-seconds: ${RATE_LIMIT_RETRY_AFTER_SECONDS:30}
+
 spring:
   application:
     name: api-gateway
