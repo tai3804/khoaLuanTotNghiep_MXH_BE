@@ -49,7 +49,7 @@ app:
       issuer-uri: ${JWT_ISSUER_URI:https://auth.iuh.fit}
       expiration:
         access-token: ${JWT_ACCESS_TOKEN_EXPIRATION:900000}
-        refresh-token: ${JWT_REFRESH_TOKEN_EXPIRATION:86400000}
+        refresh-token: ${JWT_REFRESH_TOKEN_EXPIRATION:2592000000}
   mfa:
     totp:
       issuer: ${MFA_TOTP_ISSUER:SocialNetworkApp}
