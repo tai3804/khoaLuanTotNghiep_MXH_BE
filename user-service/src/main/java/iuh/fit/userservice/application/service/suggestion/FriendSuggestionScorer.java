@@ -17,12 +17,18 @@ import java.util.UUID;
  *
  * Bạn chung được tính theo Adamic–Adar: mỗi bạn chung đóng góp 1 / ln(số bạn của người đó + 2),
  * nên một người bạn "quen tất cả mọi người" ít giá trị hơn một người bạn có vòng quan hệ nhỏ, thân thiết.
+ *
+ * Điểm bạn chung bão hoà MỀM (xem {@link #mutualScore}) chứ không bị cắt cứng: trần cứng làm mọi ứng viên có tổng
+ * Adamic–Adar vượt ngưỡng hoà điểm với nhau, khiến thứ tự giữa họ do tín hiệu phụ hoặc id quyết định. Đo trên đồ thị
+ * Facebook thật (SNAP ego-Facebook, xem FriendSuggestionEvaluationTest) thì cách cắt cứng làm MRR giảm từ 0,83 xuống 0,57.
  */
 public final class FriendSuggestionScorer {
 
     // Điểm cơ sở khi có tín hiệu xã hội
     static final double MUTUAL_BASE = 6.0;
+    /** Độ dốc của điểm bạn chung khi tổng Adamic–Adar còn nhỏ (cùng giá trị với công thức tuyến tính trước đây). */
     static final double MUTUAL_WEIGHT = 8.0;
+    /** Biên độ tối đa của điểm bạn chung: điểm tiệm cận MUTUAL_BASE + MUTUAL_CAP = 32 nhưng không bao giờ chạm tới. */
     static final double MUTUAL_CAP = 26.0;
     static final double GROUP_BASE = 5.0;
     static final double GROUP_CAP = 5.0;
@@ -80,6 +86,17 @@ public final class FriendSuggestionScorer {
         return sum;
     }
 
+    /**
+     * Điểm của tín hiệu bạn chung từ tổng Adamic–Adar {@code aa} (> 0):
+     * {@code BASE + CAP · (1 − e^(−WEIGHT · aa / CAP))}.
+     * Tăng chặt (hai giá trị aa khác nhau luôn cho hai điểm khác nhau), bị chặn trên bởi BASE + CAP để tín hiệu bạn chung
+     * không lấn át hẳn các tín hiệu khác, và có độ dốc WEIGHT tại aa = 0 nên với ít bạn chung kết quả gần như công thức
+     * tuyến tính cũ {@code BASE + WEIGHT · aa}.
+     */
+    static double mutualScore(double aa) {
+        return MUTUAL_BASE - MUTUAL_CAP * Math.expm1(-MUTUAL_WEIGHT * aa / MUTUAL_CAP);
+    }
+
     public static Scored score(UUID viewerId, UUID candidateId, Signals s, LocalDateTime now) {
         double score = 0;
         List<String> reasons = new ArrayList<>();
@@ -89,7 +106,7 @@ public final class FriendSuggestionScorer {
 
         if (mutualCount > 0) {
             social = true;
-            score += MUTUAL_BASE + Math.min(MUTUAL_CAP, MUTUAL_WEIGHT * adamicAdar(s.mutualFriendDegrees()));
+            score += mutualScore(adamicAdar(s.mutualFriendDegrees()));
             reasons.add(mutualCount + " bạn chung");
         }
         if (s.commonGroups() > 0) {

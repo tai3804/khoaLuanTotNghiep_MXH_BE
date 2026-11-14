@@ -66,6 +66,33 @@ class FriendSuggestionScorerTest {
     }
 
     @Test
+    void manyMutualFriendsStillRankByCountBeyondTheOldHardCap() {
+        // Mỗi bạn chung có 20 bạn: tổng Adamic–Adar ≈ 0,32 mỗi người, nên trần cứng cũ (8·AA >= 26) bị chạm từ ~10 bạn chung.
+        // Trước đây 10, 15, 20, 30 bạn chung cho cùng một điểm, nên thứ tự giữa họ do tín hiệu phụ / id quyết định.
+        double previous = -1;
+        for (int mutual : new int[]{5, 10, 15, 20, 30}) {
+            Scored s = score(signals(java.util.Collections.nCopies(mutual, 20), 0, 0, false, false, null, null, false, null, null, 0));
+            assertTrue(s.score() > previous, mutual + " bạn chung phải có điểm cao hơn mức trước");
+            previous = s.score();
+        }
+    }
+
+    @Test
+    void mutualScoreIsBoundedAndNearlyLinearForFewMutualFriends() {
+        double bound = FriendSuggestionScorer.MUTUAL_BASE + FriendSuggestionScorer.MUTUAL_CAP;
+        // Cực đoan: 5000 bạn chung mà mỗi người chỉ có 2 bạn. Điểm vẫn không vượt BASE + CAP (+ nhiễu tối đa 0,3, không có tín hiệu khác).
+        Scored extreme = score(signals(java.util.Collections.nCopies(5000, 2), 0, 0, false, false, null, null, false, null, null, 0));
+        assertTrue(extreme.score() <= bound + FriendSuggestionScorer.JITTER_MAX, "điểm bạn chung phải bị chặn trên");
+        assertTrue(FriendSuggestionScorer.mutualScore(1e6) <= bound, "tiệm cận BASE + CAP, không vượt");
+        // Gần gốc: độ dốc bằng MUTUAL_WEIGHT, tức giống công thức tuyến tính cũ BASE + WEIGHT·AA
+        double aa = 0.01;
+        double linear = FriendSuggestionScorer.MUTUAL_BASE + FriendSuggestionScorer.MUTUAL_WEIGHT * aa;
+        assertEquals(linear, FriendSuggestionScorer.mutualScore(aa), 0.01);
+        // Luôn có điểm cơ sở: dù chỉ một bạn chung rất "loãng", điểm xã hội vẫn >= MUTUAL_BASE
+        assertTrue(FriendSuggestionScorer.mutualScore(1e-9) >= FriendSuggestionScorer.MUTUAL_BASE);
+    }
+
+    @Test
     void followingMeBeatsFollowedByMe() {
         Scored followsMe = score(signals(null, 0, 0, true, false, null, null, false, null, null, 0));
         Scored iFollow = score(signals(null, 0, 0, false, true, null, null, false, null, null, 0));
