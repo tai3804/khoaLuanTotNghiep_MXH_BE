@@ -47,6 +47,9 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+        # Nạp collection EAGER (hashtag, allowedUserIds, taggedUserIds) theo lô thay vì N+1; bảng tin xếp hạng
+        # (findRankingCandidates, tối đa 400 bài) giảm từ ~9s xuống ~1s khi CSDL ở cloud.
+        default_batch_fetch_size: 50
 
 eureka:
   client:
