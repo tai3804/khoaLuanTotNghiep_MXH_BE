@@ -16,7 +16,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -108,20 +107,25 @@ public class UserEmbeddingService {
         try {
             int safeLimit = Math.max(1, Math.min(limit, 50));
             String sql = """
-                SELECT u2.user_id, (1 - (u2.embedding <=> u1.embedding)) AS similarity
-                FROM user_embeddings u1
-                JOIN user_embeddings u2 ON u1.user_id != u2.user_id
-                WHERE u1.user_id = ?
-                  AND (1 - (u2.embedding <=> u1.embedding)) >= ?
-                ORDER BY u2.embedding <=> u1.embedding ASC
-                LIMIT ?
+                SELECT u2.user_id, (1 - (u2.embedding <=> src.embedding)) AS similarity
+                FROM (SELECT embedding FROM user_embeddings WHERE user_id = ?) src,
+                     LATERAL (
+                         SELECT ue.user_id, ue.embedding
+                         FROM user_embeddings ue
+                         WHERE ue.user_id <> ?
+                         ORDER BY ue.embedding <=> src.embedding ASC
+                         LIMIT ?
+                     ) u2
+                WHERE (1 - (u2.embedding <=> src.embedding)) >= ?
+                ORDER BY u2.embedding <=> src.embedding ASC
             """;
+            // LATERAL + LIMIT thay cho self-join: vế ORDER BY coi vector gốc là hằng nên dùng được chỉ mục HNSW thay vì quét toàn bảng.
 
             return jdbcTemplate.query(sql, (rs, rowNum) -> {
                 UUID userId = UUID.fromString(rs.getString("user_id"));
                 double sim = rs.getDouble("similarity");
                 return new UserVectorMatch(userId, sim);
-            }, currentUserId, minSimilarity, safeLimit);
+            }, currentUserId, currentUserId, safeLimit, minSimilarity);
 
         } catch (Exception e) {
             log.error("Error finding similar users for {}: {}", currentUserId, e.getMessage(), e);
@@ -190,7 +194,7 @@ public class UserEmbeddingService {
         String combined = sb.toString().trim();
         if (combined.isBlank()) return;
 
-        CompletableFuture.runAsync(() -> {
+        EmbeddingTaskExecutor.submit(() -> {
             try {
                 List<Float> vector = getQueryEmbedding(combined);
                 if (!vector.isEmpty()) {

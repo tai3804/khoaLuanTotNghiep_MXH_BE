@@ -48,6 +48,9 @@ public class FeedRankingService {
     private static final int MIN_CANDIDATES = 40;
     private static final int RESULT_CAP = 200;
     private static final int INTERACTION_WINDOW_DAYS = 30;
+    private static final int CF_WINDOW_DAYS = 60;
+    private static final int CF_ROW_LIMIT = 20_000;
+    private static final long INTERACTION_CACHE_TTL_MS = 120_000L;
 
     private final PostRepository postRepository;
     private final PostMediaRepository postMediaRepository;
@@ -138,6 +141,17 @@ public class FeedRankingService {
             }
         }
 
+        // 3d. Tín hiệu từ lịch sử tương tác: lọc cộng tác theo bài viết (Item-based CF) và hồ sơ sở thích (theo nội dung).
+        // Người xem mới chưa đủ tương tác thì không có hai điểm này.
+        Map<UUID, Double> cfScores = Collections.emptyMap();
+        Map<UUID, Double> contentBoosts = Collections.emptyMap();
+        if (viewerId != null && mode == Mode.RELEVANCE) {
+            List<UUID> candidateIds = visible.stream().map(Post::getId).toList();
+            List<ItemCollaborativeFilter.Interaction> interactionData = loadInteractionData(now);
+            cfScores = collaborativeScores(viewerId, candidateIds, interactionData, now);
+            contentBoosts = contentBoosts(viewerId, candidateIds, interactionData, now);
+        }
+
         // 4. Chấm điểm
         List<Item> scored = new ArrayList<>(visible.size());
         for (Post p : visible) {
@@ -154,7 +168,9 @@ public class FeedRankingService {
                     interactions.getOrDefault(p.getAuthorId(), 0),
                     p.isPinned(),
                     searchSim,
-                    searchInterestTopic);
+                    searchInterestTopic,
+                    cfScores.getOrDefault(p.getId(), 0.0),
+                    contentBoosts.getOrDefault(p.getId(), 0.0));
             Scored s = PostRelevanceScorer.score(mode, signals);
             double weight = reputationWeights.getOrDefault(p.getAuthorId(), 1.0);
             scored.add(new Item(p.getId(), p.getAuthorId(), s.score() * weight, s.reason()));
@@ -173,6 +189,94 @@ public class FeedRankingService {
         log.debug("Ranked feed for {} ({}): {} candidates, {} visible, {} ranked",
                 viewerId, mode, candidates.size(), visible.size(), ranked.size());
         return snapshot;
+    }
+
+    private record CachedInteractions(List<ItemCollaborativeFilter.Interaction> data, long loadedAtMillis) {
+    }
+
+    private volatile CachedInteractions interactionCache;
+
+    /**
+     * Tương tác gần đây của mọi người dùng (thích, bình luận, chia sẻ), dùng chung cho CF và hồ sơ sở thích.
+     *
+     * <p>Tập này giống nhau với mọi người xem (chỉ khác ở bước chấm điểm), nhưng trước đây được nạp lại cho MỖI lần tính bảng tin:
+     * 3 truy vấn, tối đa {@code 3 × CF_ROW_LIMIT} dòng. Nay giữ trong bộ nhớ {@value #INTERACTION_CACHE_TTL_MS} ms và dùng chung;
+     * độ trễ vài phút của tín hiệu cộng tác (vốn dùng nửa đời 14 ngày) là không đáng kể. Lỗi nạp thì không cache.
+     */
+    List<ItemCollaborativeFilter.Interaction> loadInteractionData(LocalDateTime now) {
+        CachedInteractions cached = interactionCache;
+        long nowMillis = System.currentTimeMillis();
+        if (cached != null && nowMillis - cached.loadedAtMillis() < INTERACTION_CACHE_TTL_MS) {
+            return cached.data();
+        }
+        synchronized (this) {
+            // Kiểm tra lại: luồng khác có thể vừa nạp xong trong lúc ta chờ khoá (tránh nhiều luồng cùng truy vấn một lúc)
+            cached = interactionCache;
+            if (cached != null && System.currentTimeMillis() - cached.loadedAtMillis() < INTERACTION_CACHE_TTL_MS) {
+                return cached.data();
+            }
+            List<ItemCollaborativeFilter.Interaction> data = new ArrayList<>();
+            try {
+                LocalDateTime since = now.minusDays(CF_WINDOW_DAYS);
+                PageRequest page = PageRequest.of(0, CF_ROW_LIMIT);
+                collectRows(data, reactionRepository.findRecentInteractionRows(since, page), ItemCollaborativeFilter.W_REACTION);
+                collectRows(data, commentRepository.findRecentInteractionRows(since, page), ItemCollaborativeFilter.W_COMMENT);
+                collectRows(data, postRepository.findRecentShareRows(since, page), ItemCollaborativeFilter.W_SHARE);
+                List<ItemCollaborativeFilter.Interaction> immutable = List.copyOf(data);
+                interactionCache = new CachedInteractions(immutable, System.currentTimeMillis());
+                return immutable;
+            } catch (Exception e) {
+                log.warn("Could not load interaction data for recommendation signals: {}", e.getMessage());
+                return data;
+            }
+        }
+    }
+
+    /** Điểm lọc cộng tác cho các bài ứng viên. Lỗi thì bỏ qua tín hiệu này thay vì làm hỏng bảng tin. */
+    Map<UUID, Double> collaborativeScores(UUID viewerId, List<UUID> candidateIds,
+                                          List<ItemCollaborativeFilter.Interaction> data, LocalDateTime now) {
+        try {
+            return ItemCollaborativeFilter.score(viewerId, candidateIds, data, now);
+        } catch (Exception e) {
+            log.warn("Could not compute collaborative filtering scores: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * Mức giống hồ sơ sở thích của người xem (đề xuất theo nội dung). Hồ sơ là trung bình có trọng số vector của các bài
+     * người xem từng tương tác; bài người xem đã tương tác rồi không được cộng điểm lại.
+     */
+    Map<UUID, Double> contentBoosts(UUID viewerId, List<UUID> candidateIds,
+                                    List<ItemCollaborativeFilter.Interaction> data, LocalDateTime now) {
+        try {
+            List<UserInterestProfile.Weighted> items = UserInterestProfile.aggregate(viewerId, data, now);
+            if (items.size() < UserInterestProfile.MIN_ITEMS) return Collections.emptyMap();
+            Map<UUID, float[]> embeddings = postEmbeddingService.getEmbeddings(
+                    items.stream().map(UserInterestProfile.Weighted::postId).toList());
+            Optional<float[]> profile = UserInterestProfile.centroid(items, embeddings);
+            if (profile.isEmpty()) return Collections.emptyMap();
+            Set<UUID> already = UserInterestProfile.postIds(items);
+            List<UUID> toScore = candidateIds.stream().filter(id -> !already.contains(id)).toList();
+            Map<UUID, Double> sims = postEmbeddingService.computeSimilaritiesForPosts(
+                    toScore, UserInterestProfile.toVectorString(profile.get()));
+            Map<UUID, Double> boosts = new HashMap<>();
+            sims.forEach((id, sim) -> {
+                double b = UserInterestProfile.boost(sim);
+                if (b > 0) boosts.put(id, b);
+            });
+            return boosts;
+        } catch (Exception e) {
+            log.warn("Could not compute content-based interest profile: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    private static void collectRows(List<ItemCollaborativeFilter.Interaction> out, List<Object[]> rows, double weight) {
+        for (Object[] r : rows) {
+            if (r[0] == null || r[1] == null || r[2] == null) continue;
+            out.add(new ItemCollaborativeFilter.Interaction((UUID) r[0], (UUID) r[1], weight, (LocalDateTime) r[2]));
+        }
     }
 
     /** Bạn bè / người đang theo dõi từ user-service. Lỗi thì xếp hạng không có độ thân thiết thay vì làm hỏng bảng tin. */

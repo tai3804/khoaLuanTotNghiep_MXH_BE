@@ -13,7 +13,6 @@ import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -23,10 +22,24 @@ public class FastSensitiveWordFilter {
     private final SensitiveKeywordRepository sensitiveKeywordRepository;
     private final VietnameseTextNormalizer normalizer;
 
-    // Cache các từ khóa nhạy cảm trong bộ nhớ
-    private final Set<String> activeWords = ConcurrentHashMap.newKeySet();
-    private final Map<String, String> wordSeverityMap = new ConcurrentHashMap<>();
-    private final Map<String, String> wordCategoryMap = new ConcurrentHashMap<>();
+    /** Mức độ và nhóm của một từ khóa trong từ điển. */
+    private record Entry(String severity, String category) {
+    }
+
+    /**
+     * Bản chụp đã dựng của từ điển: hai automaton Aho–Corasick (dạng có dấu và dạng không dấu) cùng bảng tra ngược.
+     * Bất biến, được thay thế nguyên khối nên luồng đang quét không bao giờ thấy từ điển "đang nạp dở".
+     */
+    private record Snapshot(AhoCorasickMatcher exact, AhoCorasickMatcher unaccented,
+                            Map<String, List<String>> wordsByUnaccented, Map<String, Entry> entries) {
+    }
+
+    // Từ điển nguồn (từ khóa chuẩn hóa -> mức độ, nhóm). reloadCache thay nguyên khối nên không có khoảng hở rỗng;
+    // thêm/xóa lẻ chỉ đánh dấu dirty, automaton được dựng lại một lần ở lần quét kế tiếp (gộp được cả loạt thay đổi).
+    private volatile Map<String, Entry> dictionary = new ConcurrentHashMap<>();
+    private volatile Snapshot snapshot;
+    private volatile boolean dirty = true;
+    private final Object rebuildLock = new Object();
 
     // Tập từ khóa hạt giống khởi tạo ban đầu
     private static final List<String> SEED_PROFANITIES = Arrays.asList(
@@ -66,40 +79,72 @@ public class FastSensitiveWordFilter {
             log.error("Failed to initialize sensitive word dictionary: {}", e.getMessage());
             // Fallback nạp danh sách hạt giống vào cache
             for (String seed : SEED_PROFANITIES) {
-                activeWords.add(canonical(seed));
-                wordSeverityMap.put(canonical(seed), "MEDIUM");
-                wordCategoryMap.put(canonical(seed), "PROFANITY");
+                dictionary.put(canonical(seed), new Entry("MEDIUM", "PROFANITY"));
             }
+            dirty = true;
         }
     }
 
     public synchronized void reloadCache() {
         List<SensitiveKeyword> keywords = sensitiveKeywordRepository.findByStatus("ACTIVE");
-        activeWords.clear();
-        wordSeverityMap.clear();
-        wordCategoryMap.clear();
 
+        // Dựng từ điển mới ở bên ngoài rồi hoán đổi một lần. Trước đây clear() rồi nạp lại từng từ trên chính các bản đồ
+        // đang được quét, nên có khoảng thời gian từ điển rỗng khiến nội dung độc hại lọt qua tầng 1.
+        Map<String, Entry> fresh = new ConcurrentHashMap<>();
         for (SensitiveKeyword kw : keywords) {
             String word = canonical(kw.getKeyword());
-            activeWords.add(word);
-            wordSeverityMap.put(word, kw.getSeverity() != null ? kw.getSeverity() : "MEDIUM");
-            wordCategoryMap.put(word, kw.getCategory() != null ? kw.getCategory() : "PROFANITY");
+            if (word.isEmpty()) continue;
+            fresh.put(word, new Entry(
+                    kw.getSeverity() != null ? kw.getSeverity() : "MEDIUM",
+                    kw.getCategory() != null ? kw.getCategory() : "PROFANITY"));
         }
-        log.info("Loaded {} active sensitive keywords into FastSensitiveWordFilter cache.", activeWords.size());
+        dictionary = fresh;
+        dirty = true;
+        log.info("Loaded {} active sensitive keywords into FastSensitiveWordFilter cache.", fresh.size());
     }
 
     public void addOrUpdateWordInCache(String keyword, String category, String severity) {
         String word = canonical(keyword);
-        activeWords.add(word);
-        wordCategoryMap.put(word, category != null ? category : "PROFANITY");
-        wordSeverityMap.put(word, severity != null ? severity : "MEDIUM");
+        if (word.isEmpty()) return;
+        dictionary.put(word, new Entry(severity != null ? severity : "MEDIUM", category != null ? category : "PROFANITY"));
+        dirty = true;
     }
 
     public void removeWordFromCache(String keyword) {
-        String word = canonical(keyword);
-        activeWords.remove(word);
-        wordCategoryMap.remove(word);
-        wordSeverityMap.remove(word);
+        dictionary.remove(canonical(keyword));
+        dirty = true;
+    }
+
+    /** Số từ khóa đang hiệu lực trong bộ nhớ. */
+    public int activeWordCount() {
+        return dictionary.size();
+    }
+
+    /** Bản chụp hiện hành; dựng lại automaton nếu từ điển vừa thay đổi (chỉ một luồng dựng, các luồng khác chờ rồi dùng chung). */
+    private Snapshot currentSnapshot() {
+        Snapshot s = snapshot;
+        if (s != null && !dirty) return s;
+        synchronized (rebuildLock) {
+            if (snapshot == null || dirty) {
+                // Hạ cờ TRƯỚC khi đọc từ điển: thay đổi xảy ra giữa chừng sẽ đặt lại cờ và lần quét sau dựng lại.
+                dirty = false;
+                snapshot = buildSnapshot(new HashMap<>(dictionary));
+            }
+            return snapshot;
+        }
+    }
+
+    private Snapshot buildSnapshot(Map<String, Entry> entries) {
+        Map<String, List<String>> byUnaccented = new HashMap<>();
+        for (String word : entries.keySet()) {
+            String noDia = normalizer.removeDiacritics(word);
+            // Chỉ dùng dạng không dấu khi nó khác dạng gốc và đủ dài (xem MIN_UNACCENTED_LENGTH)
+            if (!noDia.equals(word) && noDia.length() >= MIN_UNACCENTED_LENGTH) {
+                byUnaccented.computeIfAbsent(noDia, k -> new ArrayList<>()).add(word);
+            }
+        }
+        return new Snapshot(new AhoCorasickMatcher(entries.keySet()), new AhoCorasickMatcher(byUnaccented.keySet()),
+                byUnaccented, entries);
     }
 
     /**
@@ -125,24 +170,23 @@ public class FastSensitiveWordFilter {
         String deObfuscated = normalizer.removeObfuscation(normalized);
 
         // Từ khóa khớp -> mức độ hiệu lực của lần khớp đó (xem weaken)
+        Snapshot dict = currentSnapshot();
         Map<String, String> matched = new LinkedHashMap<>();
-        for (String word : activeWords) {
-            if (word.isEmpty()) {
-                continue;
-            }
-            String severity = normalizeSeverity(wordSeverityMap.getOrDefault(word, "MEDIUM"));
 
-            // Bằng chứng mạnh: khớp nguyên từ, đúng từng dấu thanh/dấu mũ. "buổi" khác "buồi" nên không khớp nhau.
-            if (containsExactWord(normalized, word) || containsExactWord(deObfuscated, word)) {
-                matched.put(word, severity);
-                continue;
-            }
+        // Bằng chứng mạnh: khớp nguyên từ, đúng từng dấu thanh/dấu mũ. "buổi" khác "buồi" nên không khớp nhau.
+        // Mỗi văn bản chỉ cần MỘT lượt quét Aho–Corasick cho toàn bộ từ điển.
+        Set<String> strong = new LinkedHashSet<>(dict.exact().findWholeWords(normalized));
+        strong.addAll(dict.exact().findWholeWords(deObfuscated));
+        for (String word : strong) {
+            matched.put(word, normalizeSeverity(severityOf(dict, word)));
+        }
 
-            // Bằng chứng yếu: người viết gõ không dấu và đúng dạng không dấu của từ khóa. Không được bỏ dấu cả bài viết rồi so
-            // sánh, vì sẽ bắt nhầm "buổi" thành "buồi", "đang xấu hổ" thành "đáng xấu hổ", "kẹo bông" thành "kèo bóng".
-            String wordNoDia = normalizer.removeDiacritics(word);
-            if (!wordNoDia.equals(word) && wordNoDia.length() >= MIN_UNACCENTED_LENGTH && containsExactWord(deObfuscated, wordNoDia)) {
-                String weakened = weaken(severity);
+        // Bằng chứng yếu: người viết gõ không dấu và đúng dạng không dấu của từ khóa. Không được bỏ dấu cả bài viết rồi so
+        // sánh, vì sẽ bắt nhầm "buổi" thành "buồi", "đang xấu hổ" thành "đáng xấu hổ", "kẹo bông" thành "kèo bóng".
+        for (String noDia : dict.unaccented().findWholeWords(deObfuscated)) {
+            for (String word : dict.wordsByUnaccented().getOrDefault(noDia, List.of())) {
+                if (matched.containsKey(word)) continue;
+                String weakened = weaken(normalizeSeverity(severityOf(dict, word)));
                 if (weakened != null) {
                     matched.put(word, weakened);
                 }
@@ -160,7 +204,8 @@ public class FastSensitiveWordFilter {
             if (severityRank(severity) > highestRank) {
                 highestRank = severityRank(severity);
                 highestSeverity = severity;
-                primaryCategory = wordCategoryMap.getOrDefault(m.getKey(), "PROFANITY");
+                Entry entry = dict.entries().get(m.getKey());
+                primaryCategory = entry != null && entry.category() != null ? entry.category() : "PROFANITY";
             }
             switch (severity) {
                 case "CRITICAL" -> criticalCount++;
@@ -220,19 +265,9 @@ public class FastSensitiveWordFilter {
         return Normalizer.normalize(keyword, Normalizer.Form.NFC).toLowerCase().trim();
     }
 
-    /**
-     * Kiểm tra khớp từ độc lập theo ranh giới từ Unicode (Lookaround boundary)
-     * Tránh lỗi substring matching (ví dụ "điềm", "điểm" bị dính "đĩ", hay "giáo dục" bị dính "đụ").
-     */
-    private boolean containsExactWord(String text, String word) {
-        if (text == null || word == null || word.trim().isEmpty()) return false;
-        try {
-            String escapedWord = Pattern.quote(word.trim());
-            Pattern pattern = Pattern.compile("(?<![\\p{L}\\p{Nd}])" + escapedWord + "(?![\\p{L}\\p{Nd}])", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
-            return pattern.matcher(text).find();
-        } catch (Exception e) {
-            return false;
-        }
+    private static String severityOf(Snapshot dict, String word) {
+        Entry entry = dict.entries().get(word);
+        return entry != null && entry.severity() != null ? entry.severity() : "MEDIUM";
     }
 
     private String determineDefaultSeverity(String word) {

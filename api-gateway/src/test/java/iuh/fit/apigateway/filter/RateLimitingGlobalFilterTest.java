@@ -120,4 +120,78 @@ class RateLimitingGlobalFilterTest {
                     "Khi tắt cờ RATE_LIMIT_ENABLED thì không được chặn request");
         }
     }
+
+    @Test
+    @DisplayName("Đăng nhập: đổi Bearer token giả mỗi request không làm bucket mới (giới hạn theo IP)")
+    void authLimitIgnoresForgedBearerTokens() {
+        GatewayFilterChain chain = exchange -> Mono.empty();
+        int blocked = 0;
+        for (int i = 0; i < 10; i++) {
+            MockServerHttpRequest req = MockServerHttpRequest.post("/api/v1/auth/login")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer forged-token-number-" + i + "-xxxxxxxxxx")
+                    .remoteAddress(new java.net.InetSocketAddress("10.0.0.60", 1111))
+                    .build();
+            MockServerWebExchange ex = MockServerWebExchange.from(req);
+            filter.filter(ex, chain).block();
+            if (ex.getResponse().getStatusCode() == HttpStatus.TOO_MANY_REQUESTS) blocked++;
+        }
+        assertEquals(7, blocked, "authCapacity = 3 nên 7 request còn lại phải bị chặn dù mỗi request một token khác nhau");
+    }
+
+    @Test
+    @DisplayName("Nhóm khác: bucket chặn theo IP vẫn giới hạn khi mỗi request dùng một token giả")
+    void ipGuardLimitsForgedBearerTokens() {
+        GatewayFilterChain chain = exchange -> Mono.empty();
+        int blocked = 0;
+        for (int i = 0; i < 80; i++) {
+            MockServerHttpRequest req = MockServerHttpRequest.get("/api/v1/posts")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer forged-token-number-" + i + "-xxxxxxxxxx")
+                    .remoteAddress(new java.net.InetSocketAddress("10.0.0.61", 2222))
+                    .build();
+            MockServerWebExchange ex = MockServerWebExchange.from(req);
+            filter.filter(ex, chain).block();
+            if (ex.getResponse().getStatusCode() == HttpStatus.TOO_MANY_REQUESTS) blocked++;
+        }
+        assertTrue(blocked > 0, "Không có token giả nào được phép vượt quá hạn mức theo IP");
+    }
+
+    @Test
+    @DisplayName("X-Forwarded-For: chỉ tin phần tử do proxy tin cậy thêm vào, không tin phần tử client tự gửi")
+    void spoofedForwardedForDoesNotChangeBucket() {
+        GatewayFilterChain chain = exchange -> Mono.empty();
+        int blocked = 0;
+        for (int i = 0; i < 6; i++) {
+            MockServerHttpRequest req = MockServerHttpRequest.post("/api/v1/auth/login")
+                    .header("X-Forwarded-For", "1.1.1." + i + ", 203.0.113.9")   // phần tử đầu do client giả, cuối do proxy thêm
+                    .remoteAddress(new java.net.InetSocketAddress("10.0.0.62", 3333))
+                    .build();
+            MockServerWebExchange ex = MockServerWebExchange.from(req);
+            filter.filter(ex, chain).block();
+            if (ex.getResponse().getStatusCode() == HttpStatus.TOO_MANY_REQUESTS) blocked++;
+        }
+        assertEquals(3, blocked, "authCapacity = 3: 3 request cuối phải bị chặn dù phần tử đầu của X-Forwarded-For luôn khác");
+    }
+
+    @Test
+    @DisplayName("Dọn dẹp: bucket rảnh quá lâu và đã đầy token phải bị xoá khỏi bộ nhớ")
+    void idleFullBucketsAreCleanedUp() {
+        GatewayFilterChain chain = exchange -> Mono.empty();
+        MockServerHttpRequest req = MockServerHttpRequest.get("/api/v1/posts")
+                .remoteAddress(new java.net.InetSocketAddress("10.0.0.63", 4444))
+                .build();
+        filter.filter(MockServerWebExchange.from(req), chain).block();
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> buckets = (java.util.Map<String, Object>) ReflectionTestUtils.getField(filter, "tokenBuckets");
+        assertEquals(1, buckets.size());
+
+        // Giả lập bucket đã không được dùng 10 phút
+        Object bucket = buckets.values().iterator().next();
+        long tenMinutesAgo = System.currentTimeMillis() - 600_000L;
+        ReflectionTestUtils.setField(bucket, "lastAccessTimestamp", tenMinutesAgo);
+        ReflectionTestUtils.setField(bucket, "lastRefillTimestamp", tenMinutesAgo);
+        ReflectionTestUtils.invokeMethod(filter, "cleanupExpiredBuckets");
+
+        assertTrue(buckets.isEmpty(), "Bucket rảnh và đầy token phải được dọn");
+    }
 }
