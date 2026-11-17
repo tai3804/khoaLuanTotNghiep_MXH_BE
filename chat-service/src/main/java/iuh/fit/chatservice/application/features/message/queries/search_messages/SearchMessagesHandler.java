@@ -46,7 +46,7 @@ public class SearchMessagesHandler {
         }
 
         PageRequest pageRequest = PageRequest.of(Math.max(0, query.getPage()), Math.min(Math.max(1, query.getSize()), 100));
-        List<UUID> userDeletedIds = messageUserDeletionRepository.findAllDeletedMessageIdsByUserId(query.getCurrentUserId());
+        List<UUID> userDeletedIds = messageUserDeletionRepository.findDeletedMessageIdsByUserInConversation(query.getCurrentUserId(), query.getConversationId());
 
         Page<Message> messagePage = messageRepository.searchMessagesInConversation(
                 query.getConversationId(),

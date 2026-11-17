@@ -19,4 +19,8 @@ public interface MessageUserDeletionRepository extends JpaRepository<MessageUser
 
     @Query("SELECT d.messageId FROM MessageUserDeletion d WHERE d.userId = :userId")
     List<UUID> findAllDeletedMessageIdsByUserId(@Param("userId") UUID userId);
+
+    /** Như trên nhưng chỉ trong một hội thoại: không phải tải mọi tin đã xóa của người dùng ở tất cả hội thoại. */
+    @Query("SELECT d.messageId FROM MessageUserDeletion d JOIN Message m ON m.id = d.messageId WHERE d.userId = :userId AND m.conversationId = :conversationId")
+    List<UUID> findDeletedMessageIdsByUserInConversation(@Param("userId") UUID userId, @Param("conversationId") UUID conversationId);
 }

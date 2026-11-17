@@ -23,6 +23,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
 
 import java.time.Duration;
@@ -130,33 +131,41 @@ public class SecurityConfig {
                 defaultDecoder.setJwtValidator(new JwtTimestampValidator(Duration.ofSeconds(5)));
                 return token -> {
                         Jwt jwt = defaultDecoder.decode(token);
-
-                        String subject = jwt.getSubject();
-                        if (subject != null) {
-                                try {
-                                        UUID userId = UUID.fromString(subject);
-                                        Object tokenVersionObj = jwt.getClaim("tokenVersion");
-                                        int tokenVersion = 1;
-                                        if (tokenVersionObj instanceof Number) {
-                                                tokenVersion = ((Number) tokenVersionObj).intValue();
-                                        } else if (tokenVersionObj instanceof String) {
-                                                try {
-                                                        tokenVersion = Integer.parseInt((String) tokenVersionObj);
-                                                } catch (NumberFormatException ignored) {}
-                                        }
-
-                                        if (redisCacheService.isTokenRevoked(userId, tokenVersion)) {
-                                                throw new JwtValidationException("Token has been revoked (User Banned or Logged Out)", List.of());
-                                        }
-                                } catch (Exception e) {
-                                        if (e instanceof JwtValidationException) {
-                                                throw e;
-                                        }
-                                        log.error("Error during JWT validation: {}", e.getMessage());
-                                }
-                        }
+                        assertNotRevoked(jwt, redisCacheService);
                         return jwt;
                 };
+        }
+
+        /**
+         * Từ chối token đã bị thu hồi (khóa tài khoản, đổi mật khẩu, đăng xuất): so số phiên bản token trong JWT với giá trị
+         * trong Redis. Lỗi phải là JwtValidationException kèm danh sách lỗi không rỗng thì Spring Security mới trả 401;
+         * ném ngoại lệ khác (ví dụ danh sách lỗi rỗng) sẽ không bị hiểu là token không hợp lệ.
+         */
+        static void assertNotRevoked(Jwt jwt, RedisCacheService redisCacheService) {
+                String subject = jwt.getSubject();
+                if (subject == null) {
+                        return;
+                }
+                UUID userId;
+                try {
+                        userId = UUID.fromString(subject);
+                } catch (IllegalArgumentException notAUserToken) {
+                        return;
+                }
+                Object tokenVersionObj = jwt.getClaim("tokenVersion");
+                int tokenVersion = 1;
+                if (tokenVersionObj instanceof Number) {
+                        tokenVersion = ((Number) tokenVersionObj).intValue();
+                } else if (tokenVersionObj instanceof String) {
+                        try {
+                                tokenVersion = Integer.parseInt((String) tokenVersionObj);
+                        } catch (NumberFormatException ignored) {
+                        }
+                }
+                if (redisCacheService.isTokenRevoked(userId, tokenVersion)) {
+                        throw new JwtValidationException("Token has been revoked (User Banned or Logged Out)",
+                                        List.of(new OAuth2Error("invalid_token", "Token has been revoked", null)));
+                }
         }
 
         /**

@@ -78,9 +78,19 @@ public class InternalUserController {
             roles = Set.of("ROLE_USER");
         }
 
+        // Họ và tên là bắt buộc ở bảng users (ràng buộc @NotBlank); thiếu thì dùng giá trị mặc định
+        String firstName = request.getFirstName() != null && !request.getFirstName().isBlank()
+                ? request.getFirstName().trim()
+                : "Người dùng";
+        String lastName = request.getLastName() != null && !request.getLastName().isBlank()
+                ? request.getLastName().trim()
+                : "Mới";
+
         User user = User.builder()
                 .email(normalizedEmail)
                 .password(passwordEncoder.encode(request.getPassword()))
+                .firstName(firstName)
+                .lastName(lastName)
                 .status(UserStatus.ACTIVE)
                 .roles(roles)
                 .tokenVersion(1)
@@ -90,12 +100,6 @@ public class InternalUserController {
 
         // Broadcast UserRegisteredEvent for UserProfile creation in user-service
         try {
-            String firstName = request.getFirstName() != null && !request.getFirstName().isBlank()
-                    ? request.getFirstName()
-                    : "Người dùng";
-            String lastName = request.getLastName() != null && !request.getLastName().isBlank()
-                    ? request.getLastName()
-                    : "";
 
             UserRegisteredEvent event = UserRegisteredEvent.builder()
                     .userId(savedUser.getId())

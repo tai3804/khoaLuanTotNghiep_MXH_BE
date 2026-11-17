@@ -22,6 +22,17 @@ public interface PostViewRepository extends BaseJpaRepository<PostView, UUID> {
     int insertIgnore(@Param("id") UUID id, @Param("userId") UUID userId, @Param("postId") UUID postId,
                      @Param("seenAt") LocalDateTime seenAt);
 
+    /**
+     * Ghi nhận cả lô bài đã xem bằng MỘT câu INSERT ... SELECT: chỉ bài còn tồn tại mới được ghi, xem lại thì giữ lần đầu.
+     * Trả về số dòng thực sự được thêm mới.
+     */
+    @Modifying
+    @Query(value = "INSERT INTO post_views (id, user_id, post_id, seen_at) "
+            + "SELECT gen_random_uuid(), :userId, p.id, :seenAt FROM posts p WHERE p.id IN (:postIds) AND p.is_deleted = false "
+            + "ON CONFLICT (user_id, post_id) DO NOTHING", nativeQuery = true)
+    int insertIgnoreBatch(@Param("userId") UUID userId, @Param("postIds") java.util.Collection<UUID> postIds,
+                          @Param("seenAt") LocalDateTime seenAt);
+
     /** Trong số `postIds`, những bài người dùng đã xem từ mốc `since` trở lại đây. */
     @Query("SELECT v.postId FROM PostView v WHERE v.userId = :userId AND v.postId IN :postIds AND v.seenAt >= :since")
     List<UUID> findSeenPostIds(@Param("userId") UUID userId, @Param("postIds") Collection<UUID> postIds,

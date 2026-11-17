@@ -17,7 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -37,11 +40,17 @@ public class GetStoryArchiveHandler {
         Instant now = Instant.now();
         Page<Story> storyPage = storyRepository.findArchivedStoriesByUserId(query.getCurrentUserId(), now, pageable);
 
-        List<StoryResult> content = storyPage.getContent().isEmpty() ? Collections.emptyList() :
-                storyPage.getContent().stream().map(story -> {
-                    long viewsCount = storyViewerRepository.countByStoryId(story.getId());
-                    return storyFeatureMapper.toResult(story, viewsCount, true);
-                }).toList();
+        List<StoryResult> content = Collections.emptyList();
+        if (!storyPage.getContent().isEmpty()) {
+            // Một truy vấn GROUP BY cho cả trang thay vì đếm riêng từng story (N+1)
+            Map<UUID, Long> viewCounts = new HashMap<>();
+            for (Object[] row : storyViewerRepository.countByStoryIds(storyPage.getContent().stream().map(Story::getId).toList())) {
+                viewCounts.put((UUID) row[0], ((Number) row[1]).longValue());
+            }
+            content = storyPage.getContent().stream()
+                    .map(story -> storyFeatureMapper.toResult(story, viewCounts.getOrDefault(story.getId(), 0L), true))
+                    .toList();
+        }
 
         return PagedResponse.<StoryResult>builder()
                 .content(content)

@@ -1,5 +1,10 @@
 package iuh.fit.chatservice.application.features.conversation.queries.get_user_conversations;
 
+import iuh.fit.chatservice.presentation.dto.response.UserPresenceResponse;
+import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.HashSet;
+import java.util.HashMap;
 import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.chatservice.application.mapper.ConversationFeatureMapper;
 import iuh.fit.chatservice.domain.entities.Conversation;
@@ -40,39 +45,54 @@ public class GetUserConversationsQueryHandler {
                 query.getCurrentUserId(), MemberStatus.ACTIVE, pageRequest
         );
 
+        List<ConversationMember> members = memberPage.getContent();
+        List<UUID> conversationIds = members.stream().map(ConversationMember::getConversationId).toList();
+
+        // Tải theo lô: mỗi loại dữ liệu đúng 1 truy vấn cho cả trang thay vì 3-4 truy vấn cho mỗi hội thoại (N+1)
+        Map<UUID, Conversation> conversations = conversationIds.isEmpty() ? Map.of()
+                : conversationRepository.findAllById(conversationIds).stream()
+                        .collect(Collectors.toMap(Conversation::getId, c -> c, (x, y) -> x));
+
+        Map<UUID, Long> unreadByConversation = new HashMap<>();
+        if (!conversationIds.isEmpty()) {
+            for (Object[] row : messageRepository.countUnreadByConversationIds(query.getCurrentUserId(), conversationIds)) {
+                unreadByConversation.put((UUID) row[0], ((Number) row[1]).longValue());
+            }
+        }
+
+        List<UUID> directIds = conversations.values().stream()
+                .filter(c -> !c.isDeleted() && c.getType() == ConversationType.DIRECT)
+                .map(Conversation::getId).toList();
+        Map<UUID, UUID> otherParticipantByConversation = new HashMap<>();
+        if (!directIds.isEmpty()) {
+            for (ConversationMember m : conversationMemberRepository.findByConversationIdInAndStatus(directIds, MemberStatus.ACTIVE)) {
+                if (!m.getUserId().equals(query.getCurrentUserId())) {
+                    otherParticipantByConversation.putIfAbsent(m.getConversationId(), m.getUserId());
+                }
+            }
+        }
+        // Trạng thái trực tuyến của mọi người đối thoại: một lần multiGet trên Redis
+        Map<UUID, UserPresenceResponse> presenceByUser = otherParticipantByConversation.isEmpty() ? Map.of()
+                : userPresenceService.getBatchPresence(new ArrayList<>(new HashSet<>(otherParticipantByConversation.values())));
+
         List<GetUserConversationsResult> contentList = new ArrayList<>();
-        for (ConversationMember member : memberPage.getContent()) {
-            Optional<Conversation> convOpt = conversationRepository.findById(member.getConversationId());
-            if (convOpt.isEmpty() || convOpt.get().isDeleted()) {
+        for (ConversationMember member : members) {
+            Conversation conversation = conversations.get(member.getConversationId());
+            if (conversation == null || conversation.isDeleted()) {
                 continue;
             }
-
-            Conversation conversation = convOpt.get();
             GetUserConversationsResult result = conversationFeatureMapper.toUserConversationsResult(conversation);
+            result.setUnreadCount(unreadByConversation.getOrDefault(conversation.getId(), 0L));
 
-            // Calculate unread count for current user
-            long unread = messageRepository.countUnreadMessages(conversation.getId(), member.getLastReadMessageId());
-            result.setUnreadCount(unread);
-
-            // If DIRECT, find the other participant ID and fetch presence status
-            if (conversation.getType() == ConversationType.DIRECT) {
-                List<ConversationMember> members = conversationMemberRepository.findByConversationIdAndStatus(
-                        conversation.getId(), MemberStatus.ACTIVE
-                );
-                members.stream()
-                        .filter(m -> !m.getUserId().equals(query.getCurrentUserId()))
-                        .findFirst()
-                        .ifPresent(other -> {
-                            result.setOtherParticipantId(other.getUserId());
-                            iuh.fit.chatservice.presentation.dto.response.UserPresenceResponse presence =
-                                    userPresenceService.getPresence(other.getUserId());
-                            if (presence != null) {
-                                result.setIsOnline(presence.isOnline());
-                                result.setOtherLastActiveAt(presence.getLastActiveAt());
-                            }
-                        });
+            UUID otherId = otherParticipantByConversation.get(conversation.getId());
+            if (otherId != null) {
+                result.setOtherParticipantId(otherId);
+                UserPresenceResponse presence = presenceByUser.get(otherId);
+                if (presence != null) {
+                    result.setIsOnline(presence.isOnline());
+                    result.setOtherLastActiveAt(presence.getLastActiveAt());
+                }
             }
-
             contentList.add(result);
         }
 
