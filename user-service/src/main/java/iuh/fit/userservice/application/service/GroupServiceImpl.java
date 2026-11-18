@@ -4,6 +4,7 @@ import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.userservice.application.exception.UserServiceErrorCode;
 import iuh.fit.userservice.domain.entities.Group;
 import iuh.fit.userservice.domain.entities.GroupMember;
+import iuh.fit.userservice.domain.entities.UserConnection;
 import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.enums.GroupMemberStatus;
 import iuh.fit.userservice.domain.enums.GroupNotificationLevel;
@@ -65,6 +66,7 @@ public class GroupServiceImpl implements GroupService {
     private final GroupEventPublisher groupEventPublisher;
     private final ReputationService reputationService;
     private final GroupEmbeddingService groupEmbeddingService;
+    private final GroupRecommendationService groupRecommendationService;
 
     // ------------------------------------------------------------------ nhóm
 
@@ -153,6 +155,15 @@ public class GroupServiceImpl implements GroupService {
             } catch (Exception e) {
                 log.warn("Group vector search failed for '{}', falling back to keyword search: {}", keyword, e.getMessage());
             }
+        }
+        if ("recommended".equals(normalizedScope)) {
+            // Gợi ý theo đồ thị xã hội (Personalized PageRank): nhóm mà những người gần mình đang tham gia. Có phân trang.
+            List<Group> ranked = groupRecommendationService.recommend(viewerId, MAX_PAGE_SIZE * 5).stream()
+                    .map(GroupRecommendationService.Recommendation::group).toList();
+            int from = Math.min(pageIndex * pageSize, ranked.size());
+            int to = Math.min(from + pageSize, ranked.size());
+            return new org.springframework.data.domain.PageImpl<>(ranked.subList(from, to), PageRequest.of(pageIndex, pageSize), ranked.size())
+                    .map(g -> view(g, null));
         }
         Page<Group> groups = switch (normalizedScope) {
             case "joined" -> groupRepository.searchByMembership(pattern, viewerId, GroupMemberStatus.APPROVED,
@@ -326,12 +337,15 @@ public class GroupServiceImpl implements GroupService {
 
         Set<UUID> added = new LinkedHashSet<>();
         Set<UUID> invited = new LinkedHashSet<>();
+        // Hai truy vấn gộp (quan hệ chặn hai chiều + thành viên hiện có) thay vì 3 truy vấn cho mỗi người (N+1)
+        Set<UUID> blockedRelated = userBlockRepository.findAllBlockedUserIdsRelatedTo(currentUserId);
+        Map<UUID, GroupMember> existingMembers = groupMemberRepository.findAllByGroupIdAndUserIdIn(groupId, targets).stream()
+                .collect(Collectors.toMap(GroupMember::getUserId, m -> m, (x, y) -> x));
         for (UUID id : targets) {
-            if (userBlockRepository.existsByBlockerIdAndBlockedId(id, currentUserId)
-                    || userBlockRepository.existsByBlockerIdAndBlockedId(currentUserId, id)) {
+            if (blockedRelated.contains(id)) {
                 continue;
             }
-            GroupMember member = groupMemberRepository.findByGroupIdAndUserId(groupId, id).orElse(null);
+            GroupMember member = existingMembers.get(id);
             if (member == null) {
                 member = saveMember(groupId, id, GroupRole.MEMBER, staff ? GroupMemberStatus.APPROVED : GroupMemberStatus.INVITED);
                 member.setInvitedBy(currentUserId);
@@ -683,8 +697,14 @@ public class GroupServiceImpl implements GroupService {
 
     /** Chỉ được thêm/mời bạn bè của mình: chặn việc gửi lời mời hàng loạt cho người lạ. */
     private void requireFriends(UUID userId, Collection<UUID> targets) {
+        if (targets.isEmpty()) return;
+        // Một truy vấn lấy toàn bộ bạn bè rồi đối chiếu trong bộ nhớ, thay vì 1 truy vấn cho mỗi người được mời (N+1)
+        Set<UUID> friendIds = new HashSet<>();
+        for (UserConnection c : userConnectionRepository.findAllAcceptedFriendships(userId)) {
+            friendIds.add(userId.equals(c.getRequesterId()) ? c.getTargetId() : c.getRequesterId());
+        }
         for (UUID target : targets) {
-            if (userConnectionRepository.findAllAcceptedFriendshipsBetween(userId, target).isEmpty()) {
+            if (!friendIds.contains(target)) {
                 throw new BusinessException(UserServiceErrorCode.GROUP_INVITE_NOT_FRIEND);
             }
         }

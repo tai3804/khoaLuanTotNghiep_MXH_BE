@@ -6,6 +6,7 @@ import iuh.fit.adminservice.application.dto.response.PostPagedResponse;
 import iuh.fit.adminservice.application.dto.response.TrendingHashtagResponse;
 import iuh.fit.adminservice.application.dto.response.UserInfoResponse;
 import iuh.fit.adminservice.application.dto.response.UserResponse;
+import iuh.fit.adminservice.application.service.HashtagTrendAnalyzer;
 import iuh.fit.adminservice.domain.entities.ModerationLog;
 import iuh.fit.adminservice.domain.entities.Report;
 import iuh.fit.adminservice.domain.repository.ModerationLogRepository;
@@ -177,47 +178,44 @@ public class GetAnalyticsQuery {
                 .build();
     }
 
+    /**
+     * Hashtag đang nổi: so số bài chứa hashtag giữa cửa sổ hiện tại và cửa sổ liền trước cùng độ dài
+     * (xem {@link HashtagTrendAnalyzer}). Lấy tối đa 3 trang x 100 bài mới nhất từ post-service.
+     */
     public List<TrendingHashtagResponse> getTrendingHashtags() {
-        Map<String, Long> tagCounts = new LinkedHashMap<>();
-
+        List<HashtagTrendAnalyzer.PostSample> samples = new ArrayList<>();
         try {
-            PostPagedResponse postResp = postFeignClient.getPosts(1, 100);
-            if (postResp != null && postResp.getData() != null) {
-                Pattern hashtagPattern = Pattern.compile("#[\\p{L}\\p{N}_]+");
-                for (var post : postResp.getData()) {
-                    if (post.getContent() != null) {
-                        Matcher matcher = hashtagPattern.matcher(post.getContent());
-                        while (matcher.find()) {
-                            String tag = matcher.group();
-                            tagCounts.put(tag, tagCounts.getOrDefault(tag, 0L) + 1);
-                        }
-                    }
+            for (int page = 1; page <= 3; page++) {
+                PostPagedResponse resp = postFeignClient.getPosts(page, 100);
+                if (resp == null || resp.getData() == null || resp.getData().isEmpty()) break;
+                for (var post : resp.getData()) {
+                    long interactions = Math.max(0, post.getLikeCount())
+                            + 2 * Math.max(0, post.getCommentCount())
+                            + 3 * Math.max(0, post.getShareCount());
+                    samples.add(new HashtagTrendAnalyzer.PostSample(post.getContent(), parseTimestamp(post.getCreatedAt()), interactions));
                 }
+                if (resp.isLast()) break;
             }
         } catch (Exception e) {
             log.warn("Could not extract hashtags from live posts: {}", e.getMessage());
         }
 
+        List<HashtagTrendAnalyzer.Trend> trends = HashtagTrendAnalyzer.analyze(samples, LocalDateTime.now(), 20);
         List<TrendingHashtagResponse> list = new ArrayList<>();
-        List<Map.Entry<String, Long>> sortedTags = tagCounts.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(20)
-                .toList();
-
         int rank = 1;
-        for (Map.Entry<String, Long> entry : sortedTags) {
-            long count = entry.getValue();
+        for (HashtagTrendAnalyzer.Trend t : trends) {
             list.add(TrendingHashtagResponse.builder()
                     .rank(rank++)
-                    .tag(entry.getKey())
+                    .tag(t.tag())
                     .category("Cộng đồng")
-                    .postCount(count)
-                    .growthPercentage(Math.round((count * 10.0) * 10.0) / 10.0)
-                    .engagementScore(count * 10)
-                    .status(count >= 5 ? "VIRAL" : "SAFE")
+                    .postCount(t.currentCount())
+                    .previousPostCount(t.previousCount())
+                    .growthPercentage(t.growthPercent())
+                    .burstScore(t.burstScore())
+                    .engagementScore(t.engagement())
+                    .status(t.viral() ? "VIRAL" : "SAFE")
                     .build());
         }
-
         return list;
     }
 

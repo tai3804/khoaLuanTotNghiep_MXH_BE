@@ -1,5 +1,7 @@
 package iuh.fit.userservice.application.service.suggestion;
 
+import iuh.fit.userservice.application.service.graph.EgoGraphService;
+import iuh.fit.userservice.application.service.graph.PersonalizedPageRank;
 import iuh.fit.userservice.domain.entities.GroupMember;
 import iuh.fit.userservice.domain.entities.UserConnection;
 import iuh.fit.userservice.domain.entities.UserProfile;
@@ -47,11 +49,13 @@ public class FriendSuggestionEngine {
     private static final int DISCOVERY_LIMIT = 60;
     private static final int NEWEST_LIMIT = 30;
     private static final int RESULT_CAP = 200;
+    private static final int GRAPH_CANDIDATES = 40;
 
     private final UserConnectionRepository userConnectionRepository;
     private final UserProfileRepository userProfileRepository;
     private final UserBlockRepository userBlockRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final EgoGraphService egoGraphService;
 
     public record RankedCandidate(UUID userId, double score, long mutualCount, List<String> reasons) {
     }
@@ -71,8 +75,9 @@ public class FriendSuggestionEngine {
 
         // ---- 2. Bạn của bạn + bạn chung (Adamic–Adar cần số bạn của từng người bạn chung)
         Map<UUID, List<Integer>> mutualDegrees = new HashMap<>();
+        List<UserConnection> fof = List.of();
         if (!friendIds.isEmpty()) {
-            List<UserConnection> fof = userConnectionRepository.findAllAcceptedFriendshipsForUserIds(friendIds);
+            fof = userConnectionRepository.findAllAcceptedFriendshipsForUserIds(friendIds);
             // Mọi quan hệ của từng người bạn đều nằm trong `fof` nên số bạn của họ tính được chính xác
             Map<UUID, Integer> degree = new HashMap<>();
             for (UserConnection c : fof) {
@@ -117,11 +122,25 @@ public class FriendSuggestionEngine {
         followsMe.removeAll(excluded);
         iFollow.removeAll(excluded);
 
+        // ---- 4b. Đồ thị: Personalized PageRank (quan hệ gián tiếp tới bậc 3) và cộng đồng
+        // Điểm PPR đã hiệu chỉnh theo bậc, chỉ xét người chưa bị loại, rồi đưa về (0, 1] theo người cao nhất
+        EgoGraphService.EgoGraph ego = egoGraphService.build(viewerId, friendIds, fof);
+        Map<UUID, Double> graphRaw = new HashMap<>();
+        ego.pprScores().forEach((id, v) -> {
+            if (!excluded.contains(id)) graphRaw.put(id, v);
+        });
+        Map<UUID, Double> graphScores = PersonalizedPageRank.scaleToUnit(graphRaw);
+
         // ---- 5. Tập ứng viên
         Set<UUID> candidates = new HashSet<>(mutualDegrees.keySet());
         candidates.addAll(commonGroups.keySet());
         candidates.addAll(followsMe);
         candidates.addAll(iFollow);
+        // Người ở bậc 3 không có bạn chung vẫn vào danh sách nhờ PPR (top GRAPH_CANDIDATES)
+        graphScores.entrySet().stream()
+                .sorted(Map.Entry.<UUID, Double>comparingByValue().reversed())
+                .limit(GRAPH_CANDIDATES)
+                .forEach(e -> candidates.add(e.getKey()));
 
         if (candidates.size() < POOL_TARGET) {
             Set<UUID> skip = new HashSet<>(excluded);
@@ -166,7 +185,9 @@ public class FriendSuggestionEngine {
                     Boolean.TRUE.equals(p.getIsOnline()),
                     p.getLastActiveAt(),
                     p.getCreatedAt(),
-                    p.getFriendCount() == null ? 0 : p.getFriendCount());
+                    p.getFriendCount() == null ? 0 : p.getFriendCount(),
+                    graphScores.getOrDefault(candidateId, 0.0),
+                    ego.sameCommunity(candidateId));
 
             FriendSuggestionScorer.Scored scored = FriendSuggestionScorer.score(viewerId, candidateId, signals, now);
             ranked.add(new RankedCandidate(candidateId, scored.score(), scored.mutualCount(), scored.reasons()));

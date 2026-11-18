@@ -1,5 +1,6 @@
 package iuh.fit.callservice.application.service;
 
+import java.util.stream.Collectors;
 import iuh.fit.callservice.domain.entities.CallParticipant;
 import iuh.fit.callservice.domain.entities.CallSession;
 import iuh.fit.callservice.domain.enums.CallStatus;
@@ -108,8 +109,12 @@ public class CallSessionCleanupService {
 
         // 2. Reap stale INITIATED / ACTIVE sessions
         List<CallSession> openSessions = callSessionRepository.findByStatusIn(List.of(CallStatus.INITIATED, CallStatus.ACTIVE));
+        // Một truy vấn lấy người tham gia của mọi phiên đang mở thay vì một truy vấn cho mỗi phiên (N+1)
+        Map<UUID, List<CallParticipant>> participantsBySession = openSessions.isEmpty() ? Map.of()
+                : callParticipantRepository.findByCallSessionIdIn(openSessions.stream().map(CallSession::getId).toList()).stream()
+                        .collect(Collectors.groupingBy(CallParticipant::getCallSessionId));
         for (CallSession session : openSessions) {
-            List<CallParticipant> participants = callParticipantRepository.findByCallSessionId(session.getId());
+            List<CallParticipant> participants = participantsBySession.getOrDefault(session.getId(), List.of());
             long connectedCount = participants.stream()
                     .filter(p -> p.getStatus() == ParticipantStatus.CONNECTED)
                     .count();

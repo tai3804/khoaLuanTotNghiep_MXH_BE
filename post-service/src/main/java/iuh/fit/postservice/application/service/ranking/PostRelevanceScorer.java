@@ -15,6 +15,8 @@ import java.util.UUID;
  *            + nhóm mình tham gia 1,5
  *            + min(3, 1,2 · ln(1 + số lần mình tương tác với tác giả trong 30 ngày qua))
  *            + 3,5 · CosineSimilarity(bài viết, chủ đề vừa tìm kiếm) (Retargeting)
+ *            + 2,5 · điểm lọc cộng tác theo bài viết (Item-based CF, trong [0, 1])
+ *            + 2,0 · mức giống hồ sơ sở thích của người xem (Content-based, trong [0, 1])
  * engagement = ln(1 + thích + 2·bình luận + 3·chia sẻ)
  * freshness  = 0,5 ^ (tuổi bài / 24 giờ)                 // nửa đời 24 giờ
  * score      = (affinity + 0,6·engagement + 0,4) · (0,2 + 0,8·freshness) · chất lượng
@@ -38,6 +40,12 @@ public final class PostRelevanceScorer {
     public static final double INTERACTION_CAP = 3.0;
     static final double FRESHNESS_HALF_LIFE_HOURS = 24.0;
     static final double TRENDING_GRAVITY = 1.3;
+    /** Hệ số cộng điểm cộng tác (điểm lọc cộng tác nằm trong [0, 1]) và ngưỡng để hiện làm lý do gợi ý. */
+    public static final double CF_WEIGHT = 2.5;
+    static final double CF_REASON_MIN = 0.15;
+    /** Hệ số cộng điểm theo nội dung (độ giống với hồ sơ sở thích đã quy về [0, 1]) và ngưỡng để hiện làm lý do. */
+    public static final double CONTENT_WEIGHT = 2.0;
+    static final double CONTENT_REASON_MIN = 0.20;
 
     /** Hệ số nhân điểm cho lần chọn thứ k của cùng một tác giả trong một trang kết quả (đa dạng hoá). */
     static final double AUTHOR_REPEAT_PENALTY = 0.75;
@@ -60,7 +68,31 @@ public final class PostRelevanceScorer {
             int interactionsWithAuthor30d,
             boolean pinned,
             double searchSimilarity,
-            String searchInterestTopic) {
+            String searchInterestTopic,
+            double cfScore,
+            double contentBoost) {
+
+        public Signals(
+                double ageHours, long likes, long comments, long shares,
+                boolean hasMedia, int contentLength, boolean own,
+                boolean fromFriend, boolean fromFollowing, boolean fromMemberGroup,
+                int interactionsWithAuthor30d, boolean pinned,
+                double searchSimilarity, String searchInterestTopic, double cfScore) {
+            this(ageHours, likes, comments, shares, hasMedia, contentLength, own,
+                 fromFriend, fromFollowing, fromMemberGroup, interactionsWithAuthor30d, pinned,
+                 searchSimilarity, searchInterestTopic, cfScore, 0.0);
+        }
+
+        public Signals(
+                double ageHours, long likes, long comments, long shares,
+                boolean hasMedia, int contentLength, boolean own,
+                boolean fromFriend, boolean fromFollowing, boolean fromMemberGroup,
+                int interactionsWithAuthor30d, boolean pinned,
+                double searchSimilarity, String searchInterestTopic) {
+            this(ageHours, likes, comments, shares, hasMedia, contentLength, own,
+                 fromFriend, fromFollowing, fromMemberGroup, interactionsWithAuthor30d, pinned,
+                 searchSimilarity, searchInterestTopic, 0.0, 0.0);
+        }
 
         public Signals(
                 double ageHours, long likes, long comments, long shares,
@@ -68,7 +100,7 @@ public final class PostRelevanceScorer {
                 boolean fromFriend, boolean fromFollowing, boolean fromMemberGroup,
                 int interactionsWithAuthor30d, boolean pinned) {
             this(ageHours, likes, comments, shares, hasMedia, contentLength, own,
-                 fromFriend, fromFollowing, fromMemberGroup, interactionsWithAuthor30d, pinned, 0.0, null);
+                 fromFriend, fromFollowing, fromMemberGroup, interactionsWithAuthor30d, pinned, 0.0, null, 0.0, 0.0);
         }
     }
 
@@ -114,6 +146,26 @@ public final class PostRelevanceScorer {
                 strongest = searchBoost;
                 String topic = s.searchInterestTopic() != null ? s.searchInterestTopic() : "chủ đề bạn quan tâm";
                 reason = "Gợi ý theo chủ đề bạn vừa tìm: " + topic;
+            }
+        }
+
+        // Lọc cộng tác theo bài viết (Item-based CF): người có thói quen tương tác giống mình cũng quan tâm bài này
+        if (s.cfScore() > 0) {
+            double cfBoost = CF_WEIGHT * Math.min(1.0, s.cfScore());
+            affinity += cfBoost;
+            if (s.cfScore() >= CF_REASON_MIN && cfBoost > strongest) {
+                strongest = cfBoost;
+                reason = "collaborative";
+            }
+        }
+
+        // Đề xuất theo nội dung: bài giống các bài người xem từng quan tâm (hồ sơ sở thích dựng từ lịch sử tương tác)
+        if (s.contentBoost() > 0) {
+            double contentPoints = CONTENT_WEIGHT * Math.min(1.0, s.contentBoost());
+            affinity += contentPoints;
+            if (s.contentBoost() >= CONTENT_REASON_MIN && contentPoints > strongest) {
+                strongest = contentPoints;
+                reason = "content";
             }
         }
 

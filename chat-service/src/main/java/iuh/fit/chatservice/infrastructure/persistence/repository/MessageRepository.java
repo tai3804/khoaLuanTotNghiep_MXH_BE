@@ -51,5 +51,19 @@ public interface MessageRepository extends BaseJpaRepository<Message, UUID> {
           AND (:lastReadId IS NULL OR m.createdAt > (SELECT lm.createdAt FROM Message lm WHERE lm.id = :lastReadId))
     """)
     long countUnreadMessages(@Param("conversationId") UUID conversationId, @Param("lastReadId") UUID lastReadId);
+
+    /**
+     * Số tin chưa đọc của một người dùng trong nhiều hội thoại bằng MỘT truy vấn GROUP BY: [conversationId, count].
+     * Hội thoại không có tin chưa đọc không xuất hiện trong kết quả (coi là 0).
+     */
+    @Query("""
+        SELECT cm.conversationId, COUNT(m) FROM ConversationMember cm
+        JOIN Message m ON m.conversationId = cm.conversationId AND m.deleted = false
+        LEFT JOIN Message lm ON lm.id = cm.lastReadMessageId
+        WHERE cm.userId = :userId AND cm.conversationId IN :conversationIds
+          AND (cm.lastReadMessageId IS NULL OR m.createdAt > lm.createdAt)
+        GROUP BY cm.conversationId
+    """)
+    List<Object[]> countUnreadByConversationIds(@Param("userId") UUID userId, @Param("conversationIds") java.util.Collection<UUID> conversationIds);
 }
 

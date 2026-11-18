@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -35,11 +36,23 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
     @Value("${app.security.internal-api-key:kltn-internal-dev-key}")
     private String internalApiKey;
 
+    private final Environment environment;
+
+    public InternalApiKeyFilter(Environment environment) {
+        this.environment = environment;
+    }
+
     @PostConstruct
     void warnIfUsingDefaultDevKey() {
-        if (DEFAULT_DEV_KEY.equals(internalApiKey)) {
-            log.warn("[Security] INTERNAL_API_KEY đang sử dụng giá trị mặc định dành cho môi trường dev. Hãy cấu hình INTERNAL_API_KEY riêng trên production!");
+        boolean weak = internalApiKey == null || internalApiKey.isBlank() || DEFAULT_DEV_KEY.equals(internalApiKey);
+        if (!weak) {
+            return;
         }
+        if (StrongSecretPolicy.isStrict(environment)) {
+            throw new IllegalStateException("[Security] INTERNAL_API_KEY đang trống hoặc là giá trị mặc định của môi trường dev. "
+                    + "Cấu hình INTERNAL_API_KEY riêng trước khi chạy ở production (profile prod / REQUIRE_STRONG_SECRETS=true).");
+        }
+        log.warn("[Security] INTERNAL_API_KEY đang sử dụng giá trị mặc định dành cho môi trường dev. Hãy cấu hình INTERNAL_API_KEY riêng trên production!");
     }
 
     @Override

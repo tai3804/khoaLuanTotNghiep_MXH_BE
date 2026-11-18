@@ -39,6 +39,26 @@ public class AdminPostController {
     PostCacheEvictor postCacheEvictor;
     RankedFeedCache rankedFeedCache;
     KafkaTemplate<String, Object> kafkaTemplate;
+    iuh.fit.postservice.application.service.search.eval.SearchEvaluationService searchEvaluationService;
+    iuh.fit.postservice.application.service.topic.TrendingTopicService trendingTopicService;
+
+    /**
+     * Đánh giá offline chất lượng tìm kiếm: nhận các truy vấn đã gán nhãn (postId + mức liên quan 0–3), trả về Precision@k,
+     * Recall@k, MAP, MRR, NDCG@k của từng phương án xếp hạng (kiểm định chéo cho phương án đã học) và bộ trọng số khuyến nghị
+     * để dán vào cấu hình SEARCH_WEIGHTS.
+     */
+    @PostMapping("/search-eval")
+    public ResponseEntity<iuh.fit.postservice.application.service.search.eval.SearchEvaluationService.Report> evaluateSearch(
+            @RequestBody iuh.fit.postservice.application.service.search.eval.SearchEvaluationService.EvalRequest request) {
+        return ResponseEntity.ok(searchEvaluationService.evaluate(request));
+    }
+
+    /** Các chủ đề đang nổi, gom cụm từ embedding của bài viết gần đây (k-means cầu + chọn k bằng silhouette). */
+    @GetMapping("/trending-topics")
+    public ResponseEntity<iuh.fit.postservice.application.service.topic.TrendingTopicService.Report> trendingTopics(
+            @RequestParam(value = "days", defaultValue = "7") int days) {
+        return ResponseEntity.ok(trendingTopicService.analyze(days));
+    }
 
     @GetMapping("/count")
     public ResponseEntity<Long> countPosts() {

@@ -31,13 +31,23 @@ public class PostPublicationHelper {
     PostRepository postRepository;
     PostCacheEvictor postCacheEvictor;
     TransactionTemplate transactionTemplate;
+    PostEmbeddingService postEmbeddingService;
 
     /**
-     * Gửi các thông báo sau khi bài viết đã chính thức PUBLISHED (TAG_POST, thông báo nhóm, phát trực tiếp).
+     * Gửi các thông báo sau khi bài viết đã chính thức PUBLISHED (TAG_POST, thông báo nhóm, phát trực tiếp) và sinh vector
+     * ngữ nghĩa cho bài.
+     *
+     * <p>Mọi đường xuất bản đều đi qua đây (đăng thẳng, bài có media xử lý xong, hẹn giờ, nhóm duyệt bài). Trước đây chỉ đường
+     * "đăng thẳng" gọi vector hóa nên bài có ảnh/video, bài hẹn giờ và bài nhóm được duyệt không có embedding: không xuất hiện
+     * trong tìm kiếm ngữ nghĩa, đề xuất theo nội dung và lọc cộng tác.
      */
     public void notifyPostPublished(Post post) {
         if (post == null || post.getStatus() != PostStatus.PUBLISHED || post.isDeleted() || post.isArchived()) {
             return;
+        }
+
+        if (post.getContent() != null && !post.getContent().isBlank()) {
+            postEmbeddingService.vectorizePostAsync(post.getId(), post.getContent());
         }
 
         Set<UUID> taggedUsers = post.getTaggedUserIds();

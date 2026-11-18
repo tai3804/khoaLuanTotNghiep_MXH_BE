@@ -15,6 +15,10 @@ public class TrendingHashtagResponse {
     private String category;
     private long postCount;
     private double growthPercentage;
+    /** Số bài chứa hashtag ở cửa sổ liền trước, dùng để so sánh tăng trưởng. */
+    private long previousPostCount;
+    /** Điểm bùng nổ (z-score xấp xỉ Poisson) giữa hai cửa sổ liền kề. */
+    private double burstScore;
     private long engagementScore;
     private String status;
 }

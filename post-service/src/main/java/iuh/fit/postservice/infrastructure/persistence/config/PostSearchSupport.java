@@ -12,8 +12,8 @@ import java.util.Locale;
 
 /**
  * Hỗ trợ tìm kiếm bài viết:
- * 1. unaccent: Tìm bài viết không phân biệt dấu ("ca phe" -> "Cà phê").
- * 2. pgvector: Bật extension vector, khởi tạo bảng post_embeddings (768 chiều) và chỉ mục HNSW cho tìm kiếm ngữ nghĩa (Semantic Search).
+ * 1. unaccent: lọc danh sách theo từ khoá không phân biệt dấu (không phải tìm kiếm toàn văn).
+ * 2. pgvector:Bật extension vector, khởi tạo bảng post_embeddings (768 chiều) và chỉ mục HNSW cho tìm kiếm ngữ nghĩa (Semantic Search).
  */
 @Slf4j
 @Component
@@ -23,65 +23,28 @@ public class PostSearchSupport implements ApplicationRunner {
     private final JdbcTemplate jdbcTemplate;
     private volatile boolean unaccentAvailable = false;
     private volatile boolean vectorAvailable = false;
-    private volatile boolean fullTextAvailable = false;
-    private volatile long lastFullTextAttemptMs = 0;
 
     @Override
     public void run(ApplicationArguments args) {
+        dropLegacyFullText();
         initUnaccent();
         initVector();
-        initFullText();
     }
 
     /**
-     * Chỉ mục đảo (inverted index) cho truy xuất từ khoá, thay cho LIKE '%x%' quét toàn bảng:
-     * cột posts.search_tsv (tsvector, cấu hình 'simple' vì tiếng Việt không có stemming) + chỉ mục GIN, được trigger tự cập nhật.
-     * Hàm kltn_fold() phải cho kết quả giống SearchTextAnalyzer.fold() phía Java: chữ thường, bỏ dấu, đ -> d.
+     * Tìm kiếm bài viết không còn dùng chỉ mục toàn văn (tsvector + GIN). Gỡ các đối tượng do phiên bản cũ tạo ra để trigger
+     * không còn tốn chi phí trên mỗi lần ghi bài; cột search_tsv chỉ là dữ liệu dẫn xuất nên xoá được an toàn.
      */
-    private synchronized void initFullText() {
-        lastFullTextAttemptMs = System.currentTimeMillis();
+    private synchronized void dropLegacyFullText() {
         try {
-            if (!unaccentAvailable) {
-                fullTextAvailable = false;
-                log.warn("Full-text search index disabled: unaccent extension is not available.");
-                return;
-            }
-            jdbcTemplate.execute("""
-                CREATE OR REPLACE FUNCTION kltn_fold(t text) RETURNS text AS $$
-                    SELECT translate(public.unaccent('public.unaccent', lower(coalesce(t, ''))), 'đ', 'd')
-                $$ LANGUAGE sql IMMUTABLE PARALLEL SAFE
-            """);
-            jdbcTemplate.execute("ALTER TABLE posts ADD COLUMN IF NOT EXISTS search_tsv tsvector");
-            jdbcTemplate.execute("""
-                CREATE OR REPLACE FUNCTION posts_search_tsv_update() RETURNS trigger AS $$
-                BEGIN
-                    NEW.search_tsv := to_tsvector('simple', kltn_fold(NEW.content));
-                    RETURN NEW;
-                END
-                $$ LANGUAGE plpgsql
-            """);
             jdbcTemplate.execute("DROP TRIGGER IF EXISTS trg_posts_search_tsv ON posts");
-            jdbcTemplate.execute("""
-                CREATE TRIGGER trg_posts_search_tsv BEFORE INSERT OR UPDATE OF content ON posts
-                FOR EACH ROW EXECUTE FUNCTION posts_search_tsv_update()
-            """);
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_posts_search_tsv ON posts USING gin (search_tsv)");
-            int backfilled = jdbcTemplate.update(
-                    "UPDATE posts SET search_tsv = to_tsvector('simple', kltn_fold(content)) WHERE search_tsv IS NULL");
-            fullTextAvailable = true;
-            log.info("Full-text search index (GIN on posts.search_tsv) ready, backfilled {} posts", backfilled);
+            jdbcTemplate.execute("DROP INDEX IF EXISTS idx_posts_search_tsv");
+            jdbcTemplate.execute("ALTER TABLE posts DROP COLUMN IF EXISTS search_tsv");
+            jdbcTemplate.execute("DROP FUNCTION IF EXISTS posts_search_tsv_update()");
+            jdbcTemplate.execute("DROP FUNCTION IF EXISTS kltn_fold(text)");
         } catch (Exception e) {
-            fullTextAvailable = false;
-            log.warn("Could not initialise the full-text search index, keyword retrieval falls back to LIKE: {}", e.getMessage());
+            log.warn("Could not drop the legacy full-text search objects: {}", e.getMessage());
         }
-    }
-
-    public boolean isFullTextAvailable() {
-        if (!fullTextAvailable && System.currentTimeMillis() - lastFullTextAttemptMs > 60_000) {
-            initUnaccent();
-            initFullText();
-        }
-        return fullTextAvailable;
     }
 
     private synchronized void initUnaccent() {

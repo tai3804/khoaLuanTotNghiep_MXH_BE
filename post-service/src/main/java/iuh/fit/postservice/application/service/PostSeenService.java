@@ -45,19 +45,14 @@ public class PostSeenService {
             if (id != null) ids.add(id);
             if (ids.size() >= MAX_BATCH) break;
         }
-        Set<UUID> existing = new HashSet<>(postRepository.findExistingIds(ids));
-
+        // Một câu INSERT ... SELECT cho cả lô (chỉ bài còn tồn tại) thay vì một câu INSERT cho mỗi bài
         LocalDateTime now = LocalDateTime.now();
-        for (UUID id : ids) {
-            if (existing.contains(id)) {
-                postViewRepository.insertIgnore(UUID.randomUUID(), userId, id, now);
-            }
-        }
+        postViewRepository.insertIgnoreBatch(userId, ids, now);
         if (ThreadLocalRandom.current().nextInt(PURGE_ONE_IN) == 0) {
             int purged = postViewRepository.deleteOlderThan(userId, now.minusDays(retentionDays));
             if (purged > 0) log.debug("Purged {} expired post views of user {}", purged, userId);
         }
-        return existing.size();
+        return postRepository.findExistingIds(ids).size();
     }
 
     /** Trong số `postIds`, những bài người dùng đã xem (còn hiệu lực). */

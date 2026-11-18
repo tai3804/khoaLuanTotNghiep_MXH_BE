@@ -17,6 +17,8 @@ import reactor.core.publisher.Mono;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -72,6 +74,13 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
     @Value("${rate-limit.general-refill-seconds:1}")
     private int generalRefillSeconds;
 
+    /** Số proxy tin cậy đứng trước gateway (đọc IP thật từ X-Forwarded-For). 0 = không tin X-Forwarded-For. */
+    @Value("${rate-limit.trusted-proxy-hops:1}")
+    private int trustedProxyHops = 1;
+
+    /** Bucket chặn theo IP của các nhóm xác thực bằng token có hạn mức gấp chừng này lần bucket theo token. */
+    private static final int IP_GUARD_FACTOR = 5;
+
     private final Map<String, TokenBucket> tokenBuckets = new ConcurrentHashMap<>();
     private final ScheduledExecutorService cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "rate-limit-cleanup");
@@ -116,37 +125,31 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
 
         // 3. Xác định nhóm giới hạn và cấu hình Token Bucket
         BucketConfig config = resolveBucketConfig(path, request.getMethod());
-        String clientKey = resolveClientKey(request);
+        String clientIp = resolveClientIp(request);
+
+        // Token ở header chưa được xác thực tại bước này, nên kẻ tấn công có thể gửi mỗi request một token giả để luôn
+        // rơi vào bucket mới (né giới hạn và làm phình bộ nhớ). Hai biện pháp:
+        //  - nhóm "auth" (đăng nhập, đăng ký, quên mật khẩu, MFA) chỉ tính theo IP, không tin token;
+        //  - các nhóm khác thêm một bucket chặn theo IP với hạn mức rộng hơn, kiểm tra TRƯỚC khi tạo bucket theo token.
+        boolean perIpOnly = "auth".equals(config.category());
+        String bearerToken = perIpOnly ? null : extractBearerToken(request);
+        String clientKey = bearerToken != null ? "user:" + tokenFingerprint(bearerToken) : "ip:" + clientIp;
         String bucketKey = config.category() + ":" + clientKey;
 
-        TokenBucket bucket = tokenBuckets.compute(bucketKey, (k, existing) -> {
-            if (existing == null) {
-                return new TokenBucket(config.capacity(), config.refillSeconds());
+        if (bearerToken != null) {
+            BucketConfig guard = new BucketConfig(config.category() + "-ipguard",
+                    config.capacity() * IP_GUARD_FACTOR, config.refillSeconds() / IP_GUARD_FACTOR);
+            ConsumptionResult guardResult = getOrCreateBucket(guard.category() + ":ip:" + clientIp, guard).tryConsume(1.0);
+            if (!guardResult.allowed()) {
+                return rejectTooManyRequests(exchange, path, guard.category() + ":ip:" + clientIp, guard, guardResult);
             }
-            return existing;
-        });
+        }
 
-        ConsumptionResult result = bucket.tryConsume(1.0);
+        ConsumptionResult result = getOrCreateBucket(bucketKey, config).tryConsume(1.0);
 
         // 4. Nếu vượt quá hạn mức, trả về HTTP 429 Too Many Requests
         if (!result.allowed()) {
-            log.warn("[RateLimit-TokenBucket] Chặn yêu cầu quá giới hạn: key={}, path={}, retryAfter={}s",
-                    bucketKey, path, result.retryAfter());
-
-            exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
-            HttpHeaders headers = exchange.getResponse().getHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Retry-After", String.valueOf(result.retryAfter()));
-            headers.set("X-RateLimit-Limit", String.valueOf(config.capacity()));
-            headers.set("X-RateLimit-Remaining", "0");
-            headers.set("X-RateLimit-Reset", String.valueOf(result.resetSeconds()));
-            headers.set("Access-Control-Expose-Headers", "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset");
-
-            String bodyJson = String.format(
-                    "{\"code\":429,\"message\":\"Bạn đang gửi yêu cầu quá nhanh. Vui lòng chờ %d giây trước khi thử lại.\",\"retryAfter\":%d}",
-                    result.retryAfter(), result.retryAfter());
-            byte[] bytes = bodyJson.getBytes(StandardCharsets.UTF_8);
-            return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(bytes)));
+            return rejectTooManyRequests(exchange, path, bucketKey, config, result);
         }
 
         // 5. Gắn các header RateLimit vào phản hồi để client theo dõi
@@ -160,6 +163,31 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
         });
 
         return chain.filter(exchange);
+    }
+
+    private TokenBucket getOrCreateBucket(String key, BucketConfig config) {
+        return tokenBuckets.computeIfAbsent(key, k -> new TokenBucket(config.capacity(), config.refillSeconds()));
+    }
+
+    private Mono<Void> rejectTooManyRequests(ServerWebExchange exchange, String path, String bucketKey,
+                                             BucketConfig config, ConsumptionResult result) {
+        log.warn("[RateLimit-TokenBucket] Chặn yêu cầu quá giới hạn: key={}, path={}, retryAfter={}s",
+                bucketKey, path, result.retryAfter());
+
+        exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+        HttpHeaders headers = exchange.getResponse().getHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Retry-After", String.valueOf(result.retryAfter()));
+        headers.set("X-RateLimit-Limit", String.valueOf(config.capacity()));
+        headers.set("X-RateLimit-Remaining", "0");
+        headers.set("X-RateLimit-Reset", String.valueOf(result.resetSeconds()));
+        headers.set("Access-Control-Expose-Headers", "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset");
+
+        String bodyJson = String.format(
+                "{\"code\":429,\"message\":\"Bạn đang gửi yêu cầu quá nhanh. Vui lòng chờ %d giây trước khi thử lại.\",\"retryAfter\":%d}",
+                result.retryAfter(), result.retryAfter());
+        byte[] bytes = bodyJson.getBytes(StandardCharsets.UTF_8);
+        return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(bytes)));
     }
 
     private boolean isWebSocketPath(String path) {
@@ -193,31 +221,52 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
                 || HttpMethod.DELETE.equals(method) || HttpMethod.PATCH.equals(method);
     }
 
-    private String resolveClientKey(ServerHttpRequest request) {
-        // Nếu có Authorization Bearer token, ưu tiên dùng hash token để nhận diện chính xác người dùng
+    private static String extractBearerToken(ServerHttpRequest request) {
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader != null && authHeader.startsWith("Bearer ") && authHeader.length() > 20) {
-            String token = authHeader.substring(7).trim();
-            return "user:" + Integer.toHexString(token.hashCode());
+            return authHeader.substring(7).trim();
         }
+        return null;
+    }
 
-        // Lấy IP từ X-Forwarded-For hoặc Remote Address
-        String xForwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isBlank()) {
-            return "ip:" + xForwardedFor.split(",")[0].trim();
+    /** Dấu vân tay của token: 8 byte đầu của SHA-256 (64 bit), thay cho String.hashCode() 32 bit dễ va chạm và dễ đoán. */
+    private static String tokenFingerprint(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(16);
+            for (int i = 0; i < 8; i++) sb.append(String.format("%02x", digest[i]));
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString(token.hashCode());
         }
+    }
 
-        String xRealIp = request.getHeaders().getFirst("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isBlank()) {
-            return "ip:" + xRealIp.trim();
+    /**
+     * IP của người gọi. Phần tử đầu của X-Forwarded-For do chính client tự gửi nên có thể giả mạo để đổi IP mỗi request; phần tử
+     * do proxy tin cậy gần nhất thêm vào mới đáng tin. Với {@code trustedProxyHops} proxy phía trước gateway, IP thật là phần tử
+     * thứ {@code trustedProxyHops} tính từ cuối. Đặt 0 để bỏ qua X-Forwarded-For (gateway nhận kết nối trực tiếp).
+     */
+    private String resolveClientIp(ServerHttpRequest request) {
+        if (trustedProxyHops > 0) {
+            String xForwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
+            if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+                String[] parts = xForwardedFor.split(",");
+                int index = Math.max(0, parts.length - trustedProxyHops);
+                String candidate = parts[index].trim();
+                if (!candidate.isEmpty()) return candidate;
+            }
+            String xRealIp = request.getHeaders().getFirst("X-Real-IP");
+            if (xRealIp != null && !xRealIp.isBlank()) {
+                return xRealIp.trim();
+            }
         }
 
         InetSocketAddress remoteAddress = request.getRemoteAddress();
         if (remoteAddress != null && remoteAddress.getAddress() != null) {
-            return "ip:" + remoteAddress.getAddress().getHostAddress();
+            return remoteAddress.getAddress().getHostAddress();
         }
 
-        return "ip:anonymous";
+        return "anonymous";
     }
 
     private void cleanupExpiredBuckets() {
@@ -238,16 +287,20 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
         private final double refillSecondsPerToken;
         private double tokens;
         private long lastRefillTimestamp;
+        /** Lần cuối có request dùng bucket này. Tách khỏi lastRefillTimestamp vì refill() luôn cập nhật mốc nạp. */
+        private long lastAccessTimestamp;
 
         public TokenBucket(double capacity, double refillSecondsPerToken) {
             this.capacity = capacity;
             this.refillSecondsPerToken = Math.max(0.001, refillSecondsPerToken);
             this.tokens = capacity;
             this.lastRefillTimestamp = System.currentTimeMillis();
+            this.lastAccessTimestamp = this.lastRefillTimestamp;
         }
 
         public synchronized ConsumptionResult tryConsume(double tokensToConsume) {
             refill();
+            lastAccessTimestamp = lastRefillTimestamp;
             if (tokens >= tokensToConsume) {
                 tokens -= tokensToConsume;
                 int remaining = (int) Math.floor(tokens);
@@ -273,8 +326,10 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
         }
 
         public synchronized boolean isIdleAndFull(long now, long maxIdleMs) {
+            // Trước đây so với lastRefillTimestamp (vừa bị refill() ghi đè bằng "bây giờ") nên điều kiện không bao giờ đúng
+            // và bucket không bao giờ được dọn: rò rỉ bộ nhớ theo số IP/token từng gọi.
             refill();
-            return (now - lastRefillTimestamp) > maxIdleMs && tokens >= (capacity - 0.001);
+            return (now - lastAccessTimestamp) > maxIdleMs && tokens >= (capacity - 0.001);
         }
     }
 

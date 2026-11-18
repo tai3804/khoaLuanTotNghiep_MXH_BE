@@ -81,6 +81,30 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     List<Post> findByGroupIdAndAuthorIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, UUID authorId, PostStatus status);
 
     /** Nhóm bị xóa thì mọi bài của nhóm cũng bị gỡ (không còn nơi nào để hiển thị). */
+    /**
+     * Mã các bài đã đăng gần đây của một tập tác giả (bạn bè, người đang theo dõi, chính mình), mới nhất trước.
+     * Dùng cho nhánh truy xuất theo đồ thị xã hội của tìm kiếm ngữ nghĩa.
+     */
+    @Query("SELECT p.id FROM Post p WHERE p.authorId IN :authorIds AND p.deleted = false AND p.isArchived = false AND p.status = 'PUBLISHED' AND p.createdAt >= :since ORDER BY p.createdAt DESC")
+    List<UUID> findRecentIdsByAuthors(@Param("authorIds") java.util.Collection<UUID> authorIds,
+                                      @Param("since") java.time.LocalDateTime since,
+                                      org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Mẫu bài công khai (ngoài nhóm) gần đây dạng nhẹ (không nạp các tập EAGER): id, tác giả, nội dung, thời điểm đăng và
+     * số thích/bình luận/chia sẻ. Dùng cho phát hiện chủ đề đang nổi.
+     */
+    @Query("SELECT p.id, p.authorId, p.content, p.createdAt, p.likeCount, p.commentCount, p.shareCount FROM Post p "
+            + "WHERE p.deleted = false AND p.isArchived = false AND p.status = 'PUBLISHED' AND p.privacy = 'PUBLIC' "
+            + "AND p.groupId IS NULL AND p.createdAt >= :since ORDER BY p.createdAt DESC")
+    List<Object[]> findPublicPostSamplesSince(@Param("since") java.time.LocalDateTime since,
+                                              org.springframework.data.domain.Pageable pageable);
+
+    /** Tăng số lượt chia sẻ một cách nguyên tử (tránh mất cập nhật khi nhiều người chia sẻ đồng thời). */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Post p SET p.shareCount = p.shareCount + 1 WHERE p.id = :id")
+    int incrementShareCount(@Param("id") UUID id);
+
     @Modifying
     @Query("UPDATE Post p SET p.deleted = true WHERE p.groupId = :groupId AND p.deleted = false")
     int softDeleteByGroupId(@Param("groupId") UUID groupId);
@@ -140,4 +164,8 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     /** Số lần mình chia sẻ bài của từng tác giả gốc kể từ mốc `since`. */
     @Query("SELECT o.authorId, COUNT(s) FROM Post s, Post o WHERE s.originalPostId = o.id AND s.authorId = :userId AND s.deleted = false AND s.createdAt >= :since GROUP BY o.authorId")
     List<Object[]> countSharesByOriginalAuthor(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
+
+    /** Các lượt chia sẻ gần đây (người chia sẻ, bài gốc, thời điểm) làm đầu vào cho lọc cộng tác. */
+    @Query("SELECT s.authorId, s.originalPostId, s.createdAt FROM Post s WHERE s.originalPostId IS NOT NULL AND s.deleted = false AND s.createdAt >= :since ORDER BY s.createdAt DESC")
+    List<Object[]> findRecentShareRows(@Param("since") java.time.LocalDateTime since, org.springframework.data.domain.Pageable pageable);
 }

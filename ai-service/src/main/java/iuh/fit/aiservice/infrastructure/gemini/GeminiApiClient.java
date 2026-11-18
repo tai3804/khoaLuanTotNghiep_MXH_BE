@@ -32,6 +32,14 @@ public class GeminiApiClient {
     @Value("${ai.gemini.api-url:https://generativelanguage.googleapis.com/v1beta/models}")
     private String apiUrl;
 
+    /**
+     * Ghim một model embedding duy nhất (GEMINI_EMBEDDING_MODEL). Để trống thì thử lần lượt {@link #EMBEDDING_CANDIDATE_MODELS}.
+     * Mọi vector trong bảng pgvector PHẢI cùng một model: cosine giữa vector của hai model khác nhau là vô nghĩa, nên nếu
+     * đổi model thì phải nạp lại (backfill) toàn bộ embedding.
+     */
+    @Value("${ai.gemini.embedding-model:}")
+    private String embeddingModelOverride;
+
     private final ObjectMapper objectMapper;
     private final FastSensitiveWordFilter fastFilter;
 
@@ -829,6 +837,35 @@ public class GeminiApiClient {
      * Tạo vector embedding 768 chiều từ văn bản sử dụng mô hình Gemini Embedding
      * với outputDimensionality = 768 (tiêu chuẩn chuẩn hoá Transformer cho tìm kiếm ngữ nghĩa).
      */
+    /** Model được dùng: model ghim trong cấu hình nếu có, nếu không thì danh sách ứng viên theo thứ tự ưu tiên. */
+    private List<String> embeddingModels() {
+        if (embeddingModelOverride != null && !embeddingModelOverride.isBlank()) {
+            return List.of(embeddingModelOverride.trim());
+        }
+        return EMBEDDING_CANDIDATE_MODELS;
+    }
+
+    /**
+     * Chuẩn hoá về độ dài 1. Với gemini-embedding-001 cắt còn 768 chiều (outputDimensionality) vector KHÔNG còn độ dài 1 và Google
+     * khuyến nghị tự chuẩn hoá; đưa mọi vector về cùng độ dài 1 cũng làm khoảng cách cosine và tích vô hướng nhất quán.
+     */
+    static List<Float> l2Normalize(List<Float> vector) {
+        double sum = 0;
+        for (float v : vector) sum += (double) v * v;
+        double norm = Math.sqrt(sum);
+        if (norm == 0 || Math.abs(norm - 1.0) < 1e-6) return vector;
+        List<Float> out = new ArrayList<>(vector.size());
+        for (float v : vector) out.add((float) (v / norm));
+        return out;
+    }
+
+    private void warnIfFallbackModel(String usedModel) {
+        if (!usedModel.equals(embeddingModels().get(0))) {
+            log.warn("Embedding đang dùng model dự phòng '{}' thay vì '{}'. Vector mới có thể KHÁC không gian với vector đã lưu; "
+                    + "hãy ghim GEMINI_EMBEDDING_MODEL và nạp lại embedding nếu đổi model.", usedModel, embeddingModels().get(0));
+        }
+    }
+
     public List<Float> generateEmbedding(String text) {
         if (text == null || text.isBlank()) {
             return Collections.emptyList();
@@ -838,7 +875,7 @@ public class GeminiApiClient {
             return Collections.emptyList();
         }
 
-        for (String embModel : EMBEDDING_CANDIDATE_MODELS) {
+        for (String embModel : embeddingModels()) {
             try {
                 String endpoint = String.format("%s/%s:embedContent?key=%s", apiUrl, embModel, apiKey);
 
@@ -869,7 +906,8 @@ public class GeminiApiClient {
                         for (JsonNode val : valuesNode) {
                             result.add((float) val.asDouble());
                         }
-                        return result;
+                        warnIfFallbackModel(embModel);
+                        return l2Normalize(result);
                     }
                 } else if (response.statusCode() == 404) {
                     log.debug("Gemini model {} not found, trying next candidate...", embModel);
@@ -895,7 +933,7 @@ public class GeminiApiClient {
             return Collections.emptyList();
         }
 
-        for (String embModel : EMBEDDING_CANDIDATE_MODELS) {
+        for (String embModel : embeddingModels()) {
             try {
                 String endpoint = String.format("%s/%s:batchEmbedContents?key=%s", apiUrl, embModel, apiKey);
 
@@ -936,8 +974,9 @@ public class GeminiApiClient {
                             for (JsonNode val : valuesNode) {
                                 list.add((float) val.asDouble());
                             }
-                            results.add(list);
+                            results.add(list.isEmpty() ? list : l2Normalize(list));
                         }
+                        warnIfFallbackModel(embModel);
                         return results;
                     }
                 } else if (response.statusCode() == 404) {

@@ -85,8 +85,8 @@ public class SharePostCommandHandler {
         sharedPost.setLastActivityAt(java.time.LocalDateTime.now());
         Post savedPost = postRepository.save(sharedPost);
 
-        originalPost.setShareCount(originalPost.getShareCount() + 1);
-        postRepository.save(originalPost);
+        // Tăng nguyên tử ở CSDL: "đọc rồi +1 rồi save" làm mất lượt chia sẻ khi hai người chia sẻ cùng lúc
+        postRepository.incrementShareCount(originalPost.getId());
 
         if (originalPost.getAuthorId() != null && !originalPost.getAuthorId().equals(command.getUserId())) {
             try {

@@ -3,6 +3,8 @@ package iuh.fit.aiservice.presentation.controller;
 import iuh.fit.aiservice.application.dto.MessageSummaryDto;
 import iuh.fit.aiservice.application.engine.SmartAssistantEngine;
 import iuh.fit.aiservice.application.service.PostSummaryService;
+import iuh.fit.aiservice.application.service.RagAssistantService;
+import iuh.fit.aiservice.application.service.rag.RagContextBuilder;
 import iuh.fit.aiservice.infrastructure.gemini.GeminiApiClient;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import lombok.AllArgsConstructor;
@@ -26,6 +28,7 @@ public class AiAssistantController {
     private final GeminiApiClient geminiApiClient;
     private final SmartAssistantEngine smartAssistantEngine;
     private final PostSummaryService postSummaryService;
+    private final RagAssistantService ragAssistantService;
 
     @PostMapping("/suggest-caption")
     public ResponseEntity<ApiResponse<CaptionSuggestionResponse>> suggestCaption(@RequestBody CaptionRequest request) {
@@ -245,10 +248,16 @@ public class AiAssistantController {
             return ResponseEntity.ok(ApiResponse.success(new ChatResponse("Xin chào! Tôi có thể giúp gì cho bạn hôm nay?"), "Tin nhắn rỗng"));
         }
 
-        String fallbackReply = smartAssistantEngine.generateChatReply(message, request.getHistory());
-        String reply = geminiApiClient.chatWithHistory(message, request.getHistory(), fallbackReply);
+        // RAG: truy xuất bài viết liên quan (theo quyền xem của người hỏi) rồi để mô hình sinh câu trả lời dựa trên tư liệu đó
+        RagContextBuilder.Augmented rag = ragAssistantService.prepare(message);
+        String fallbackReply = RagContextBuilder.fallbackWithSources(
+                smartAssistantEngine.generateChatReply(message, request.getHistory()), rag.sources());
+        String reply = geminiApiClient.chatWithHistory(rag.prompt(), request.getHistory(), fallbackReply);
+        List<ChatSource> sources = rag.sources().stream()
+                .map(p -> new ChatSource(p.postId().toString(), p.text().length() > 160 ? p.text().substring(0, 160).trim() + "..." : p.text()))
+                .toList();
 
-        return ResponseEntity.ok(ApiResponse.success(new ChatResponse(reply != null && !reply.isBlank() ? reply.trim() : fallbackReply), "Trả lời thành công"));
+        return ResponseEntity.ok(ApiResponse.success(new ChatResponse(reply != null && !reply.isBlank() ? reply.trim() : fallbackReply, sources), "Trả lời thành công"));
     }
 
     @PostMapping("/summarize-messages")
@@ -496,5 +505,23 @@ public class AiAssistantController {
     @Data
     public static class ChatResponse {
         private final String reply;
+        /** Các bài viết được dùng làm tư liệu (RAG), theo đúng số thứ tự [1], [2], ... trong câu trả lời. Rỗng nếu không dùng. */
+        private final List<ChatSource> sources;
+
+        public ChatResponse(String reply) {
+            this(reply, List.of());
+        }
+
+        public ChatResponse(String reply, List<ChatSource> sources) {
+            this.reply = reply;
+            this.sources = sources == null ? List.of() : sources;
+        }
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static class ChatSource {
+        private String postId;
+        private String snippet;
     }
 }

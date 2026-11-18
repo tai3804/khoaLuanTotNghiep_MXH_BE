@@ -15,7 +15,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
@@ -139,7 +138,7 @@ public class GroupEmbeddingService {
         String combined = (name != null ? name : "") + (description != null && !description.isBlank() ? " - " + description : "");
         if (combined.isBlank()) return;
 
-        CompletableFuture.runAsync(() -> {
+        EmbeddingTaskExecutor.submit(() -> {
             try {
                 List<Float> vector = getQueryEmbedding(combined);
                 if (!vector.isEmpty()) {

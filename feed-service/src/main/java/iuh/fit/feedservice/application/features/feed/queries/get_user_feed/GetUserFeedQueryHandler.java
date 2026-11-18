@@ -36,10 +36,12 @@ public class GetUserFeedQueryHandler {
                 .toList();
 
         Map<UUID, PostResponseDto> postMap = new HashMap<>();
+        boolean batchOk = false;
         if (!postIds.isEmpty()) {
             try {
                 ApiResponse<List<PostResponseDto>> batchResponse = postServiceClient.getPostsBatch(postIds);
                 if (batchResponse != null && batchResponse.getData() != null) {
+                    batchOk = true;
                     for (PostResponseDto dto : batchResponse.getData()) {
                         if (dto != null && dto.getId() != null) {
                             postMap.put(dto.getId(), dto);
@@ -54,7 +56,8 @@ public class GetUserFeedQueryHandler {
         List<GetUserFeedResult> results = new ArrayList<>();
         for (UserFeedItem item : feedItemsPage.getContent()) {
             PostResponseDto postDetail = postMap.get(item.getPostId());
-            if (postDetail == null) {
+            // Batch thành công mà thiếu bài nghĩa là bài đã xóa/không xem được: bỏ qua, không gọi lẻ từng bài (N+1 qua HTTP)
+            if (postDetail == null && !batchOk) {
                 try {
                     ApiResponse<PostResponseDto> response = postServiceClient.getPostById(item.getPostId());
                     if (response != null && response.getData() != null) {

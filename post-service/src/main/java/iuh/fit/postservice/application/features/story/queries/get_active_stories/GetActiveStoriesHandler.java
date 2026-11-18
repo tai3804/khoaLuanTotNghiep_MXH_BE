@@ -88,6 +88,14 @@ public class GetActiveStoriesHandler {
         Map<UUID, List<Story>> userStoriesMap = visibleStories.stream()
                 .collect(Collectors.groupingBy(Story::getUserId, LinkedHashMap::new, Collectors.toList()));
 
+        // Tải số lượt xem và trạng thái "đã xem" của toàn bộ story bằng 2 truy vấn thay vì 2 truy vấn cho mỗi story (N+1)
+        List<UUID> storyIds = visibleStories.stream().map(Story::getId).toList();
+        Map<UUID, Long> viewCounts = new HashMap<>();
+        for (Object[] row : storyViewerRepository.countByStoryIds(storyIds)) {
+            viewCounts.put((UUID) row[0], ((Number) row[1]).longValue());
+        }
+        Set<UUID> viewedByMe = new HashSet<>(storyViewerRepository.findViewedStoryIds(currentUserId, storyIds));
+
         List<UserStoriesResult> resultList = new ArrayList<>();
 
         for (Map.Entry<UUID, List<Story>> entry : userStoriesMap.entrySet()) {
@@ -98,8 +106,8 @@ public class GetActiveStoriesHandler {
             List<StoryResult> storyResults = new ArrayList<>();
 
             for (Story story : stories) {
-                long viewsCount = storyViewerRepository.countByStoryId(story.getId());
-                boolean isViewedByMe = storyViewerRepository.existsByStoryIdAndViewerId(story.getId(), currentUserId);
+                long viewsCount = viewCounts.getOrDefault(story.getId(), 0L);
+                boolean isViewedByMe = viewedByMe.contains(story.getId());
 
                 if (!isViewedByMe) {
                     hasUnviewed = true;
