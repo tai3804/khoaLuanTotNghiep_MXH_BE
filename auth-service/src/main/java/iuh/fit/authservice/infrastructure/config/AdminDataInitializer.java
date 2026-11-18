@@ -5,11 +5,13 @@ import iuh.fit.authservice.domain.enums.MfaType;
 import iuh.fit.authservice.domain.enums.UserStatus;
 import iuh.fit.authservice.domain.repository.UserRepository;
 import iuh.fit.authservice.presentation.dto.event.UserRegisteredEvent;
+import iuh.fit.commonframework.infrastructure.security.StrongSecretPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.env.Environment;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -27,11 +29,14 @@ public class AdminDataInitializer implements ApplicationRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final Environment environment;
+
+    private static final String DEFAULT_ADMIN_PASSWORD = "admin123";
 
     @Value("${app.admin.default-email:admin}")
     private String adminEmail;
 
-    @Value("${app.admin.default-password:admin123}")
+    @Value("${app.admin.default-password:${ADMIN_DEFAULT_PASSWORD:admin123}}")
     private String adminPassword;
 
     @Override
@@ -42,6 +47,16 @@ public class AdminDataInitializer implements ApplicationRunner {
         if (existingUserOpt.isPresent()) {
             log.info("Default Admin account ({}) already exists; preserving existing credentials and status.", adminEmail);
         } else {
+            if (adminPassword == null || adminPassword.isBlank() || DEFAULT_ADMIN_PASSWORD.equals(adminPassword)) {
+                if (StrongSecretPolicy.isStrict(environment)) {
+                    throw new IllegalStateException("[Security] Mật khẩu admin mặc định đang trống hoặc là 'admin123'. "
+                            + "Đặt app.admin.default-password (biến ADMIN_DEFAULT_PASSWORD) trước khi tạo tài khoản admin ở production.");
+                }
+                log.warn("[Security] Đang tạo tài khoản admin với mật khẩu mặc định của môi trường dev. Hãy đổi ngay hoặc đặt ADMIN_DEFAULT_PASSWORD!");
+                if (adminPassword == null || adminPassword.isBlank()) {
+                    adminPassword = DEFAULT_ADMIN_PASSWORD; // không bao giờ tạo admin với mật khẩu rỗng
+                }
+            }
             User adminUser = User.builder()
                     .id(null)
                     .email(adminEmail)

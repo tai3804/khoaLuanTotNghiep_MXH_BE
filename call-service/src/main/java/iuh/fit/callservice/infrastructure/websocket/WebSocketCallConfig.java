@@ -3,6 +3,8 @@ package iuh.fit.callservice.infrastructure.websocket;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.experimental.NonFinal;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -18,6 +20,11 @@ public class WebSocketCallConfig implements WebSocketMessageBrokerConfigurer {
 
     WebSocketCallAuthInterceptor webSocketCallAuthInterceptor;
 
+    /** Chỉ cho phép các origin được cấu hình (dùng chung biến với API Gateway), không mở "*". */
+    @NonFinal
+    @Value("${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}")
+    String[] allowedOrigins;
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.enableSimpleBroker("/topic", "/queue");
@@ -28,11 +35,11 @@ public class WebSocketCallConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws-call")
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(allowedOrigins)
                 .withSockJS();
 
         registry.addEndpoint("/ws-call")
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns(allowedOrigins);
     }
 
     @Override
