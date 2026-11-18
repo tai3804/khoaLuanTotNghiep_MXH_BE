@@ -51,6 +51,7 @@ public class FeedRankingService {
     private static final int CF_WINDOW_DAYS = 60;
     private static final int CF_ROW_LIMIT = 20_000;
     private static final long INTERACTION_CACHE_TTL_MS = 120_000L;
+    private static final int MMR_POOL = 120;
 
     private final PostRepository postRepository;
     private final PostMediaRepository postMediaRepository;
@@ -178,7 +179,9 @@ public class FeedRankingService {
         // Điểm bằng nhau thì bài mới hơn trước (candidates đã sắp mới nhất trước, sort ổn định)
         scored.sort(Comparator.comparingDouble(Item::score).reversed());
 
-        List<Item> ranked = PostRelevanceScorer.diversify(scored, RESULT_CAP);
+        List<Item> ranked = mode == Mode.RELEVANCE
+                ? diversifyByContent(scored)
+                : PostRelevanceScorer.diversify(scored, RESULT_CAP);
 
         RankedFeedSnapshot snapshot = new RankedFeedSnapshot();
         for (Item it : ranked) {
@@ -189,6 +192,30 @@ public class FeedRankingService {
         log.debug("Ranked feed for {} ({}): {} candidates, {} visible, {} ranked",
                 viewerId, mode, candidates.size(), visible.size(), ranked.size());
         return snapshot;
+    }
+
+    /**
+     * Đa dạng hoá bảng tin theo <b>nội dung</b> bằng MMR trên embedding cho {@value #MMR_POOL} bài đầu (phần tạo nên những màn hình
+     * đầu tiên người dùng thấy), phần đuôi chỉ phạt theo tác giả. Không có vector (pgvector tắt/lỗi) thì quay về phạt theo tác giả
+     * cho cả danh sách, nên bảng tin không bao giờ hỏng vì bước này.
+     */
+    private List<Item> diversifyByContent(List<Item> scored) {
+        int pool = Math.min(scored.size(), MMR_POOL);
+        List<Item> head = scored.subList(0, pool);
+        Map<UUID, float[]> vectors;
+        try {
+            vectors = postEmbeddingService.getEmbeddings(head.stream().map(Item::postId).toList());
+        } catch (Exception e) {
+            log.warn("MMR skipped, could not load embeddings: {}", e.getMessage());
+            vectors = Map.of();
+        }
+        if (vectors.isEmpty()) return PostRelevanceScorer.diversify(scored, RESULT_CAP);
+
+        List<Item> ranked = new ArrayList<>(MmrReranker.rerank(head, vectors, MmrReranker.DEFAULT_LAMBDA, pool));
+        if (scored.size() > pool && ranked.size() < RESULT_CAP) {
+            ranked.addAll(PostRelevanceScorer.diversify(scored.subList(pool, scored.size()), RESULT_CAP - ranked.size()));
+        }
+        return ranked;
     }
 
     private record CachedInteractions(List<ItemCollaborativeFilter.Interaction> data, long loadedAtMillis) {

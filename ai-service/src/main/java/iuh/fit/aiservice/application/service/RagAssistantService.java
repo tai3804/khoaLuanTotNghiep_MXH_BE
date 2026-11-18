@@ -33,7 +33,7 @@ public class RagAssistantService {
             return new Augmented(question, List.of());
         }
         try {
-            ApiResponse<List<PostResponse>> resp = postFeignClient.searchPosts(question.trim(), "hybrid", RETRIEVE_SIZE);
+            ApiResponse<List<PostResponse>> resp = postFeignClient.searchPosts(question.trim(), RETRIEVE_SIZE);
             List<PostResponse> posts = resp == null || resp.getData() == null ? List.of() : resp.getData();
             List<Passage> ranked = new ArrayList<>(posts.size());
             for (PostResponse p : posts) {

@@ -19,10 +19,9 @@ public interface PostFeignClient {
     @GetMapping("/api/v1/posts/{id}")
     ApiResponse<PostResponse> getPost(@PathVariable("id") UUID id);
 
-    /** Tìm kiếm lai (từ khóa + vector + đồ thị xã hội); chỉ trả về bài người gọi được phép xem. */
+    /** Tìm kiếm ngữ nghĩa (vector + đồ thị xã hội + hashtag); chỉ trả về bài người gọi được phép xem. */
     @GetMapping("/api/v1/posts/search")
     ApiResponse<List<PostResponse>> searchPosts(@RequestParam("query") String query,
-                                                @RequestParam("mode") String mode,
                                                 @RequestParam("size") int size);
 
     @PostMapping("/api/v1/posts/{id}/embedding")

@@ -20,6 +20,10 @@ import java.util.UUID;
 public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> {
     Optional<GroupMember> findByGroupIdAndUserId(UUID groupId, UUID userId);
     List<GroupMember> findAllByUserIdAndStatus(UUID userId, GroupMemberStatus status);
+    /** Mọi quan hệ của một người dùng với các nhóm, kể cả đang chờ duyệt, được mời, bị cấm hoặc bị từ chối. */
+    List<GroupMember> findAllByUserId(UUID userId);
+    /** Thành viên đã được duyệt của nhiều người dùng trong một truy vấn (gợi ý nhóm theo đồ thị xã hội). */
+    List<GroupMember> findAllByUserIdInAndStatus(Collection<UUID> userIds, GroupMemberStatus status);
     List<GroupMember> findAllByGroupIdAndStatus(UUID groupId, GroupMemberStatus status);
 
     List<GroupMember> findAllByGroupId(UUID groupId);

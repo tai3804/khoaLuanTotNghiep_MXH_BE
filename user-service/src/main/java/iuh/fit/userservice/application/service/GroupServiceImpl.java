@@ -66,6 +66,7 @@ public class GroupServiceImpl implements GroupService {
     private final GroupEventPublisher groupEventPublisher;
     private final ReputationService reputationService;
     private final GroupEmbeddingService groupEmbeddingService;
+    private final GroupRecommendationService groupRecommendationService;
 
     // ------------------------------------------------------------------ nhóm
 
@@ -154,6 +155,15 @@ public class GroupServiceImpl implements GroupService {
             } catch (Exception e) {
                 log.warn("Group vector search failed for '{}', falling back to keyword search: {}", keyword, e.getMessage());
             }
+        }
+        if ("recommended".equals(normalizedScope)) {
+            // Gợi ý theo đồ thị xã hội (Personalized PageRank): nhóm mà những người gần mình đang tham gia. Có phân trang.
+            List<Group> ranked = groupRecommendationService.recommend(viewerId, MAX_PAGE_SIZE * 5).stream()
+                    .map(GroupRecommendationService.Recommendation::group).toList();
+            int from = Math.min(pageIndex * pageSize, ranked.size());
+            int to = Math.min(from + pageSize, ranked.size());
+            return new org.springframework.data.domain.PageImpl<>(ranked.subList(from, to), PageRequest.of(pageIndex, pageSize), ranked.size())
+                    .map(g -> view(g, null));
         }
         Page<Group> groups = switch (normalizedScope) {
             case "joined" -> groupRepository.searchByMembership(pattern, viewerId, GroupMemberStatus.APPROVED,

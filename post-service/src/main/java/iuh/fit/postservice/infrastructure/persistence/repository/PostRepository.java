@@ -81,6 +81,25 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     List<Post> findByGroupIdAndAuthorIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(UUID groupId, UUID authorId, PostStatus status);
 
     /** Nhóm bị xóa thì mọi bài của nhóm cũng bị gỡ (không còn nơi nào để hiển thị). */
+    /**
+     * Mã các bài đã đăng gần đây của một tập tác giả (bạn bè, người đang theo dõi, chính mình), mới nhất trước.
+     * Dùng cho nhánh truy xuất theo đồ thị xã hội của tìm kiếm ngữ nghĩa.
+     */
+    @Query("SELECT p.id FROM Post p WHERE p.authorId IN :authorIds AND p.deleted = false AND p.isArchived = false AND p.status = 'PUBLISHED' AND p.createdAt >= :since ORDER BY p.createdAt DESC")
+    List<UUID> findRecentIdsByAuthors(@Param("authorIds") java.util.Collection<UUID> authorIds,
+                                      @Param("since") java.time.LocalDateTime since,
+                                      org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Mẫu bài công khai (ngoài nhóm) gần đây dạng nhẹ (không nạp các tập EAGER): id, tác giả, nội dung, thời điểm đăng và
+     * số thích/bình luận/chia sẻ. Dùng cho phát hiện chủ đề đang nổi.
+     */
+    @Query("SELECT p.id, p.authorId, p.content, p.createdAt, p.likeCount, p.commentCount, p.shareCount FROM Post p "
+            + "WHERE p.deleted = false AND p.isArchived = false AND p.status = 'PUBLISHED' AND p.privacy = 'PUBLIC' "
+            + "AND p.groupId IS NULL AND p.createdAt >= :since ORDER BY p.createdAt DESC")
+    List<Object[]> findPublicPostSamplesSince(@Param("since") java.time.LocalDateTime since,
+                                              org.springframework.data.domain.Pageable pageable);
+
     /** Tăng số lượt chia sẻ một cách nguyên tử (tránh mất cập nhật khi nhiều người chia sẻ đồng thời). */
     @Modifying(flushAutomatically = true)
     @Query("UPDATE Post p SET p.shareCount = p.shareCount + 1 WHERE p.id = :id")
