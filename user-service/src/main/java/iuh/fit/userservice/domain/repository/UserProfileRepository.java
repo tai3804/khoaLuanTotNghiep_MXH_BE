@@ -28,6 +28,15 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> 
     @Query("SELECT p FROM UserProfile p WHERE p.userId NOT IN :excluded ORDER BY p.createdAt DESC")
     List<UserProfile> findNewestMembers(@Param("excluded") java.util.Collection<UUID> excluded, Pageable pageable);
 
+    /**
+     * Tìm theo tên, không phân biệt hoa thường và dấu ("tai" khớp "Trần Thành Tài"). {@code kw} là mẫu LIKE đã chuẩn hoá và
+     * thoát ký tự đặc biệt (xem SearchText.likePattern). Lấy tối đa {@code max} dòng, việc xếp hạng độ khớp làm ở tầng ứng dụng.
+     */
+    @Query(value = "SELECT * FROM user_profiles p WHERE p.is_deleted = false "
+            + "AND unaccent(lower(concat_ws(' ', p.last_name, p.middle_name, p.first_name))) LIKE :kw ESCAPE '!' "
+            + "ORDER BY p.last_active_at DESC NULLS LAST LIMIT :max", nativeQuery = true)
+    List<UserProfile> searchByName(@Param("kw") String kw, @Param("max") int max);
+
     @Query("SELECT p FROM UserProfile p WHERE " +
            "LOWER(COALESCE(p.firstName, '')) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(COALESCE(p.lastName, '')) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

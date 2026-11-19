@@ -33,7 +33,6 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.text.Normalizer;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -128,34 +127,6 @@ public class GroupServiceImpl implements GroupService {
         Sort bySize = Sort.by(Sort.Order.desc("memberCount"), Sort.Order.desc("createdAt"));
         Sort byActivity = Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.asc("name"));
 
-        if (keyword != null && !keyword.isBlank() && ("all".equals(normalizedScope) || "discover".equals(normalizedScope))) {
-            try {
-                List<Float> queryVector = groupEmbeddingService.getQueryEmbedding(keyword);
-                if (queryVector != null && !queryVector.isEmpty()) {
-                    List<GroupEmbeddingService.GroupVectorMatch> matches = groupEmbeddingService.searchSimilar(queryVector, pageSize * 2, 0.35);
-                    if (matches != null && !matches.isEmpty()) {
-                        List<UUID> matchedIds = matches.stream().map(GroupEmbeddingService.GroupVectorMatch::groupId).toList();
-                        Map<UUID, Double> scoreMap = matches.stream()
-                                .collect(Collectors.toMap(GroupEmbeddingService.GroupVectorMatch::groupId, GroupEmbeddingService.GroupVectorMatch::similarity, (a, b) -> a));
-                        List<Group> vectorGroups = groupRepository.findAllById(matchedIds).stream()
-                                .filter(g -> g != null && !g.isDeleted())
-                                .sorted((g1, g2) -> Double.compare(scoreMap.getOrDefault(g2.getId(), 0.0), scoreMap.getOrDefault(g1.getId(), 0.0)))
-                                .toList();
-                        if (!vectorGroups.isEmpty()) {
-                            int total = vectorGroups.size();
-                            int from = Math.min(pageIndex * pageSize, total);
-                            int to = Math.min(from + pageSize, total);
-                            List<Group> pagedVectorGroups = vectorGroups.subList(from, to);
-                            Map<UUID, GroupMember> mine = membershipsOf(viewerId, pagedVectorGroups);
-                            return new org.springframework.data.domain.PageImpl<>(pagedVectorGroups, PageRequest.of(pageIndex, pageSize), total)
-                                    .map(g -> view(g, mine.get(g.getId())));
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Group vector search failed for '{}', falling back to keyword search: {}", keyword, e.getMessage());
-            }
-        }
         if ("recommended".equals(normalizedScope)) {
             // Gợi ý theo đồ thị xã hội (Personalized PageRank): nhóm mà những người gần mình đang tham gia. Có phân trang.
             List<Group> ranked = groupRecommendationService.recommend(viewerId, MAX_PAGE_SIZE * 5).stream()
@@ -179,9 +150,48 @@ public class GroupServiceImpl implements GroupService {
             default -> throw new BusinessException(UserServiceErrorCode.GROUP_INVALID_SCOPE);
         };
 
+        // Tìm theo tên/mô tả trước (chỉ là truy vấn DB). Chỉ khi không nhóm nào khớp chữ mới tìm theo ý nghĩa bằng vector, vì
+        // đó là lúc duy nhất cần gọi Gemini ("nhóm cho người thích chụp ảnh").
+        boolean semanticScope = "all".equals(normalizedScope) || "discover".equals(normalizedScope);
+        if (groups.getTotalElements() == 0 && keyword != null && !keyword.isBlank() && semanticScope) {
+            Page<GroupResponse> semantic = semanticGroups(viewerId, keyword, pageIndex, pageSize);
+            if (semantic != null) return semantic;
+        }
+
         // Một truy vấn lấy quan hệ của người xem với cả trang thay vì một truy vấn cho từng nhóm
         Map<UUID, GroupMember> mine = membershipsOf(viewerId, groups.getContent());
         return groups.map(group -> view(group, mine.get(group.getId())));
+    }
+
+    /** Tìm nhóm theo ý nghĩa (embedding). {@code null} nếu không tạo được vector hoặc không nhóm nào đủ giống. */
+    private Page<GroupResponse> semanticGroups(UUID viewerId, String keyword, int pageIndex, int pageSize) {
+        try {
+            if (!groupEmbeddingService.hasEmbeddings()) return null; // chưa nhóm nào có vector: khỏi tốn một lần gọi Gemini
+            List<Float> queryVector = groupEmbeddingService.getQueryEmbedding(keyword);
+            if (queryVector == null || queryVector.isEmpty()) return null;
+            List<GroupEmbeddingService.GroupVectorMatch> matches = groupEmbeddingService.searchSimilar(queryVector, pageSize * 2, 0.35);
+            if (matches == null || matches.isEmpty()) return null;
+
+            List<UUID> matchedIds = matches.stream().map(GroupEmbeddingService.GroupVectorMatch::groupId).toList();
+            Map<UUID, Double> scoreMap = matches.stream()
+                    .collect(Collectors.toMap(GroupEmbeddingService.GroupVectorMatch::groupId, GroupEmbeddingService.GroupVectorMatch::similarity, (a, b) -> a));
+            List<Group> vectorGroups = groupRepository.findAllById(matchedIds).stream()
+                    .filter(g -> g != null && !g.isDeleted())
+                    .sorted((g1, g2) -> Double.compare(scoreMap.getOrDefault(g2.getId(), 0.0), scoreMap.getOrDefault(g1.getId(), 0.0)))
+                    .toList();
+            if (vectorGroups.isEmpty()) return null;
+
+            int total = vectorGroups.size();
+            int from = Math.min(pageIndex * pageSize, total);
+            int to = Math.min(from + pageSize, total);
+            List<Group> paged = vectorGroups.subList(from, to);
+            Map<UUID, GroupMember> mine = membershipsOf(viewerId, paged);
+            return new org.springframework.data.domain.PageImpl<>(paged, PageRequest.of(pageIndex, pageSize), total)
+                    .map(g -> view(g, mine.get(g.getId())));
+        } catch (Exception e) {
+            log.warn("Group vector search failed for '{}': {}", keyword, e.getMessage());
+            return null;
+        }
     }
 
     @Override
@@ -767,12 +777,7 @@ public class GroupServiceImpl implements GroupService {
 
     /** Từ khoá → mẫu LIKE: bỏ dấu, chữ thường, thoát % _ ! (! là ký tự thoát của LIKE) để người dùng gõ ký tự đặc biệt không thành ký tự đại diện. */
     static String likePattern(String keyword) {
-        String k = keyword == null ? "" : keyword.trim();
-        if (k.length() > 100) k = k.substring(0, 100);
-        k = Normalizer.normalize(k, Normalizer.Form.NFD).replaceAll("\\p{M}+", "")
-                .replace('đ', 'd').replace('Đ', 'D').toLowerCase(Locale.ROOT);
-        k = k.replace("!", "!!").replace("%", "!%").replace("_", "!_");
-        return "%" + k + "%";
+        return SearchText.likePattern(keyword);
     }
 
     // ----- chuyển đổi sang response

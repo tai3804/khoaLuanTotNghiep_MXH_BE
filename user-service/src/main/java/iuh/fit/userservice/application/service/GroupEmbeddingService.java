@@ -34,6 +34,29 @@ public class GroupEmbeddingService {
 
     public record GroupVectorMatch(UUID groupId, double similarity) {}
 
+    private static final long HAS_EMBEDDINGS_TTL_MS = 60_000;
+    private volatile boolean hasEmbeddingsCached;
+    private volatile long hasEmbeddingsCheckedAt;
+
+    /**
+     * Có nhóm nào đã có vector chưa. Chưa có thì tìm theo ý nghĩa không thể ra gì, nên không nên tốn một lần gọi Gemini để
+     * tạo vector cho câu truy vấn. Kết quả được nhớ 1 phút để không thêm một truy vấn cho mỗi lần tìm.
+     */
+    public boolean hasEmbeddings() {
+        if (!groupSchemaSynchronizer.isVectorAvailable()) return false;
+        long now = System.currentTimeMillis();
+        if (now - hasEmbeddingsCheckedAt < HAS_EMBEDDINGS_TTL_MS) return hasEmbeddingsCached;
+        try {
+            Boolean any = jdbcTemplate.queryForObject("SELECT EXISTS (SELECT 1 FROM group_embeddings)", Boolean.class);
+            hasEmbeddingsCached = Boolean.TRUE.equals(any);
+            hasEmbeddingsCheckedAt = now;
+        } catch (Exception e) {
+            log.debug("Could not check group_embeddings: {}", e.getMessage());
+            return true; // không kiểm tra được thì cứ thử tìm như bình thường
+        }
+        return hasEmbeddingsCached;
+    }
+
     public String toVectorString(List<Float> vector) {
         if (vector == null || vector.isEmpty()) {
             return "[]";
