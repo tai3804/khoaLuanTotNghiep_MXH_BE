@@ -6,6 +6,7 @@ import iuh.fit.aiservice.application.dto.AiBatchEmbeddingRequest;
 import iuh.fit.aiservice.application.dto.AiBatchEmbeddingResponse;
 import iuh.fit.aiservice.application.dto.AiEmbeddingRequest;
 import iuh.fit.aiservice.application.dto.AiEmbeddingResponse;
+import iuh.fit.aiservice.application.service.EmbeddingCache;
 import iuh.fit.aiservice.infrastructure.gemini.GeminiApiClient;
 import iuh.fit.commonframework.application.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -26,13 +27,14 @@ import java.util.List;
 public class AiEmbeddingController {
 
     private final GeminiApiClient geminiApiClient;
+    private final EmbeddingCache embeddingCache;
 
     @PostMapping("/generate")
-    @Operation(summary = "Tạo vector embedding 768 chiều từ văn bản", description = "Sử dụng Google Gemini Embedding với outputDimensionality=768")
+    @Operation(summary = "Tạo vector embedding 768 chiều từ văn bản", description = "Sử dụng Google Gemini Embedding với outputDimensionality=768. Có bộ đệm LRU và gộp lời gọi trùng nhau, nên cùng một văn bản chỉ tốn một lần gọi Gemini.")
     public ResponseEntity<ApiResponse<AiEmbeddingResponse>> generateEmbedding(@RequestBody AiEmbeddingRequest request) {
         String text = request != null && request.getText() != null ? request.getText().trim() : "";
-        List<Float> vector = geminiApiClient.generateEmbedding(text);
-        
+        List<Float> vector = embeddingCache.getOrCompute(text, geminiApiClient::generateEmbedding);
+
         AiEmbeddingResponse response = AiEmbeddingResponse.builder()
                 .embedding(vector)
                 .dimensions(vector.size())
