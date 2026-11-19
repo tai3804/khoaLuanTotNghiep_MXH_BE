@@ -206,10 +206,8 @@ public class CreatePostCommandHandler {
         if (savedPost.getStatus() == PostStatus.PENDING_APPROVAL && savedPost.getGroupId() != null) {
             groupNotificationPublisher.postPending(savedPost);
         } else if (savedPost.getStatus() == PostStatus.PUBLISHED) {
+            // notifyPostPublished cũng sinh embedding cho bài (dùng chung cho mọi đường xuất bản)
             postPublicationHelper.notifyPostPublished(savedPost);
-            if (savedPost.getContent() != null && !savedPost.getContent().isBlank()) {
-                postEmbeddingService.vectorizePostAsync(savedPost.getId(), savedPost.getContent());
-            }
         }
 
         CreatePostResult result = postFeatureMapper.toCreateResult(savedPost, savedMediaList);

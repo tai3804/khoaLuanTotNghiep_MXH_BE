@@ -22,6 +22,13 @@ import java.util.stream.Collectors;
 public interface ReactionRepository extends BaseJpaRepository<Reaction, UUID> {
     Optional<Reaction> findByPostIdAndUserId(UUID postId, UUID userId);
     List<Reaction> findByPostIdIn(List<UUID> postIds);
+
+    /** Số lượt theo từng loại cảm xúc của nhiều bài trong 1 truy vấn GROUP BY: [postId, type, count], loại nhiều nhất đứng trước. */
+    @Query("SELECT r.postId, r.type, COUNT(r) FROM Reaction r WHERE r.postId IN :postIds GROUP BY r.postId, r.type ORDER BY COUNT(r) DESC")
+    List<Object[]> countTypesByPostIds(@Param("postIds") java.util.Collection<UUID> postIds);
+
+    /** Cảm xúc của riêng một người dùng trên nhiều bài (không phải tải cảm xúc của mọi người). */
+    List<Reaction> findByUserIdAndPostIdIn(UUID userId, java.util.Collection<UUID> postIds);
     Page<Reaction> findByPostId(UUID postId, Pageable pageable);
     long countByPostId(UUID postId);
 
@@ -45,4 +52,8 @@ public interface ReactionRepository extends BaseJpaRepository<Reaction, UUID> {
     /** Số lượt mình thả cảm xúc cho bài của từng tác giả kể từ mốc `since` (dùng tính độ thân thiết khi xếp hạng bảng tin). */
     @Query("SELECT p.authorId, COUNT(r) FROM Reaction r, Post p WHERE r.postId = p.id AND r.userId = :userId AND r.createdAt >= :since GROUP BY p.authorId")
     List<Object[]> countInteractionsByAuthor(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
+
+    /** Các lượt thả cảm xúc gần đây (người dùng, bài, thời điểm) làm đầu vào cho lọc cộng tác; giới hạn bằng Pageable. */
+    @Query("SELECT r.userId, r.postId, r.createdAt FROM Reaction r WHERE r.createdAt >= :since ORDER BY r.createdAt DESC")
+    List<Object[]> findRecentInteractionRows(@Param("since") java.time.LocalDateTime since, org.springframework.data.domain.Pageable pageable);
 }

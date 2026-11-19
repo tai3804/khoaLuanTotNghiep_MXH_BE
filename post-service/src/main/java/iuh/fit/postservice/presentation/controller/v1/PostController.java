@@ -269,13 +269,12 @@ public class PostController {
     }
 
     @GetMapping("/search")
-    @Operation(summary = "Search posts by keyword or semantic query", description = "Retrieves paginated list of posts matching the keyword query or semantic context")
+    @Operation(summary = "Semantic search for posts", description = "Embedding-based retrieval (HNSW) + social-graph retrieval + hashtag retrieval, fused by RRF and re-ranked with learned weights and MMR diversification")
     public ResponseEntity<ApiResponse<List<PostResponse>>> searchPosts(
             @RequestParam(value = "query", required = false, defaultValue = "") String query,
-            @RequestParam(value = "mode", required = false, defaultValue = "hybrid") String mode,
             @ParameterObject @Valid @ModelAttribute BaseFilter filter) {
         String cleanQuery = query != null ? query.trim() : "";
-        if (cleanQuery.isEmpty() || "keyword".equalsIgnoreCase(mode)) {
+        if (cleanQuery.isEmpty()) {
             BaseFilter searchFilter = filter != null ? filter : new BaseFilter();
             searchFilter.setKeyword(cleanQuery);
             GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter)
@@ -285,8 +284,7 @@ public class PostController {
             return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
         }
 
-        // Hybrid search: inverted index + embedding ANN + social graph retrieval,
-        // fused, then BM25/semantic/social ranking
+        // Semantic search: embedding ANN + social-graph + hashtag retrieval, fused (RRF), re-ranked (learned weights), MMR
         try {
             UUID searchViewerId = getOptionalCurrentUserId();
             PostSearchService.Result found = postSearchService.search(cleanQuery, searchViewerId);
@@ -342,18 +340,17 @@ public class PostController {
                         MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
             }
         } catch (Exception e) {
-            log.warn("Hybrid search failed for query '{}', falling back to keyword search: {}", cleanQuery,
-                    e.getMessage());
+            log.warn("Semantic search failed for query '{}': {}", cleanQuery, e.getMessage());
         }
 
-        // Fallback to keyword unaccent search
-        BaseFilter searchFilter = filter != null ? filter : new BaseFilter();
-        searchFilter.setKeyword(cleanQuery);
-        GetAllPostsQuery searchQuery = GetAllPostsQuery.builder().filter(searchFilter)
-                .viewerId(getOptionalCurrentUserId()).build();
-        PagedResponse<GetPostDetailResult> result = getAllPostsQueryHandler.handle(searchQuery);
-        PagedResponse<PostResponse> pagedResponse = postPresentationMapper.toPagedResponse(result);
-        return ResponseEntity.ok(ApiResponse.paged(pagedResponse, MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
+        // Không có kết quả (hoặc lỗi): trả trang rỗng. Không còn nhánh dự phòng theo từ khoá/toàn văn.
+        int emptyPageSize = filter != null && filter.getSize() > 0 ? filter.getSize() : 20;
+        int emptyPageIndex = filter != null && filter.getPage() > 0 ? filter.getPage() - 1 : 0;
+        PagedResponse<GetPostDetailResult> empty = PagedResponse.<GetPostDetailResult>builder()
+                .content(List.of()).page(emptyPageIndex).size(emptyPageSize)
+                .totalElements(0).totalPages(0).last(true).build();
+        return ResponseEntity.ok(ApiResponse.paged(postPresentationMapper.toPagedResponse(empty),
+                MessageConstants.POSTS_RETRIEVED_SUCCESSFULLY));
     }
 
     @GetMapping("/hashtag/{hashtag}")

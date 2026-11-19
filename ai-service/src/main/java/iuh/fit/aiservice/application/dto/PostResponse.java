@@ -9,4 +9,5 @@ public class PostResponse {
     private UUID authorId;
     private String content;
     private String status;
+    private Double relevanceScore;
 }

@@ -25,6 +25,9 @@ public interface ConversationMemberRepository extends BaseJpaRepository<Conversa
 
     long countByConversationIdAndStatus(UUID conversationId, MemberStatus status);
 
+    /** Thành viên của nhiều hội thoại trong một truy vấn (tránh N+1 khi dựng danh sách hội thoại). */
+    List<ConversationMember> findByConversationIdInAndStatus(java.util.Collection<UUID> conversationIds, MemberStatus status);
+
     boolean existsByConversationIdAndUserIdAndStatus(UUID conversationId, UUID userId, MemberStatus status);
 
     @Query("""

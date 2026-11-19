@@ -16,6 +16,16 @@ import java.util.UUID;
 public interface CommentRepository extends BaseJpaRepository<Comment, UUID> {
     Page<Comment> findByPostIdAndParentCommentIdIsNullAndDeletedFalse(UUID postId, Pageable pageable);
     List<Comment> findByPostIdInAndParentCommentIdIsNullAndDeletedFalseOrderByCreatedAtDesc(List<UUID> postIds);
+    /**
+     * Lấy tối đa :limit bình luận cấp 1 mới nhất cho MỖI bài trong một truy vấn (window function),
+     * thay vì tải toàn bộ bình luận của các bài rồi cắt ở tầng ứng dụng.
+     */
+    @Query(value = "SELECT * FROM comments WHERE id IN (" +
+            "SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rn " +
+            "FROM comments WHERE post_id IN (:postIds) AND parent_comment_id IS NULL AND is_deleted = false) t " +
+            "WHERE t.rn <= :limit) ORDER BY created_at DESC", nativeQuery = true)
+    List<Comment> findLatestTopLevelPerPost(@Param("postIds") java.util.Collection<UUID> postIds, @Param("limit") int limit);
+
     Page<Comment> findByParentCommentIdAndDeletedFalse(UUID parentCommentId, Pageable pageable);
     List<Comment> findByParentCommentIdAndDeletedFalse(UUID parentCommentId);
     Optional<Comment> findByIdAndDeletedFalse(UUID id);
@@ -30,4 +40,8 @@ public interface CommentRepository extends BaseJpaRepository<Comment, UUID> {
     /** Số bình luận của mình dưới bài của từng tác giả kể từ mốc `since`. */
     @Query("SELECT p.authorId, COUNT(c) FROM Comment c, Post p WHERE c.postId = p.id AND c.authorId = :userId AND c.deleted = false AND c.createdAt >= :since GROUP BY p.authorId")
     List<Object[]> countInteractionsByAuthor(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
+
+    /** Các bình luận gần đây (người dùng, bài, thời điểm) làm đầu vào cho lọc cộng tác. */
+    @Query("SELECT c.authorId, c.postId, c.createdAt FROM Comment c WHERE c.deleted = false AND c.createdAt >= :since ORDER BY c.createdAt DESC")
+    List<Object[]> findRecentInteractionRows(@Param("since") java.time.LocalDateTime since, org.springframework.data.domain.Pageable pageable);
 }

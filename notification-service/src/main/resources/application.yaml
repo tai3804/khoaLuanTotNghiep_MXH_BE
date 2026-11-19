@@ -15,11 +15,16 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${JPA_DDL_AUTO:update}
     show-sql: false
     properties:
       hibernate:
         format_sql: true
+        default_batch_fetch_size: 50
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -33,7 +38,7 @@ spring:
       properties:
         spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
         spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
-        spring.json.trusted.packages: "*"
+        spring.json.trusted.packages: "iuh.fit.*,java.util"
         spring.json.use.type.headers: false
         spring.json.value.default.type: java.util.HashMap
 

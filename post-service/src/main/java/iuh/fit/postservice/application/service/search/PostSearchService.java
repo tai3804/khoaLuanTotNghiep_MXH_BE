@@ -4,15 +4,16 @@ import iuh.fit.postservice.application.service.PostEmbeddingService;
 import iuh.fit.postservice.application.service.PostVisibilityService;
 import iuh.fit.postservice.application.service.ReputationGuard;
 import iuh.fit.postservice.application.service.ranking.FeedRankingService;
+import iuh.fit.postservice.application.service.ranking.MmrReranker;
 import iuh.fit.postservice.application.service.ranking.PostRelevanceScorer;
+import iuh.fit.postservice.application.service.search.SearchScorer.Weights;
 import iuh.fit.postservice.application.service.search.SearchTextAnalyzer.ParsedQuery;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.enums.PostStatus;
 import iuh.fit.postservice.infrastructure.persistence.repository.PostRepository;
-import iuh.fit.postservice.infrastructure.persistence.search.PostLexicalIndex;
-import iuh.fit.postservice.infrastructure.persistence.search.PostLexicalIndex.CorpusStats;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
@@ -31,98 +32,106 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Tìm kiếm bài viết theo kiến trúc nhiều tầng (cascade) của các hệ thống tìm kiếm mạng xã hội quy mô lớn:
+ * Tìm kiếm bài viết theo <b>ngữ nghĩa</b> (embedding) kết hợp đồ thị xã hội, theo kiến trúc nhiều tầng. Không dùng chỉ mục
+ * toàn văn (tsvector/GIN) hay BM25: sức mạnh nằm ở không gian vector, đồ thị quan hệ và xếp hạng học được.
  *
  * <ol>
- *   <li><b>Hiểu truy vấn</b> ({@link SearchTextAnalyzer}): chuẩn hoá, bỏ dấu, tách từ khoá/hashtag, khớp tiền tố từ cuối.</li>
- *   <li><b>Truy xuất ứng viên song song</b> (giống tầng L0 của Facebook: "hybrid" = khớp từ khoá + embedding):
+ *   <li><b>Hiểu truy vấn</b> ({@link SearchTextAnalyzer}): cụm có dấu / không dấu, hashtag.</li>
+ *   <li><b>Truy xuất ứng viên song song</b>:
  *     <ul>
- *       <li>A. Chỉ mục đảo GIN (term matching) toàn bộ bài viết;</li>
- *       <li>B. Embedding ANN, pgvector HNSW cosine (Embedding-based Retrieval);</li>
- *       <li>C. Truy xuất theo đồ thị xã hội: cùng truy vấn từ khoá nhưng giới hạn trong bài của bạn bè/người theo dõi/chính mình
- *           (toán tử friends-of của Unicorn), để bài của người quen không bị chìm khi truy vấn có quá nhiều kết quả công khai.</li>
+ *       <li>A. Embedding ANN toàn cục, pgvector HNSW cosine (Embedding-based Retrieval);</li>
+ *       <li>B. Nhánh đồ thị xã hội: cosine <i>chính xác</i> trên các bài gần đây của bạn bè/người theo dõi/chính mình, để bài
+ *           của người quen không bị chìm khi có quá nhiều bài công khai gần nghĩa hơn một chút;</li>
+ *       <li>C. Hashtag trong truy vấn (khớp chính xác qua bảng hashtag).</li>
  *     </ul></li>
  *   <li><b>Trộn và cắt (L1)</b>: Reciprocal Rank Fusion ({@link RankFusion}) giữ {@value #FUSED_CUT} ứng viên.</li>
- *   <li><b>Xếp hạng (L2)</b>: BM25 ({@link Bm25}) + cosine + cụm khớp + hashtag, điều chỉnh bởi tín hiệu xã hội, tương tác,
- *       độ mới và uy tín tác giả ({@link SearchScorer}).</li>
- *   <li><b>Đa dạng hoá</b>: phạt nhiều bài liên tiếp của cùng một tác giả ({@link PostRelevanceScorer#diversify}).</li>
+ *   <li><b>Xếp hạng (L2)</b>: ngữ nghĩa (z-score theo phân phối nền của chính truy vấn) + cụm khớp + hashtag, điều chỉnh bởi
+ *       tín hiệu xã hội, tương tác, độ mới và uy tín tác giả, với bộ trọng số <i>học được</i> ({@link SearchScorer.Weights}).</li>
+ *   <li><b>Đa dạng hoá</b>: MMR trên embedding ({@link MmrReranker}); không có vector thì phạt theo tác giả.</li>
  * </ol>
  *
- * Quyền xem bài được áp dụng <b>trước</b> khi xếp hạng, nên tổng số kết quả và phân trang là chính xác.
- * Mỗi tầng tự suy giảm nhẹ nhàng: thiếu embedding thì chỉ còn từ khoá; thiếu chỉ mục full-text thì chỉ còn embedding.
+ * Quyền xem bài được áp dụng <b>trước</b> khi xếp hạng, nên tổng số kết quả và phân trang là chính xác. Thiếu embedding của
+ * truy vấn (ai-service lỗi) thì chỉ còn nhánh hashtag.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PostSearchService {
 
-    static final int LEXICAL_LIMIT = 200;
-    static final int SOCIAL_LIMIT = 100;
     static final int VECTOR_LIMIT = 150;
+    static final int SOCIAL_LIMIT = 100;
+    static final int SOCIAL_POOL = 300;
+    static final int SOCIAL_WINDOW_DAYS = 90;
+    static final int HASHTAG_LIMIT = 50;
     static final int FUSED_CUT = 120;
     static final int RESULT_CAP = 200;
 
-    private final PostLexicalIndex lexicalIndex;
     private final PostEmbeddingService postEmbeddingService;
     private final PostRepository postRepository;
     private final PostVisibilityService postVisibilityService;
     private final FeedRankingService feedRankingService;
     private final ReputationGuard reputationGuard;
+    private final SearchWeightsProvider weightsProvider;
 
-    public record Hit(Post post, double score, String reason, double bm25, double cosine) {
+    /** Một ứng viên đã truy xuất, kèm đặc trưng xếp hạng. */
+    public record Candidate(Post post, SearchScorer.Features features, double authorWeight, double rrfScore, double cosine,
+                            boolean friend, boolean following, boolean memberGroup) {
     }
 
-    /** {@code queryVector} rỗng nếu không tạo được embedding (dùng để ghi nhận ý định tìm kiếm cho bảng tin). */
-    public record Result(List<Hit> hits, List<Float> queryVector) {
-        static Result empty(List<Float> vector) {
-            return new Result(List.of(), vector);
+    /** Kết quả giai đoạn truy xuất và trích đặc trưng; {@code queryVector} rỗng nếu không tạo được embedding. */
+    public record Collected(List<Candidate> candidates, List<Float> queryVector) {
+        static Collected empty(List<Float> vector) {
+            return new Collected(List.of(), vector);
         }
     }
 
-    public Result search(String rawQuery, UUID viewerId) {
-        long t0 = System.nanoTime();
-        ParsedQuery query = SearchTextAnalyzer.parse(rawQuery);
-        if (query.isEmpty()) return Result.empty(List.of());
+    public record Hit(Post post, double score, String reason, double cosine) {
+    }
 
-        // --- Hiểu truy vấn + vector truy vấn (cache) ---
+    public record Result(List<Hit> hits, List<Float> queryVector) {
+    }
+
+    public Result search(String rawQuery, UUID viewerId) {
+        Collected collected = collect(rawQuery, viewerId);
+        if (collected.candidates().isEmpty()) return new Result(List.of(), collected.queryVector());
+        return new Result(rank(collected.candidates(), weightsProvider.current()), collected.queryVector());
+    }
+
+    /**
+     * Truy xuất (A + B + C), hợp nhất RRF, lọc quyền xem và trích đặc trưng. Tách riêng khỏi bước chấm điểm để bộ đánh giá offline
+     * ({@code SearchEvaluator}) có thể chấm lại cùng một tập ứng viên bằng nhiều bộ trọng số khác nhau.
+     */
+    public Collected collect(String rawQuery, UUID viewerId) {
+        ParsedQuery query = SearchTextAnalyzer.parse(rawQuery);
+        if (query.isEmpty()) return Collected.empty(List.of());
+
+        // --- Vector truy vấn (cache) và phân phối nền cosine của truy vấn này ---
         List<Float> queryVector = postEmbeddingService.getCachedQueryEmbedding(query.raw());
-        CorpusStats stats = lexicalIndex.isAvailable() ? lexicalIndex.corpusStats() : new CorpusStats(0, 1.0);
-        // Phân phối nền cosine của truy vấn này; không ước lượng được (corpus quá nhỏ/chưa có vector) thì bỏ nhánh ngữ nghĩa.
         PostEmbeddingService.QueryBaseline baseline = queryVector.isEmpty() ? null
-                : postEmbeddingService.sampleQueryBaseline(queryVector, stats.totalDocs()).orElse(null);
+                : postEmbeddingService.sampleQueryBaseline(queryVector, postRepository.countByDeletedFalse()).orElse(null);
         boolean hasVector = baseline != null;
-        long tEmbed = System.nanoTime();
 
         // --- Đồ thị xã hội của người xem ---
         Set<UUID> friendIds = new HashSet<>();
         Set<UUID> followingIds = new HashSet<>();
         if (viewerId != null) feedRankingService.loadSocialGraph(friendIds, followingIds);
 
-        long tGraph = System.nanoTime();
-
         // --- Truy xuất ứng viên (L0) ---
-        String tsQuery = PostLexicalIndex.toTsQuery(query.terms(), query.prefixLast());
-        List<UUID> lexical = lexicalIndex.match(tsQuery, LEXICAL_LIMIT, null);
-
+        List<UUID> global = List.of();
         List<UUID> social = List.of();
-        if (viewerId != null) {
-            Set<UUID> circle = new LinkedHashSet<>(friendIds);
-            circle.addAll(followingIds);
-            circle.add(viewerId);
-            social = lexicalIndex.match(tsQuery, SOCIAL_LIMIT, circle);
+        if (hasVector) {
+            global = postEmbeddingService.searchSimilar(queryVector, VECTOR_LIMIT, 0.0).stream()
+                    .filter(m -> baseline.zScore(m.similarity()) >= SearchScorer.Z_CANDIDATE)
+                    .map(PostEmbeddingService.PostVectorMatch::postId).toList();
+            if (viewerId != null) {
+                social = socialCandidates(queryVector, baseline, friendIds, followingIds, viewerId);
+            }
         }
-
-        List<UUID> vector = hasVector
-                ? postEmbeddingService.searchSimilar(queryVector, VECTOR_LIMIT, 0.0).stream()
-                        .filter(m -> baseline.zScore(m.similarity()) >= SearchScorer.Z_CANDIDATE)
-                        .map(PostEmbeddingService.PostVectorMatch::postId).toList()
-                : List.of();
-
-        long tRetrieve = System.nanoTime();
+        List<UUID> hashtag = hashtagCandidates(query);
 
         // --- Trộn + cắt (L1) ---
-        Map<UUID, Double> fused = RankFusion.reciprocalRank(List.of(lexical, vector, social));
-        if (fused.isEmpty()) return Result.empty(queryVector);
+        Map<UUID, Double> fused = RankFusion.reciprocalRank(List.of(global, social, hashtag));
+        if (fused.isEmpty()) return Collected.empty(queryVector);
         List<UUID> candidateIds = fused.entrySet().stream()
                 .sorted(Map.Entry.<UUID, Double>comparingByValue().reversed())
                 .limit(FUSED_CUT)
@@ -133,63 +142,30 @@ public class PostSearchService {
         List<Post> posts = postRepository.findAllWithCollectionsByIdIn(candidateIds).stream()
                 .filter(p -> p != null && !p.isDeleted() && !p.isArchived() && p.getStatus() == PostStatus.PUBLISHED)
                 .toList();
-        if (posts.isEmpty()) return Result.empty(queryVector);
+        if (posts.isEmpty()) return Collected.empty(queryVector);
         Set<UUID> visibleIds = postVisibilityService.visiblePostIds(posts, viewerId, false);
         List<Post> visible = posts.stream().filter(p -> visibleIds.contains(p.getId())).toList();
-        if (visible.isEmpty()) return Result.empty(queryVector);
-
-        long tLoad = System.nanoTime();
+        if (visible.isEmpty()) return Collected.empty(queryVector);
 
         // --- Đặc trưng cho L2 ---
         List<UUID> visibleIdList = visible.stream().map(Post::getId).toList();
         Map<UUID, Double> cosines = hasVector
                 ? postEmbeddingService.computeSimilaritiesForPosts(visibleIdList, postEmbeddingService.toVectorString(queryVector))
                 : Map.of();
-
-        List<Double> idfs = new ArrayList<>(query.terms().size());
-        for (int i = 0; i < query.terms().size(); i++) {
-            boolean prefix = query.prefixLast() && i == query.terms().size() - 1;
-            idfs.add(stats.totalDocs() > 0
-                    ? Bm25.idf(stats.totalDocs(), lexicalIndex.docFrequency(query.terms().get(i), prefix))
-                    : 0.0);
-        }
-
-        Map<UUID, Double> bm25 = new HashMap<>();
-        Map<UUID, Double> phrase = new HashMap<>();
-        for (Post p : visible) {
-            String content = p.getContent() == null ? "" : p.getContent();
-            List<String> tokens = SearchTextAnalyzer.tokens(content);
-            List<String> exactTokens = SearchTextAnalyzer.exactTokens(content);
-            double score = stats.totalDocs() > 0
-                    ? Bm25.score(tokens, exactTokens, query.terms(), query.exactTerms(), idfs, query.prefixLast(), stats.avgDocLength())
-                    : 0.0;
-            bm25.put(p.getId(), score);
-            phrase.put(p.getId(), phraseMatch(query, content, tokens));
-        }
-
         Set<UUID> memberGroups = postVisibilityService.memberGroupIds(visible);
-        Map<UUID, Integer> interactions = viewerId != null
-                ? feedRankingService.loadInteractions(viewerId, LocalDateTime.now()) : Map.of();
+        LocalDateTime now = LocalDateTime.now();
+        Map<UUID, Integer> interactions = viewerId != null ? feedRankingService.loadInteractions(viewerId, now) : Map.of();
         Map<UUID, Double> reputation = reputationGuard.feedWeights(
                 visible.stream().map(Post::getAuthorId).filter(a -> !a.equals(viewerId)).distinct().toList());
 
-        long tFeatures = System.nanoTime();
-
-        // --- Xếp hạng (L2) ---
-        LocalDateTime now = LocalDateTime.now();
-        Map<UUID, Post> byId = new HashMap<>();
-        Map<UUID, Double> finalScores = new HashMap<>();
-        Map<UUID, String> reasons = new HashMap<>();
-        List<PostRelevanceScorer.Item> scored = new ArrayList<>(visible.size());
+        List<Candidate> out = new ArrayList<>(visible.size());
         for (Post p : visible) {
             UUID id = p.getId();
-            double rawBm25 = bm25.getOrDefault(id, 0.0);
             double cosine = cosines.getOrDefault(id, 0.0);
             double z = hasVector && cosines.containsKey(id) ? baseline.zScore(cosine) : -10.0;
-            double hashtag = hashtagMatch(query, p);
-            // Khớp từ khoá tính theo BM25 (đúng dấu nếu người dùng gõ có dấu), không theo việc trúng chỉ mục đã bỏ dấu.
-            boolean lexicalHit = rawBm25 > 0;
-            if (!SearchScorer.isRelevant(rawBm25, z, hashtag)) continue;
+            double phrase = phraseMatch(query, p.getContent() == null ? "" : p.getContent());
+            double hashtagMatch = hashtagMatch(query, p);
+            if (!SearchScorer.isRelevant(phrase, z, hashtagMatch)) continue;
 
             boolean friend = friendIds.contains(p.getAuthorId());
             boolean following = followingIds.contains(p.getAuthorId());
@@ -198,62 +174,108 @@ public class PostSearchService {
             double ageHours = p.getCreatedAt() == null ? 0 : Duration.between(p.getCreatedAt(), now).toMinutes() / 60.0;
 
             SearchScorer.Features f = new SearchScorer.Features(
-                    Bm25.normalize(rawBm25, idfs),
-                    z,
-                    phrase.getOrDefault(id, 0.0),
-                    hashtag,
+                    z, phrase, hashtagMatch,
                     SearchScorer.social(own, friend, following, group, interactions.getOrDefault(p.getAuthorId(), 0)),
                     SearchScorer.engagement(p.getLikeCount(), p.getCommentCount(), p.getShareCount()),
                     SearchScorer.freshness(ageHours));
-            if (SearchScorer.relevance(f) < SearchScorer.MIN_RELEVANCE) continue;
-            double score = SearchScorer.score(f, reputation.getOrDefault(p.getAuthorId(), 1.0));
-            String reason = SearchScorer.reason(f, lexicalHit, friend, following, group);
+            out.add(new Candidate(p, f, reputation.getOrDefault(p.getAuthorId(), 1.0), fused.getOrDefault(id, 0.0),
+                    cosine, friend, following, group));
+        }
+        log.debug("Search '{}' viewer={}: global={} social={} hashtag={} fused={} visible={} candidates={}",
+                query.raw(), viewerId, global.size(), social.size(), hashtag.size(), candidateIds.size(), visible.size(), out.size());
+        return new Collected(out, queryVector);
+    }
 
-            byId.put(id, p);
-            finalScores.put(id, score);
+    /** Chấm điểm bằng bộ trọng số {@code w}, cắt đuôi rồi đa dạng hoá bằng MMR. */
+    List<Hit> rank(List<Candidate> candidates, Weights w) {
+        Map<UUID, Candidate> byId = new HashMap<>();
+        Map<UUID, String> reasons = new HashMap<>();
+        List<PostRelevanceScorer.Item> scored = new ArrayList<>(candidates.size());
+        for (Candidate c : candidates) {
+            if (SearchScorer.relevance(c.features(), w) < SearchScorer.MIN_RELEVANCE) continue;
+            UUID id = c.post().getId();
+            double score = SearchScorer.score(c.features(), c.authorWeight(), w);
+            String reason = SearchScorer.reason(c.features(), c.friend(), c.following(), c.memberGroup());
+            byId.put(id, c);
             reasons.put(id, reason);
-            scored.add(new PostRelevanceScorer.Item(id, p.getAuthorId(), score, reason));
+            scored.add(new PostRelevanceScorer.Item(id, c.post().getAuthorId(), score, reason));
         }
         scored.sort(Comparator.comparingDouble(PostRelevanceScorer.Item::score).reversed());
 
-        // --- Cắt đuôi theo ngưỡng tương đối rồi đa dạng hoá ---
         double[] sortedScores = scored.stream().mapToDouble(PostRelevanceScorer.Item::score).toArray();
         List<PostRelevanceScorer.Item> kept = scored.subList(0, SearchScorer.cutoffIndex(sortedScores, SearchScorer.RELATIVE_CUTOFF));
-        List<PostRelevanceScorer.Item> ranked = PostRelevanceScorer.diversify(kept, RESULT_CAP);
-        List<Hit> hits = ranked.stream()
-                .map(it -> new Hit(byId.get(it.postId()), Math.round(finalScores.get(it.postId()) * 1000.0) / 1000.0,
-                        reasons.get(it.postId()), bm25.getOrDefault(it.postId(), 0.0), cosines.getOrDefault(it.postId(), 0.0)))
+
+        Map<UUID, float[]> vectors = postEmbeddingService.getEmbeddings(kept.stream().map(PostRelevanceScorer.Item::postId).toList());
+        List<PostRelevanceScorer.Item> ranked = vectors.isEmpty()
+                ? PostRelevanceScorer.diversify(kept, RESULT_CAP)
+                : MmrReranker.rerank(kept, vectors, MmrReranker.DEFAULT_LAMBDA, RESULT_CAP);
+
+        return ranked.stream()
+                .map(it -> new Hit(byId.get(it.postId()).post(), Math.round(it.score() * 1000.0) / 1000.0,
+                        reasons.get(it.postId()), byId.get(it.postId()).cosine()))
                 .toList();
-        long tEnd = System.nanoTime();
-        log.debug("Search '{}' viewer={}: lexical={} social={} vector={} fused={} visible={} scored={} kept={} ranked={} | ms: embed={} graph={} retrieve={} load={} features={} rank={}",
-                query.raw(), viewerId, lexical.size(), social.size(), vector.size(), candidateIds.size(), visible.size(),
-                scored.size(), kept.size(), hits.size(),
-                (tEmbed - t0) / 1_000_000, (tGraph - tEmbed) / 1_000_000, (tRetrieve - tGraph) / 1_000_000,
-                (tLoad - tRetrieve) / 1_000_000, (tFeatures - tLoad) / 1_000_000, (tEnd - tFeatures) / 1_000_000);
-        return new Result(hits, queryVector);
+    }
+
+    /**
+     * Nhánh đồ thị xã hội: cosine chính xác (không xấp xỉ) trên các bài {@value #SOCIAL_WINDOW_DAYS} ngày gần nhất của tối đa
+     * {@value #SOCIAL_POOL} bài thuộc vòng quan hệ. Tập này nhỏ nên tính chính xác trong cơ sở dữ liệu, tránh bài của người quen
+     * bị HNSW toàn cục bỏ sót khi có nhiều bài công khai gần nghĩa hơn một chút.
+     */
+    private List<UUID> socialCandidates(List<Float> queryVector, PostEmbeddingService.QueryBaseline baseline,
+                                        Set<UUID> friendIds, Set<UUID> followingIds, UUID viewerId) {
+        try {
+            Set<UUID> circle = new LinkedHashSet<>(friendIds);
+            circle.addAll(followingIds);
+            circle.add(viewerId);
+            List<UUID> recent = postRepository.findRecentIdsByAuthors(
+                    circle, LocalDateTime.now().minusDays(SOCIAL_WINDOW_DAYS), PageRequest.of(0, SOCIAL_POOL));
+            if (recent.isEmpty()) return List.of();
+            Map<UUID, Double> sims = postEmbeddingService.computeSimilaritiesForPosts(
+                    recent, postEmbeddingService.toVectorString(queryVector));
+            return sims.entrySet().stream()
+                    .filter(e -> baseline.zScore(e.getValue()) >= SearchScorer.Z_CANDIDATE)
+                    .sorted(Map.Entry.<UUID, Double>comparingByValue().reversed())
+                    .limit(SOCIAL_LIMIT)
+                    .map(Map.Entry::getKey)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Social-graph retrieval skipped: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Nhánh hashtag: bài gắn đúng hashtag có trong truy vấn, mới nhất trước. */
+    private List<UUID> hashtagCandidates(ParsedQuery query) {
+        if (query.hashtagTags().isEmpty()) return List.of();
+        Set<UUID> ids = new LinkedHashSet<>();
+        try {
+            for (String tag : query.hashtagTags()) {
+                postRepository.findByHashtag(tag, PageRequest.of(0, HASHTAG_LIMIT)).forEach(p -> ids.add(p.getId()));
+            }
+        } catch (Exception e) {
+            log.warn("Hashtag retrieval skipped: {}", e.getMessage());
+        }
+        return new ArrayList<>(ids);
     }
 
     /** 1,0 nếu nội dung chứa nguyên cụm truy vấn đúng dấu; 0,6 nếu chỉ khớp sau khi bỏ dấu (theo ranh giới từ); 0 nếu không. */
-    static double phraseMatch(ParsedQuery query, String content, List<String> docTokens) {
+    static double phraseMatch(ParsedQuery query, String content) {
         if (content.isEmpty() || query.exactPhrase().isEmpty()) return 0.0;
         String exactContent = Normalizer.normalize(content, Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
         if (exactContent.contains(query.exactPhrase())) return SearchScorer.PHRASE_EXACT;
-        String joined = " " + String.join(" ", docTokens);
+        String joined = " " + String.join(" ", SearchTextAnalyzer.tokens(content));
         if (!query.foldedPhrase().isEmpty() && joined.contains(" " + query.foldedPhrase())) return SearchScorer.PHRASE_FOLDED;
         return 0.0;
     }
 
-    /** 1,0 nếu bài gắn đúng hashtag có trong truy vấn; 0,5 nếu một từ khoá thường trùng hashtag của bài. */
+    /** 1,0 nếu bài gắn đúng hashtag có trong truy vấn; 0 nếu không. */
     static double hashtagMatch(ParsedQuery query, Post post) {
-        if (post.getHashtags() == null || post.getHashtags().isEmpty()) return 0.0;
+        if (post.getHashtags() == null || post.getHashtags().isEmpty() || query.hashtags().isEmpty()) return 0.0;
         Set<String> tags = post.getHashtags().stream()
                 .map(t -> SearchTextAnalyzer.fold(t).replaceAll("[^a-z0-9]", ""))
                 .collect(Collectors.toSet());
         for (String h : query.hashtags()) {
             if (tags.contains(h)) return 1.0;
-        }
-        for (String t : query.terms()) {
-            if (tags.contains(t)) return 0.5;
         }
         return 0.0;
     }

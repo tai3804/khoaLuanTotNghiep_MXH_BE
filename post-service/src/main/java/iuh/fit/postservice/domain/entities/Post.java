@@ -15,6 +15,9 @@ import java.util.Set;
 import java.util.UUID;
 
 @Entity
+// Chỉ UPDATE những cột thực sự đổi: các bộ đếm (thích, bình luận, chia sẻ) được cập nhật đồng thời với trạng thái/xoá/kiểm duyệt,
+// nếu không mỗi lần save() sẽ ghi đè toàn bộ cột bằng bản đọc cũ (lost update, có thể "hồi sinh" bài vừa bị xoá hoặc ẩn).
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "posts", indexes = {
         @Index(name = "idx_post_author", columnList = "author_id"),
         @Index(name = "idx_post_created_at", columnList = "created_at"),

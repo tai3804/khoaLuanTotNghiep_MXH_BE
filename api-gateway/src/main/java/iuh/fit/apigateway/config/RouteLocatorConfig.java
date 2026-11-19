@@ -114,7 +114,11 @@ public class RouteLocatorConfig {
     public GlobalFilter internalBoundaryProtectionFilter() {
         return (exchange, chain) -> {
             String path = exchange.getRequest().getURI().getRawPath();
-            if (path != null && (path.startsWith("/api/v1/internal/") || path.contains("/api/v1/internal/"))) {
+            // /api/v1/ai/embeddings/** do post-service và user-service gọi thẳng vào ai-service (không qua gateway) và ai-service
+            // mở công khai đường dẫn này; nếu để route /api/v1/ai/** chuyển tiếp thì bất kỳ ai trên Internet cũng gọi được
+            // và đốt hạn ngạch Gemini mà không cần đăng nhập.
+            if (path != null && (path.startsWith("/api/v1/internal/") || path.contains("/api/v1/internal/")
+                    || path.startsWith("/api/v1/ai/embeddings"))) {
                 exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
                 exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
                 byte[] body = "{\"code\":403,\"message\":\"Truy cập đường dẫn nội bộ bị từ chối\"}"

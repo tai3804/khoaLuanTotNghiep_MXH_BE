@@ -1,5 +1,8 @@
 package iuh.fit.callservice.application.features.call.queries.get_call_history;
 
+import java.util.stream.Collectors;
+import java.util.HashMap;
+import java.util.Map;
 import iuh.fit.commonframework.application.dto.PagedResponse;
 import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.callservice.application.mapper.CallFeatureMapper;
@@ -38,19 +41,25 @@ public class GetCallHistoryQueryHandler {
         PageRequest pageRequest = PageRequest.of(pageZeroBased, size);
         Page<CallParticipant> participantPage = callParticipantRepository.findUserCallHistory(query.getCurrentUserId(), pageRequest);
 
+        // Tải phiên gọi và danh sách người tham gia theo lô: 2 truy vấn cho cả trang thay vì 2 truy vấn cho mỗi dòng (N+1)
+        List<UUID> sessionIds = participantPage.getContent().stream().map(CallParticipant::getCallSessionId).distinct().toList();
+        Map<UUID, CallSession> sessions = sessionIds.isEmpty() ? Map.of()
+                : callSessionRepository.findAllById(sessionIds).stream().collect(Collectors.toMap(CallSession::getId, s -> s, (x, y) -> x));
+        Map<UUID, List<UUID>> participantsBySession = new HashMap<>();
+        if (!sessionIds.isEmpty()) {
+            for (CallParticipant cp : callParticipantRepository.findByCallSessionIdIn(sessionIds)) {
+                participantsBySession.computeIfAbsent(cp.getCallSessionId(), k -> new ArrayList<>()).add(cp.getUserId());
+            }
+        }
+
         List<GetCallHistoryResult> results = new ArrayList<>();
         for (CallParticipant participant : participantPage.getContent()) {
-            Optional<CallSession> sessionOpt = callSessionRepository.findById(participant.getCallSessionId());
-            if (sessionOpt.isPresent()) {
-                CallSession session = sessionOpt.get();
+            CallSession session = sessions.get(participant.getCallSessionId());
+            if (session != null) {
                 GetCallHistoryResult result = callFeatureMapper.toGetCallHistoryResult(session, participant);
                 result.setMyRole(participant.getRole());
                 result.setMyStatus(participant.getStatus());
-                List<UUID> participantUserIds = callParticipantRepository.findByCallSessionId(session.getId())
-                        .stream()
-                        .map(CallParticipant::getUserId)
-                        .toList();
-                result.setParticipantUserIds(participantUserIds);
+                result.setParticipantUserIds(participantsBySession.getOrDefault(session.getId(), List.of()));
                 results.add(result);
             }
         }

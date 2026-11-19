@@ -20,6 +20,10 @@ import java.util.UUID;
 public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> {
     Optional<GroupMember> findByGroupIdAndUserId(UUID groupId, UUID userId);
     List<GroupMember> findAllByUserIdAndStatus(UUID userId, GroupMemberStatus status);
+    /** Mọi quan hệ của một người dùng với các nhóm, kể cả đang chờ duyệt, được mời, bị cấm hoặc bị từ chối. */
+    List<GroupMember> findAllByUserId(UUID userId);
+    /** Thành viên đã được duyệt của nhiều người dùng trong một truy vấn (gợi ý nhóm theo đồ thị xã hội). */
+    List<GroupMember> findAllByUserIdInAndStatus(Collection<UUID> userIds, GroupMemberStatus status);
     List<GroupMember> findAllByGroupIdAndStatus(UUID groupId, GroupMemberStatus status);
 
     List<GroupMember> findAllByGroupId(UUID groupId);
@@ -27,6 +31,8 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> 
 
     /** Quan hệ của một người dùng với nhiều nhóm trong một truy vấn (tránh N+1 khi liệt kê nhóm). */
     List<GroupMember> findAllByUserIdAndGroupIdIn(UUID userId, Collection<UUID> groupIds);
+    /** Quan hệ của nhiều người dùng với một nhóm trong một truy vấn (thêm/mời hàng loạt). */
+    List<GroupMember> findAllByGroupIdAndUserIdIn(UUID groupId, Collection<UUID> userIds);
 
     long countByGroupIdAndStatus(UUID groupId, GroupMemberStatus status);
 

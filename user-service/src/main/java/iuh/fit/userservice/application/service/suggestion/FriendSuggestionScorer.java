@@ -35,6 +35,11 @@ public final class FriendSuggestionScorer {
     static final double FOLLOWS_ME = 7.0;
     static final double I_FOLLOW = 4.0;
 
+    // Tín hiệu đồ thị (Personalized PageRank, cộng đồng): bổ sung cho Adamic–Adar, không thay thế
+    static final double GRAPH_WEIGHT = 3.0;
+    static final double GRAPH_REASON_MIN = 0.05;
+    static final double COMMUNITY_BONUS = 0.8;
+
     // Tín hiệu hồ sơ (cố ý nhỏ)
     static final double SAME_LOCATION = 1.0;
     static final double ONLINE_NOW = 0.6;
@@ -61,7 +66,17 @@ public final class FriendSuggestionScorer {
             boolean online,
             Instant lastActiveAt,
             LocalDateTime createdAt,
-            long friendCount) {
+            long friendCount,
+            double graphScore,
+            boolean sameCommunity) {
+
+        /** Không có tín hiệu đồ thị (Personalized PageRank / cộng đồng). */
+        public Signals(List<Integer> mutualFriendDegrees, int commonGroups, double commonGroupWeight, boolean followsMe,
+                       boolean iFollow, String viewerLocation, String candidateLocation, Integer ageGapYears, boolean online,
+                       Instant lastActiveAt, LocalDateTime createdAt, long friendCount) {
+            this(mutualFriendDegrees, commonGroups, commonGroupWeight, followsMe, iFollow, viewerLocation, candidateLocation,
+                    ageGapYears, online, lastActiveAt, createdAt, friendCount, 0.0, false);
+        }
     }
 
     public record Scored(double score, long mutualCount, List<String> reasons, boolean hasSocialSignal) {
@@ -108,6 +123,16 @@ public final class FriendSuggestionScorer {
             social = true;
             score += mutualScore(adamicAdar(s.mutualFriendDegrees()));
             reasons.add(mutualCount + " bạn chung");
+        }
+        // Quan hệ gián tiếp: Personalized PageRank ∈ (0, 1] (đã hiệu chỉnh theo bậc) cộng tối đa GRAPH_WEIGHT điểm, thưởng thêm
+        // khi cùng cộng đồng bạn bè. Với người chưa có bạn chung đây là tín hiệu duy nhất cho thấy họ gần mạng quan hệ của bạn.
+        if (s.graphScore() > 0) {
+            score += GRAPH_WEIGHT * Math.min(1.0, s.graphScore());
+            if (mutualCount == 0 && s.graphScore() >= GRAPH_REASON_MIN) reasons.add("Kết nối gián tiếp qua bạn bè");
+        }
+        if (s.sameCommunity()) {
+            score += COMMUNITY_BONUS;
+            reasons.add("Cùng cộng đồng bạn bè");
         }
         if (s.commonGroups() > 0) {
             social = true;

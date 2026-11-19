@@ -20,6 +20,9 @@ public interface CallParticipantRepository extends BaseJpaRepository<CallPartici
 
     List<CallParticipant> findByCallSessionId(UUID callSessionId);
 
+    /** Người tham gia của nhiều phiên gọi trong một truy vấn (tránh N+1). */
+    List<CallParticipant> findByCallSessionIdIn(java.util.Collection<UUID> callSessionIds);
+
     List<CallParticipant> findByCallSessionIdAndStatus(UUID callSessionId, ParticipantStatus status);
 
     long countByCallSessionIdAndStatus(UUID callSessionId, ParticipantStatus status);

@@ -13,7 +13,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -188,21 +187,28 @@ public class PostEmbeddingService {
 
         try {
             int safeLimit = Math.max(1, Math.min(limit, 50));
+            // Self-join `p1 JOIN p2 ... ORDER BY p2.embedding <=> p1.embedding` buộc quét toàn bảng rồi sắp xếp (O(N log N)) vì
+            // planner không đẩy được toán tử khoảng cách xuống chỉ mục. LATERAL + LIMIT cho mỗi vector gốc là mẫu chuẩn của
+            // pgvector: vế ORDER BY coi vector gốc là hằng nên dùng được chỉ mục HNSW (xấp xỉ O(log N)).
             String sql = """
-                SELECT p2.post_id, (1 - (p2.embedding <=> p1.embedding)) AS similarity
-                FROM post_embeddings p1
-                JOIN post_embeddings p2 ON p1.post_id != p2.post_id
-                WHERE p1.post_id = ?
-                  AND (1 - (p2.embedding <=> p1.embedding)) >= ?
-                ORDER BY p2.embedding <=> p1.embedding ASC
-                LIMIT ?
+                SELECT p2.post_id, (1 - (p2.embedding <=> src.embedding)) AS similarity
+                FROM (SELECT embedding FROM post_embeddings WHERE post_id = ?) src,
+                     LATERAL (
+                         SELECT pe.post_id, pe.embedding
+                         FROM post_embeddings pe
+                         WHERE pe.post_id <> ?
+                         ORDER BY pe.embedding <=> src.embedding ASC
+                         LIMIT ?
+                     ) p2
+                WHERE (1 - (p2.embedding <=> src.embedding)) >= ?
+                ORDER BY p2.embedding <=> src.embedding ASC
             """;
 
             return jdbcTemplate.query(sql, (rs, rowNum) -> {
                 UUID matchedPostId = UUID.fromString(rs.getString("post_id"));
                 double sim = rs.getDouble("similarity");
                 return new PostVectorMatch(matchedPostId, sim);
-            }, postId, minSimilarity, safeLimit);
+            }, postId, postId, safeLimit, minSimilarity);
 
         } catch (Exception e) {
             log.error("Error finding related posts for {}: {}", postId, e.getMessage(), e);
@@ -267,7 +273,7 @@ public class PostEmbeddingService {
             return;
         }
 
-        CompletableFuture.runAsync(() -> {
+        boolean queued = EmbeddingTaskExecutor.submit(() -> {
             try {
                 List<Float> vector = getQueryEmbedding(content);
                 if (!vector.isEmpty()) {
@@ -277,6 +283,9 @@ public class PostEmbeddingService {
                 log.warn("Async vectorization skipped for post {}: {}", postId, e.getMessage());
             }
         });
+        if (!queued) {
+            log.warn("Embedding queue is full, post {} will be vectorized by the next backfill", postId);
+        }
     }
 
     /**
@@ -407,6 +416,34 @@ public class PostEmbeddingService {
             }, params.toArray()).stream().collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a));
         } catch (Exception e) {
             log.warn("Failed to compute similarities for candidate posts: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * Vector ngữ nghĩa của các bài (bài chưa có vector thì không xuất hiện trong kết quả). Dùng để dựng hồ sơ sở thích
+     * của người dùng từ lịch sử tương tác.
+     */
+    public Map<UUID, float[]> getEmbeddings(Collection<UUID> postIds) {
+        if (postIds == null || postIds.isEmpty() || !postSearchSupport.isVectorAvailable()) {
+            return Collections.emptyMap();
+        }
+        try {
+            String inPlaceholders = String.join(",", Collections.nCopies(postIds.size(), "?::uuid"));
+            String sql = String.format("SELECT post_id, embedding::text AS v FROM post_embeddings WHERE post_id IN (%s)", inPlaceholders);
+            Object[] params = postIds.stream().map(UUID::toString).toArray();
+            Map<UUID, float[]> out = new HashMap<>();
+            jdbcTemplate.query(sql, rs -> {
+                String text = rs.getString("v");
+                if (text == null || text.length() < 3) return;
+                String[] parts = text.substring(1, text.length() - 1).split(",");
+                float[] v = new float[parts.length];
+                for (int k = 0; k < parts.length; k++) v[k] = Float.parseFloat(parts[k].trim());
+                out.put(UUID.fromString(rs.getString("post_id")), v);
+            }, params);
+            return out;
+        } catch (Exception e) {
+            log.warn("Failed to load post embeddings: {}", e.getMessage());
             return Collections.emptyMap();
         }
     }

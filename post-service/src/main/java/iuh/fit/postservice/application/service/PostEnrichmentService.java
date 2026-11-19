@@ -4,6 +4,7 @@ import iuh.fit.postservice.application.features.post.queries.get_post_detail.Get
 import iuh.fit.postservice.domain.entities.Comment;
 import iuh.fit.postservice.domain.entities.Reaction;
 import iuh.fit.postservice.domain.entities.SavedPost;
+import iuh.fit.postservice.domain.enums.ReactionType;
 import iuh.fit.postservice.infrastructure.persistence.repository.CommentRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.ReactionRepository;
 import iuh.fit.postservice.infrastructure.persistence.repository.SavedPostRepository;
@@ -43,11 +44,19 @@ public class PostEnrichmentService {
             return;
         }
 
-        // 1. Lấy tất cả reactions của các bài viết này trong 1 câu SQL batch duy nhất
-        Map<UUID, List<Reaction>> reactionsByPost = Collections.emptyMap();
+        // 1. Cảm xúc: đếm theo loại bằng GROUP BY (không tải từng dòng reaction) + riêng cảm xúc của viewer
+        Map<UUID, List<String>> topTypesByPost = new HashMap<>();
+        Map<UUID, String> myReactionByPost = new HashMap<>();
         try {
-            reactionsByPost = reactionRepository.findByPostIdIn(postIds).stream()
-                    .collect(Collectors.groupingBy(Reaction::getPostId));
+            for (Object[] row : reactionRepository.countTypesByPostIds(postIds)) {
+                List<String> types = topTypesByPost.computeIfAbsent((UUID) row[0], k -> new ArrayList<>());
+                if (types.size() < 5) types.add(((ReactionType) row[1]).name());
+            }
+            if (viewerId != null) {
+                for (Reaction r : reactionRepository.findByUserIdAndPostIdIn(viewerId, postIds)) {
+                    myReactionByPost.put(r.getPostId(), r.getType().name());
+                }
+            }
         } catch (Exception e) {
             log.warn("[PostEnrichment] Lỗi khi tải reactions: {}", e.getMessage());
         }
@@ -64,10 +73,10 @@ public class PostEnrichmentService {
             }
         }
 
-        // 3. Lấy bình luận xem trước (3 bình luận mới nhất mỗi bài) trong 1 câu SQL batch duy nhất
+        // 3. Bình luận xem trước: 3 bình luận mới nhất MỖI bài bằng một truy vấn window function
         Map<UUID, List<Comment>> commentsByPost = Collections.emptyMap();
         try {
-            commentsByPost = commentRepository.findByPostIdInAndParentCommentIdIsNullAndDeletedFalseOrderByCreatedAtDesc(postIds).stream()
+            commentsByPost = commentRepository.findLatestTopLevelPerPost(postIds, 3).stream()
                     .collect(Collectors.groupingBy(Comment::getPostId));
         } catch (Exception e) {
             log.warn("[PostEnrichment] Lỗi khi tải preview comments: {}", e.getMessage());
@@ -78,29 +87,10 @@ public class PostEnrichmentService {
             UUID postId = post.getId();
 
             // A. Cảm xúc (Top reactions + myReaction + isLiked)
-            List<Reaction> reactions = reactionsByPost.getOrDefault(postId, Collections.emptyList());
-            List<String> topTypes = reactions.stream()
-                    .map(r -> r.getType().name())
-                    .distinct()
-                    .limit(5)
-                    .toList();
-            post.setTopReactionTypes(topTypes);
-
-            if (viewerId != null) {
-                Optional<Reaction> myRx = reactions.stream()
-                        .filter(r -> viewerId.equals(r.getUserId()))
-                        .findFirst();
-                if (myRx.isPresent()) {
-                    post.setLiked(true);
-                    post.setMyReaction(myRx.get().getType().name());
-                } else {
-                    post.setLiked(false);
-                    post.setMyReaction(null);
-                }
-            } else {
-                post.setLiked(false);
-                post.setMyReaction(null);
-            }
+            post.setTopReactionTypes(topTypesByPost.getOrDefault(postId, Collections.emptyList()));
+            String myReaction = myReactionByPost.get(postId);
+            post.setLiked(myReaction != null);
+            post.setMyReaction(myReaction);
 
             // B. Trạng thái lưu bài
             post.setSaved(savedPostIds.contains(postId));
