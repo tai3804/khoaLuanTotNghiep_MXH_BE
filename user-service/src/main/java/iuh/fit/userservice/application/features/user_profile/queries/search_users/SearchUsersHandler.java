@@ -5,6 +5,7 @@ import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.userservice.application.features.user_profile.queries.get_user_profile.GetUserProfileResult;
 import iuh.fit.userservice.application.mapper.UserProfileApplicationMapper;
 import iuh.fit.userservice.application.service.SearchText;
+import iuh.fit.userservice.application.service.SemanticSearchPolicy;
 import iuh.fit.userservice.application.service.UserEmbeddingService;
 import iuh.fit.userservice.domain.entities.UserProfile;
 import iuh.fit.userservice.domain.repository.UserProfileRepository;
@@ -92,7 +93,7 @@ public class SearchUsersHandler {
             List<Float> queryVector = userEmbeddingService.getQueryEmbedding(keyword);
             if (queryVector == null || queryVector.isEmpty()) return List.of();
 
-            List<UserEmbeddingService.UserVectorMatch> matches = userEmbeddingService.searchSimilar(queryVector, pageSize * 2, 0.35);
+            List<UserEmbeddingService.UserVectorMatch> matches = userEmbeddingService.searchSimilar(queryVector, pageSize * 2, SemanticSearchPolicy.MIN_SIMILARITY);
             if (matches == null || matches.isEmpty()) return List.of();
 
             List<UUID> matchedUserIds = matches.stream().map(UserEmbeddingService.UserVectorMatch::userId).toList();

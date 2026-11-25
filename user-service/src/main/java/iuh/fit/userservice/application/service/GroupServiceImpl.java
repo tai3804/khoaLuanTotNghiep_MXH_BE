@@ -169,7 +169,7 @@ public class GroupServiceImpl implements GroupService {
             if (!groupEmbeddingService.hasEmbeddings()) return null; // chưa nhóm nào có vector: khỏi tốn một lần gọi Gemini
             List<Float> queryVector = groupEmbeddingService.getQueryEmbedding(keyword);
             if (queryVector == null || queryVector.isEmpty()) return null;
-            List<GroupEmbeddingService.GroupVectorMatch> matches = groupEmbeddingService.searchSimilar(queryVector, pageSize * 2, 0.35);
+            List<GroupEmbeddingService.GroupVectorMatch> matches = groupEmbeddingService.searchSimilar(queryVector, pageSize * 2, SemanticSearchPolicy.MIN_SIMILARITY);
             if (matches == null || matches.isEmpty()) return null;
 
             List<UUID> matchedIds = matches.stream().map(GroupEmbeddingService.GroupVectorMatch::groupId).toList();
