@@ -1,6 +1,11 @@
 server:
   port: ${SERVER_PORT:8082}
 
+# Cỡ pool kết nối DB. application-common.yaml (được import và ghi đè file này) đọc ${HIKARI_MAX_POOL_SIZE:2}, nên khai báo
+# spring.datasource.hikari.maximum-pool-size ở đây KHÔNG có tác dụng (pool thực tế chỉ 2). Biến môi trường vẫn ghi đè được.
+# Aiven cho tối đa 100 kết nối cho cả 11 service nên giữ ở mức vừa phải.
+HIKARI_MAX_POOL_SIZE: 8
+
 spring:
   application:
     name: post-service
@@ -36,10 +41,11 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/post_db}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:root}
-    hikari:
-      maximum-pool-size: 5
-      minimum-idle: 1
   jpa:
+    # Mặc định Spring giữ kết nối DB của lần truy vấn JPA đầu tiên đến hết request (kể cả lúc chờ Gemini / gọi service khác).
+    # Tìm kiếm bài viết còn dùng JdbcTemplate (xin thêm kết nối thứ hai) nên vài request đồng thời là cạn pool và kẹt đến hết
+    # connection-timeout 30 giây. Tắt open-in-view: mỗi truy vấn tự mượn và trả kết nối.
+    open-in-view: false
     hibernate:
       ddl-auto: ${JPA_DDL_AUTO:update}
     show-sql: false

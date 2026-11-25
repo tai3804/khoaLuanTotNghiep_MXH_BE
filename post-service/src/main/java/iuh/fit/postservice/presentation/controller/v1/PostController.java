@@ -64,6 +64,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.cache.CacheManager;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
@@ -173,7 +174,7 @@ public class PostController {
     @PostMapping("/batch")
     @Operation(summary = "Get posts in batch", description = "Retrieves multiple posts by a list of IDs in a single query with eager-loaded media")
     public ResponseEntity<ApiResponse<List<PostResponse>>> getPostsBatch(
-            @RequestBody List<UUID> postIds) {
+            @org.springframework.web.bind.annotation.RequestBody List<UUID> postIds) {
         if (postIds == null || postIds.isEmpty()) {
             return ResponseEntity
                     .ok(ApiResponse.success(Collections.emptyList(), "Batch posts retrieved successfully"));
@@ -215,15 +216,21 @@ public class PostController {
         return ResponseEntity.ok(ApiResponse.success(Map.of("recorded", recorded), "Posts marked as seen"));
     }
 
+    // Ghi thẳng vector tìm kiếm của một bài: chỉ quản trị viên. Trước đây mọi người dùng đã đăng nhập đều gọi được, tức là ghi đè
+    // được vector của bài bất kỳ và làm sai kết quả tìm kiếm (lỗi binding @RequestBody từng che giấu việc này bằng HTTP 500).
+    // Bài mới được post-service tự vector hóa khi đăng (PostPublicationHelper), không cần ai gọi endpoint này.
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{postId}/embedding")
     @Operation(summary = "Save post embedding vector", description = "Saves or updates 768-dimensional embedding vector for semantic search")
     public ResponseEntity<ApiResponse<Boolean>> savePostEmbedding(
             @PathVariable("postId") UUID postId,
-            @RequestBody List<Float> embedding) {
+            @org.springframework.web.bind.annotation.RequestBody List<Float> embedding) {
         boolean saved = postEmbeddingService.saveEmbedding(postId, embedding);
         return ResponseEntity.ok(ApiResponse.success(saved, "Post embedding saved successfully"));
     }
 
+    // Mỗi bài thiếu vector tốn một lần gọi Gemini: chỉ quản trị viên được kích hoạt.
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/embeddings/backfill")
     @Operation(summary = "Backfill embeddings for posts", description = "Generates and saves embeddings for posts that do not have embeddings yet")
     public ResponseEntity<ApiResponse<Map<String, Object>>> backfillEmbeddings(
