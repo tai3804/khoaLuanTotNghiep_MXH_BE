@@ -4,6 +4,7 @@ import iuh.fit.aiservice.application.dto.MessageSummaryDto;
 import iuh.fit.aiservice.application.engine.SmartAssistantEngine;
 import iuh.fit.aiservice.application.service.PostSummaryService;
 import iuh.fit.aiservice.application.service.RagAssistantService;
+import iuh.fit.aiservice.application.service.knowledge.KnowledgeSearchService;
 import iuh.fit.aiservice.application.service.rag.RagContextBuilder;
 import iuh.fit.aiservice.infrastructure.gemini.GeminiApiClient;
 import iuh.fit.commonframework.application.dto.ApiResponse;
@@ -13,6 +14,9 @@ import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -248,14 +252,13 @@ public class AiAssistantController {
             return ResponseEntity.ok(ApiResponse.success(new ChatResponse("Xin chào! Tôi có thể giúp gì cho bạn hôm nay?"), "Tin nhắn rỗng"));
         }
 
-        // RAG: truy xuất bài viết liên quan (theo quyền xem của người hỏi) rồi để mô hình sinh câu trả lời dựa trên tư liệu đó
-        RagContextBuilder.Augmented rag = ragAssistantService.prepare(message);
+        // RAG: truy xuất tài liệu hướng dẫn (theo vai trò của người hỏi) và bài viết liên quan (theo quyền xem của người hỏi)
+        // rồi để mô hình sinh câu trả lời dựa trên tư liệu đó
+        RagContextBuilder.Augmented rag = ragAssistantService.prepare(message, KnowledgeSearchService.audiencesFor(currentRoles()));
         String fallbackReply = RagContextBuilder.fallbackWithSources(
                 smartAssistantEngine.generateChatReply(message, request.getHistory()), rag.sources());
         String reply = geminiApiClient.chatWithHistory(rag.prompt(), request.getHistory(), fallbackReply);
-        List<ChatSource> sources = rag.sources().stream()
-                .map(p -> new ChatSource(p.postId().toString(), p.text().length() > 160 ? p.text().substring(0, 160).trim() + "..." : p.text()))
-                .toList();
+        List<ChatSource> sources = rag.sources().stream().map(AiAssistantController::toChatSource).toList();
 
         return ResponseEntity.ok(ApiResponse.success(new ChatResponse(reply != null && !reply.isBlank() ? reply.trim() : fallbackReply, sources), "Trả lời thành công"));
     }
@@ -518,10 +521,32 @@ public class AiAssistantController {
         }
     }
 
+    /**
+     * Một nguồn được dùng trong câu trả lời. {@code type} là {@code POST} (bài viết, có {@code postId}) hoặc {@code DOC}
+     * (đoạn tài liệu hướng dẫn, có {@code title} dạng "Tên tài liệu > Mục", không có {@code postId}).
+     */
     @Data
     @AllArgsConstructor
     public static class ChatSource {
+        private String type;
         private String postId;
+        private String title;
         private String snippet;
+    }
+
+    private static ChatSource toChatSource(RagContextBuilder.Passage p) {
+        String flat = p.text().replace('\n', ' ');
+        String snippet = flat.length() > 160 ? flat.substring(0, 160).trim() + "..." : flat;
+        if (p.isDoc()) {
+            return new ChatSource("DOC", null, p.title(), snippet);
+        }
+        return new ChatSource("POST", p.ref(), null, snippet);
+    }
+
+    /** Vai trò của người đang gọi (ROLE_USER, ROLE_MODERATOR, ROLE_ADMIN...), dùng để chọn tài liệu được phép xem. */
+    private static List<String> currentRoles() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return List.of();
+        return auth.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
     }
 }

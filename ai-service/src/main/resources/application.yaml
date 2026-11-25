@@ -52,6 +52,11 @@ ai:
   summary:
     enabled: ${AI_SUMMARY_ENABLED:true}
     min-length: ${AI_SUMMARY_MIN_LENGTH:1000}
+  # Kho tri thức: tài liệu hướng dẫn trong src/main/resources/knowledge/*.md được cắt đoạn, tạo vector và lưu ở bảng knowledge_chunks.
+  knowledge:
+    ingest-on-startup: ${AI_KNOWLEDGE_INGEST_ON_STARTUP:true}
+    # Độ giống cosine tối thiểu để một đoạn tài liệu được dùng làm tư liệu (vector Gemini: văn bản không liên quan vẫn ~0.55-0.65)
+    min-similarity: ${AI_KNOWLEDGE_MIN_SIMILARITY:0.70}
   moderation:
     enabled: ${AI_MODERATION_ENABLED:true}
     auto-learn-enabled: ${AI_AUTO_LEARN_ENABLED:true}
