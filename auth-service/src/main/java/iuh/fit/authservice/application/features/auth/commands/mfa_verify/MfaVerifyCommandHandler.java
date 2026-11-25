@@ -1,5 +1,6 @@
 package iuh.fit.authservice.application.features.auth.commands.mfa_verify;
 
+import iuh.fit.authservice.application.features.auth.MfaSessionKeys;
 import iuh.fit.authservice.application.exception.AuthErrorCode;
 import iuh.fit.authservice.application.mapper.LoginUserMapper;
 import iuh.fit.authservice.domain.entities.Device;
@@ -51,7 +52,7 @@ public class MfaVerifyCommandHandler {
 
         String userIdStr = null;
         try {
-            userIdStr = redisCacheService.get("mfa_session:" + mfaToken, String.class);
+            userIdStr = redisCacheService.get(MfaSessionKeys.session(mfaToken), String.class);
         } catch (Exception e) {
             log.error("Failed to read mfa_session from Redis: {}", e.getMessage());
             throw new BusinessException(AuthErrorCode.SERVICE_UNAVAILABLE);
@@ -77,7 +78,7 @@ public class MfaVerifyCommandHandler {
 
         String mfaTypeStr = null;
         try {
-            mfaTypeStr = redisCacheService.get("mfa_session_type:" + mfaToken, String.class);
+            mfaTypeStr = redisCacheService.get(MfaSessionKeys.sessionType(mfaToken), String.class);
         } catch (Exception ignored) {
         }
         MfaType mfaType = mfaTypeStr != null ? MfaType.valueOf(mfaTypeStr) : user.getMfaType();
@@ -102,7 +103,7 @@ public class MfaVerifyCommandHandler {
         } else if (MfaType.EMAIL == mfaType) {
             String storedOtp = null;
             try {
-                storedOtp = redisCacheService.get("mfa_email_otp:" + mfaToken, String.class);
+                storedOtp = redisCacheService.get(MfaSessionKeys.emailOtp(mfaToken), String.class);
             } catch (Exception ignored) {
             }
             if (storedOtp == null || !storedOtp.equals(providedCode)) {
@@ -152,7 +153,7 @@ public class MfaVerifyCommandHandler {
     }
 
     private void recordFailedMfaAttempt(String mfaToken) {
-        String attemptsKey = "mfa_attempts:" + mfaToken;
+        String attemptsKey = MfaSessionKeys.attempts(mfaToken);
         try {
             Integer current = redisCacheService.get(attemptsKey, Integer.class);
             int attempts = (current != null ? current : 0) + 1;
@@ -169,10 +170,10 @@ public class MfaVerifyCommandHandler {
 
     private void evictMfaSession(String mfaToken) {
         try {
-            redisCacheService.delete("mfa_session:" + mfaToken);
-            redisCacheService.delete("mfa_session_type:" + mfaToken);
-            redisCacheService.delete("mfa_email_otp:" + mfaToken);
-            redisCacheService.delete("mfa_attempts:" + mfaToken);
+            redisCacheService.delete(MfaSessionKeys.session(mfaToken));
+            redisCacheService.delete(MfaSessionKeys.sessionType(mfaToken));
+            redisCacheService.delete(MfaSessionKeys.emailOtp(mfaToken));
+            redisCacheService.delete(MfaSessionKeys.attempts(mfaToken));
         } catch (Exception ignored) {
         }
     }

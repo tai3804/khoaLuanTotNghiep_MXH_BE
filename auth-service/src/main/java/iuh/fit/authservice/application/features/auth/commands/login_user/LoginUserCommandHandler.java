@@ -1,5 +1,6 @@
 package iuh.fit.authservice.application.features.auth.commands.login_user;
 
+import iuh.fit.authservice.application.features.auth.MfaSessionKeys;
 import iuh.fit.authservice.domain.entities.Device;
 import iuh.fit.authservice.domain.entities.User;
 import iuh.fit.authservice.domain.enums.MfaType;
@@ -140,27 +141,27 @@ public class LoginUserCommandHandler {
 
     private LoginUserResult processMfaLogin(User user) {
         String mfaToken = UUID.randomUUID().toString();
-        String redisKey = "mfa:token:" + mfaToken;
+        MfaType mfaType = user.getMfaType() != null ? user.getMfaType() : MfaType.TOTP;
 
         String code = null;
-        if (MfaType.EMAIL.equals(user.getMfaType())) {
+        if (MfaType.EMAIL.equals(mfaType)) {
             code = otpUtil.generateOtp();
         }
 
-        Map<String, String> mfaData = Map.of(
-                "userId", user.getId().toString(),
-                "mfaType", user.getMfaType().name(),
-                "code", code != null ? code : ""
-        );
-
+        // Các khoá này do MfaVerifyCommandHandler đọc (dùng chung MfaSessionKeys). Từng ghi vào một khoá "mfa:token:" mà
+        // không ai đọc, nên mọi lần xác minh 2FA đều báo mã không hợp lệ.
         try {
-            redisCacheService.set(redisKey, mfaData, otpUtil.getDefaultTtl());
+            redisCacheService.set(MfaSessionKeys.session(mfaToken), user.getId().toString(), otpUtil.getDefaultTtl());
+            redisCacheService.set(MfaSessionKeys.sessionType(mfaToken), mfaType.name(), otpUtil.getDefaultTtl());
+            if (code != null) {
+                redisCacheService.set(MfaSessionKeys.emailOtp(mfaToken), code, otpUtil.getDefaultTtl());
+            }
         } catch (Exception e) {
             log.error("Redis Connection Error when processing MFA login: {}", e.getMessage());
             throw new BusinessException(AuthErrorCode.SERVICE_UNAVAILABLE);
         }
 
-        if (MfaType.EMAIL.equals(user.getMfaType())) {
+        if (MfaType.EMAIL.equals(mfaType)) {
             try {
                 kafkaTemplate.send("notification.email.mfa-otp", Map.of(
                         "email", user.getEmail(),
@@ -175,7 +176,7 @@ public class LoginUserCommandHandler {
         return LoginUserResult.builder()
                 .mfaRequired(true)
                 .mfaToken(mfaToken)
-                .mfaType(user.getMfaType())
+                .mfaType(mfaType)
                 .build();
     }
 }
