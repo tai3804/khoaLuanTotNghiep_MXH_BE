@@ -21,10 +21,14 @@ public interface SensitiveKeywordRepository extends JpaRepository<SensitiveKeywo
 
     Page<SensitiveKeyword> findByIsAutoLearned(boolean isAutoLearned, Pageable pageable);
 
+    /**
+     * Bộ lọc rỗng truyền vào là chuỗi '' (không phải null): tham số null bị PostgreSQL coi là bytea nên LOWER(:keyword) lỗi 500.
+     * Gọi qua {@code SelfLearningService.searchKeywords}, nơi đã đổi null thành ''.
+     */
     @Query("SELECT s FROM SensitiveKeyword s WHERE " +
-           "(:keyword IS NULL OR LOWER(s.keyword) LIKE LOWER(CONCAT('%', :keyword, '%'))) AND " +
-           "(:category IS NULL OR s.category = :category) AND " +
-           "(:status IS NULL OR s.status = :status)")
+           "(:keyword = '' OR LOWER(s.keyword) LIKE LOWER(CONCAT('%', :keyword, '%'))) AND " +
+           "(:category = '' OR s.category = :category) AND " +
+           "(:status = '' OR s.status = :status)")
     Page<SensitiveKeyword> searchKeywords(
             @Param("keyword") String keyword,
             @Param("category") String category,

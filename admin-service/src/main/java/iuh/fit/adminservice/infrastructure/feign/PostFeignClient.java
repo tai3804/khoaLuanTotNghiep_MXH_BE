@@ -21,6 +21,10 @@ public interface PostFeignClient {
     @GetMapping("/api/v1/posts/{postId}")
     Object getPostById(@PathVariable("postId") String postId);
 
+    /** Số bài, bình luận, lượt cảm xúc mới theo ngày (post-service đếm bằng GROUP BY); cần token ADMIN/MODERATOR được chuyển tiếp. */
+    @GetMapping("/api/v1/posts/admin/daily-activity")
+    java.util.List<java.util.Map<String, Object>> getDailyActivity(@RequestParam("days") int days);
+
     @DeleteMapping("/api/v1/posts/admin/{postId}")
     void deletePost(@PathVariable("postId") String postId);
 }

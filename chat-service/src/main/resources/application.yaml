@@ -25,6 +25,10 @@ spring:
         order_inserts: true
         order_updates: true
   kafka:
+    # Gửi thông báo tin nhắn mới (Map) sang notification-service: cần JsonSerializer, mặc định StringSerializer sẽ lỗi
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
       group-id: chat-service-group
       auto-offset-reset: earliest

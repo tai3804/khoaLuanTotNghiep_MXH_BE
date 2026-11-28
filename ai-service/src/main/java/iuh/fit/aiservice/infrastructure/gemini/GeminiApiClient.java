@@ -302,8 +302,9 @@ public class GeminiApiClient {
         if (modelName != null && !modelName.isBlank()) {
             models.add(modelName.trim());
         }
-        models.add("gemini-2.5-flash-lite");
-        models.add("gemini-2.0-flash");
+        // Mô hình dự phòng còn hoạt động (11/2026): dòng 1.5, 2.0, 2.5 đã bị Google gỡ khỏi API (HTTP 404)
+        models.add("gemini-3.5-flash");
+        models.add("gemini-3.5-flash-lite");
         return new ArrayList<>(models);
     }
 
@@ -638,8 +639,13 @@ public class GeminiApiClient {
                         }
 
                         JsonNode parsed = objectMapper.readTree(rawJsonText);
-                        String summary = parsed.path("summary").asText(fallback.getSummary());
-                        String mediaDesc = parsed.path("mediaDescription").asText(fallback.getMediaDescription());
+                        String summary = parsed.path("summary").asText("").trim();
+                        if (summary.isEmpty()) {
+                            // Mô hình không trả về bản tóm tắt: thử mô hình kế tiếp thay vì lấy nội dung dự phòng
+                            log.warn("Gemini multimodal summarize model {} returned no summary. Trying next...", candidateModel);
+                            continue;
+                        }
+                        String mediaDesc = parsed.path("mediaDescription").asText("");
                         List<String> actionItems = new ArrayList<>();
                         JsonNode actionsNode = parsed.path("actionItems");
                         if (actionsNode.isArray()) {
@@ -647,7 +653,7 @@ public class GeminiApiClient {
                                 actionItems.add(node.asText());
                             }
                         }
-                        if (actionItems.isEmpty()) {
+                        if (actionItems.isEmpty() && fallback != null) {
                             actionItems = fallback.getActionItems();
                         }
 

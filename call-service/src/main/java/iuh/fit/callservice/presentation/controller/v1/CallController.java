@@ -9,6 +9,7 @@ import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.infrastructure.filter.BaseFilter;
 import iuh.fit.commonframework.infrastructure.security.JwtUtil;
 import iuh.fit.callservice.application.exception.CallServiceErrorCode;
+import iuh.fit.callservice.application.service.IceServerService;
 import iuh.fit.callservice.application.features.call.commands.end_call.EndCallCommand;
 import iuh.fit.callservice.application.features.call.commands.end_call.EndCallCommandHandler;
 import iuh.fit.callservice.application.features.call.commands.initiate_call.InitiateCallCommand;
@@ -81,6 +82,14 @@ public class CallController {
     CallParticipantRepository callParticipantRepository;
     SimpMessagingTemplate messagingTemplate;
     JwtUtil jwtUtil;
+    IceServerService iceServerService;
+
+    @GetMapping("/ice-servers")
+    @Operation(summary = "Get WebRTC ICE servers (STUN/TURN)", description = "Returns STUN servers and a time-limited TURN credential for the current user (coturn TURN REST API)")
+    public ResponseEntity<ApiResponse<IceServerService.IceConfig>> getIceServers() {
+        UUID currentUserId = getCurrentUserId();
+        return ResponseEntity.ok(ApiResponse.success(iceServerService.issue(currentUserId), "ICE servers issued successfully"));
+    }
 
     @PostMapping("/initiate")
     @Operation(summary = "Initiate audio/video call (1-on-1 or Group)", description = "Initiates a new audio or video call session with target users")

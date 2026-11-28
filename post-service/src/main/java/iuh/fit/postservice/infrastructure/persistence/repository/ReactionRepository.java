@@ -56,4 +56,8 @@ public interface ReactionRepository extends BaseJpaRepository<Reaction, UUID> {
     /** Các lượt thả cảm xúc gần đây (người dùng, bài, thời điểm) làm đầu vào cho lọc cộng tác; giới hạn bằng Pageable. */
     @Query("SELECT r.userId, r.postId, r.createdAt FROM Reaction r WHERE r.createdAt >= :since ORDER BY r.createdAt DESC")
     List<Object[]> findRecentInteractionRows(@Param("since") java.time.LocalDateTime since, org.springframework.data.domain.Pageable pageable);
+
+    /** Các lượt thả cảm xúc của một người dùng (bài, thời điểm) kể từ mốc `since`; dùng dựng bản đồ sở thích. */
+    @Query("SELECT r.postId, r.createdAt FROM Reaction r WHERE r.userId = :userId AND r.createdAt >= :since")
+    List<Object[]> findUserInteractionRows(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
 }

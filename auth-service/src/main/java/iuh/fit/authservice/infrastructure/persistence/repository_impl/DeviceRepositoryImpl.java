@@ -48,6 +48,11 @@ public class DeviceRepositoryImpl extends BaseRepositoryImpl<Device, UUID, Devic
     }
 
     @Override
+    public Optional<Device> findByIdForUpdate(UUID id) {
+        return deviceJpaRepository.findByIdForUpdate(id).map(deviceModelMapper::toDto);
+    }
+
+    @Override
     public void deleteAllByUserId(UUID userId) {
         deviceJpaRepository.deleteAllByUserId(userId);
     }

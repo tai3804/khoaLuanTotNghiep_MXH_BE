@@ -272,16 +272,18 @@ public class FeedRankingService {
 
     /**
      * Mức giống hồ sơ sở thích của người xem (đề xuất theo nội dung). Hồ sơ là trung bình có trọng số vector của các bài
-     * người xem từng tương tác; bài người xem đã tương tác rồi không được cộng điểm lại.
+     * người xem từng tương tác và các câu người xem từng tìm kiếm; bài người xem đã tương tác rồi không được cộng điểm lại.
      */
     Map<UUID, Double> contentBoosts(UUID viewerId, List<UUID> candidateIds,
                                     List<ItemCollaborativeFilter.Interaction> data, LocalDateTime now) {
         try {
             List<UserInterestProfile.Weighted> items = UserInterestProfile.aggregate(viewerId, data, now);
-            if (items.size() < UserInterestProfile.MIN_ITEMS) return Collections.emptyMap();
+            List<UserInterestProfile.WeightedVector> searches = UserInterestProfile.searchWeights(
+                    postEmbeddingService.getSearchHistory(viewerId, now.minusDays(CF_WINDOW_DAYS), UserInterestProfile.MAX_SEARCHES), now);
+            if (items.size() + searches.size() < UserInterestProfile.MIN_ITEMS) return Collections.emptyMap();
             Map<UUID, float[]> embeddings = postEmbeddingService.getEmbeddings(
                     items.stream().map(UserInterestProfile.Weighted::postId).toList());
-            Optional<float[]> profile = UserInterestProfile.centroid(items, embeddings);
+            Optional<float[]> profile = UserInterestProfile.centroid(items, embeddings, searches);
             if (profile.isEmpty()) return Collections.emptyMap();
             Set<UUID> already = UserInterestProfile.postIds(items);
             List<UUID> toScore = candidateIds.stream().filter(id -> !already.contains(id)).toList();

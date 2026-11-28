@@ -1,6 +1,8 @@
 package iuh.fit.postservice.presentation.controller.admin.v1;
 
+import iuh.fit.commonframework.application.dto.ApiResponse;
 import iuh.fit.commonframework.event.PostDeletedEvent;
+import iuh.fit.postservice.application.service.insight.InterestMapService;
 import iuh.fit.postservice.application.service.ranking.RankedFeedCache;
 import iuh.fit.postservice.domain.entities.Post;
 import iuh.fit.postservice.domain.entities.PostMedia;
@@ -41,6 +43,8 @@ public class AdminPostController {
     KafkaTemplate<String, Object> kafkaTemplate;
     iuh.fit.postservice.application.service.search.eval.SearchEvaluationService searchEvaluationService;
     iuh.fit.postservice.application.service.topic.TrendingTopicService trendingTopicService;
+    InterestMapService interestMapService;
+    org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     /**
      * Đánh giá offline chất lượng tìm kiếm: nhận các truy vấn đã gán nhãn (postId + mức liên quan 0–3), trả về Precision@k,
@@ -58,6 +62,44 @@ public class AdminPostController {
     public ResponseEntity<iuh.fit.postservice.application.service.topic.TrendingTopicService.Report> trendingTopics(
             @RequestParam(value = "days", defaultValue = "7") int days) {
         return ResponseEntity.ok(trendingTopicService.analyze(days));
+    }
+
+    /**
+     * Sơ đồ phân tích xu hướng của một người dùng (vector sở thích 768 chiều chiếu PCA, chủ đề, bài bảng tin sẽ ưu tiên),
+     * cùng nội dung với trang /interest-map của chính người đó. Dữ liệu hành vi cá nhân nên chỉ ADMIN xem được.
+     */
+    @GetMapping("/users/{userId}/interest-map")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<InterestMapService.InterestMap>> userInterestMap(@PathVariable UUID userId) {
+        return ResponseEntity.ok(ApiResponse.success(interestMapService.build(userId), "Interest map built"));
+    }
+
+    /**
+     * Số bài viết, bình luận, lượt cảm xúc mới của từng ngày trong {@code days} ngày gần nhất (kể cả ngày không có hoạt động),
+     * đếm bằng GROUP BY trong cơ sở dữ liệu — dùng cho biểu đồ tương tác và số "bài mới hôm nay" của trang quản trị.
+     */
+    @GetMapping("/daily-activity")
+    public ResponseEntity<List<java.util.Map<String, Object>>> dailyActivity(@RequestParam(value = "days", defaultValue = "7") int days) {
+        int d = Math.max(1, Math.min(days, 90));
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalDate from = today.minusDays(d - 1L);
+        java.sql.Timestamp since = java.sql.Timestamp.valueOf(from.atStartOfDay());
+        java.util.Map<java.time.LocalDate, long[]> byDay = new java.util.TreeMap<>();
+        for (int i = 0; i < d; i++) byDay.put(from.plusDays(i), new long[3]);
+        String[] sql = {
+                "SELECT CAST(created_at AS date) d, COUNT(*) c FROM posts WHERE is_deleted = false AND created_at >= ? GROUP BY 1",
+                "SELECT CAST(created_at AS date) d, COUNT(*) c FROM comments WHERE is_deleted = false AND created_at >= ? GROUP BY 1",
+                "SELECT CAST(created_at AS date) d, COUNT(*) c FROM reactions WHERE created_at >= ? GROUP BY 1"};
+        for (int k = 0; k < sql.length; k++) {
+            final int col = k;
+            jdbcTemplate.query(sql[k], rs -> {
+                long[] row = byDay.get(rs.getDate("d").toLocalDate());
+                if (row != null) row[col] = rs.getLong("c");
+            }, since);
+        }
+        List<java.util.Map<String, Object>> out = new ArrayList<>();
+        byDay.forEach((day, c) -> out.add(java.util.Map.of("date", day.toString(), "posts", c[0], "comments", c[1], "reactions", c[2])));
+        return ResponseEntity.ok(out);
     }
 
     @GetMapping("/count")

@@ -6,12 +6,14 @@ import iuh.fit.postservice.infrastructure.client.ai.AiServiceClient.AiBatchEmbed
 import iuh.fit.postservice.infrastructure.client.ai.AiServiceClient.AiBatchEmbeddingRequestDto;
 import iuh.fit.postservice.infrastructure.client.ai.AiServiceClient.AiEmbeddingDto;
 import iuh.fit.postservice.infrastructure.client.ai.AiServiceClient.AiEmbeddingRequestDto;
+import iuh.fit.postservice.application.service.ranking.UserInterestProfile;
 import iuh.fit.postservice.infrastructure.persistence.config.PostSearchSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -354,9 +356,53 @@ public class PostEmbeddingService {
             """;
             jdbcTemplate.update(sql, userId, queryText.trim(), vectorStr);
             log.info("Saved search interest for user {}: '{}'", userId, queryText.trim());
+            appendSearchHistory(userId, queryText.trim(), vectorStr);
         } catch (Exception e) {
             log.warn("Failed to save search interest for user {}: {}", userId, e.getMessage());
         }
+    }
+
+    /**
+     * Ghi một dòng lịch sử tìm kiếm. Cùng câu tìm lặp lại trong 30 phút (vd chuyển trang kết quả) không ghi thêm, để một lần
+     * tìm không bị tính nhiều lần vào vector sở thích.
+     */
+    private void appendSearchHistory(UUID userId, String queryText, String vectorStr) {
+        String query = queryText.length() > 255 ? queryText.substring(0, 255) : queryText;
+        jdbcTemplate.update("""
+            INSERT INTO user_search_history (user_id, query_text, embedding)
+            SELECT ?, ?, cast(? as vector)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM user_search_history
+                WHERE user_id = ? AND lower(query_text) = lower(?) AND created_at > NOW() - INTERVAL '30 minutes'
+            )
+        """, userId, query, vectorStr, userId, query);
+    }
+
+    /** Các câu tìm kiếm của người dùng kể từ {@code since}, mới nhất trước, tối đa {@code limit} câu. */
+    public List<UserInterestProfile.Search> getSearchHistory(UUID userId, LocalDateTime since, int limit) {
+        if (userId == null || !postSearchSupport.isVectorAvailable()) return List.of();
+        try {
+            return jdbcTemplate.query("""
+                SELECT query_text, embedding::text AS v, created_at
+                FROM user_search_history
+                WHERE user_id = ? AND created_at >= ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (rs, rowNum) -> new UserInterestProfile.Search(
+                    rs.getString("query_text"), parseVector(rs.getString("v")), rs.getTimestamp("created_at").toLocalDateTime()),
+                    userId, java.sql.Timestamp.valueOf(since), Math.max(1, limit));
+        } catch (Exception e) {
+            log.warn("Failed to load search history for user {}: {}", userId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static float[] parseVector(String text) {
+        if (text == null || text.length() < 3) return new float[0];
+        String[] parts = text.substring(1, text.length() - 1).split(",");
+        float[] v = new float[parts.length];
+        for (int k = 0; k < parts.length; k++) v[k] = Float.parseFloat(parts[k].trim());
+        return v;
     }
 
     /**

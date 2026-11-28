@@ -43,9 +43,12 @@ public class LeaveCallCommandHandler {
                 .findByCallSessionIdAndUserId(command.getCallSessionId(), command.getCurrentUserId())
                 .orElseThrow(() -> new BusinessException(CallServiceErrorCode.NOT_A_CALL_PARTICIPANT));
 
-        participant.setStatus(ParticipantStatus.LEFT);
-        participant.setLeftAt(LocalDateTime.now());
-        callParticipantRepository.save(participant);
+        // Người đã bị chủ phòng mời ra vẫn giữ trạng thái BANNED khi rời trang, nếu không lần vào sau sẽ không còn bị chặn
+        if (participant.getStatus() != ParticipantStatus.BANNED) {
+            participant.setStatus(ParticipantStatus.LEFT);
+            participant.setLeftAt(LocalDateTime.now());
+            callParticipantRepository.save(participant);
+        }
 
         List<CallParticipant> allParticipants = callParticipantRepository.findByCallSessionId(session.getId());
         long connectedCount = allParticipants.stream()

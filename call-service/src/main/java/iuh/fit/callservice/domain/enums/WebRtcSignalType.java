@@ -15,5 +15,7 @@ public enum WebRtcSignalType {
     VIEWER_COUNT,
     LIVE_COMMENT,
     LIVE_REACTION,
-    KICK_PARTICIPANT
+    KICK_PARTICIPANT,
+    /** Chủ phòng live gửi cài đặt phòng (chế độ chậm, bật/tắt cảm xúc) cho người xem. */
+    LIVE_SETTINGS
 }

@@ -1,5 +1,9 @@
 package iuh.fit.authservice.presentation.controller.auth.v1;
 
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
+import iuh.fit.commonframework.infrastructure.config.SystemConfigReader;
+import iuh.fit.authservice.presentation.controller.auth.RefreshTokenCookies;
 import iuh.fit.authservice.application.features.auth.commands.login_user.LoginUserCommand;
 import iuh.fit.authservice.application.features.auth.commands.login_user.LoginUserCommandHandler;
 import iuh.fit.authservice.application.features.auth.commands.login_user.LoginUserResult;
@@ -75,6 +79,7 @@ public class AuthController {
     KafkaTemplate<String, Object> kafkaTemplate;
     JwtUtil jwtUtil;
     JwtDecoder jwtDecoder;
+    SystemConfigReader systemConfigReader;
 
     @NonFinal
     @Value("${app.security.jwt.expiration.refresh-token}")
@@ -87,6 +92,7 @@ public class AuthController {
     @PostMapping("/register/send-otp")
     @Operation(summary = "Send registration OTP", description = "Checks if email exists and sends OTP for email verification")
     public ResponseEntity<ApiResponse<Void>> sendRegisterOtp(@Valid @RequestBody SendRegisterOtpRequest request) {
+        requireRegistrationOpen();
         String email = request.getEmail().trim().toLowerCase();
         if (userRepository.existsByEmail(email)) {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
@@ -134,6 +140,7 @@ public class AuthController {
     @PostMapping("/register/verify-otp")
     @Operation(summary = "Verify registration OTP", description = "Verifies 6-digit OTP code sent to email and creates a registration session")
     public ResponseEntity<ApiResponse<Map<String, String>>> verifyRegisterOtp(@Valid @RequestBody VerifyRegisterOtpRequest request) {
+        requireRegistrationOpen();
         String email = request.getEmail().trim().toLowerCase();
         String redisKey = "register_email_otp:" + email;
         String attemptsKey = "register_otp_attempts:" + email;
@@ -178,6 +185,7 @@ public class AuthController {
     @PostMapping("/register")
     @Operation(summary = "Register a new user", description = "Creates a new user account with email and password")
     public ResponseEntity<ApiResponse<RegisterUserResponse>> register(@Valid @RequestBody RegisterUserRequest request) {
+        requireRegistrationOpen();
         RegisterUserCommand command = authPresentationMapper.toCommand(request);
         RegisterUserResult result = registerUserCommandHandler.handle(command);
         RegisterUserResponse response = authPresentationMapper.toResponse(result);
@@ -194,6 +202,7 @@ public class AuthController {
             HttpServletResponse httpResponse) {
 
         LoginUserCommand command = authPresentationMapper.toCommand(request);
+        requireStaffDuringMaintenance(command.getEmail());
         if (command.getDeviceFingerprint() == null || command.getDeviceFingerprint().isBlank()) {
             command.setDeviceFingerprint(
                     (headerFingerprint != null && !headerFingerprint.isBlank()) ? headerFingerprint.trim() : "default-web-device");
@@ -219,12 +228,12 @@ public class AuthController {
     @Operation(summary = "Refresh access token", description = "Generates a new access token using a valid refresh token from Cookie or Request Body")
     public ResponseEntity<ApiResponse<RefreshTokenResponse>> refreshToken(
             @RequestBody(required = false) RefreshTokenRequest request,
-            @CookieValue(name = "refreshToken", required = false) String cookieRefreshToken,
             @RequestHeader(value = "X-Client-Type", defaultValue = "WEB") String clientType,
             @RequestHeader(value = "X-Device-Fingerprint", required = false) String deviceFingerprint,
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
 
+        String cookieRefreshToken = RefreshTokenCookies.read(httpRequest);
         String token = (request != null && request.getRefreshToken() != null && !request.getRefreshToken().isBlank())
                 ? request.getRefreshToken().trim()
                 : (cookieRefreshToken != null ? cookieRefreshToken.trim() : null);
@@ -248,11 +257,11 @@ public class AuthController {
     @Operation(summary = "Logout user", description = "Revokes the current device token and clears the refresh token cookie")
     public ResponseEntity<ApiResponse<Void>> logout(
             @RequestBody(required = false) LogoutUserRequest request,
-            @CookieValue(name = "refreshToken", required = false) String cookieRefreshToken,
             @RequestHeader(value = "X-Device-Fingerprint", required = false) String headerFingerprint,
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
 
+        String cookieRefreshToken = RefreshTokenCookies.read(httpRequest);
         String userIdStr = jwtUtil.getCurrentUserId();
         if (userIdStr == null && cookieRefreshToken != null && !cookieRefreshToken.isBlank()) {
             try {
@@ -288,17 +297,27 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(null, MessageConstants.USER_LOGGED_OUT_SUCCESSFULLY));
     }
 
+    /** Cấu hình "Cho phép đăng ký" ở trang quản trị tắt thì mọi bước đăng ký bị từ chối (403), không chỉ ẩn nút trên giao diện. */
+    private void requireRegistrationOpen() {
+        if (!systemConfigReader.flag(SystemConfigReader.ALLOW_REGISTRATION, true)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Hệ thống tạm thời đóng đăng ký tài khoản mới");
+        }
+    }
+
+    /** Đang bảo trì: chỉ quản trị viên và kiểm duyệt viên đăng nhập được (503 cho người dùng thường). */
+    private void requireStaffDuringMaintenance(String email) {
+        if (!systemConfigReader.flag(SystemConfigReader.MAINTENANCE_MODE, false) || email == null) return;
+        boolean staff = userRepository.findByEmail(email.trim().toLowerCase())
+                .map(u -> u.getRoles() != null && (u.getRoles().contains("ROLE_ADMIN") || u.getRoles().contains("ROLE_MODERATOR")))
+                .orElse(false);
+        if (!staff) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Hệ thống đang bảo trì, vui lòng quay lại sau");
+        }
+    }
+
+    /** Cookie refresh token tách theo ứng dụng (trang người dùng / trang quản trị), xem {@link RefreshTokenCookies}. */
     private void setRefreshTokenCookie(HttpServletRequest httpRequest, HttpServletResponse httpResponse, String token, long maxAgeSeconds) {
-        boolean isHttps = (httpRequest != null && httpRequest.isSecure())
-                || (httpRequest != null && "https".equalsIgnoreCase(httpRequest.getHeader("X-Forwarded-Proto")));
-        ResponseCookie springCookie = ResponseCookie.from("refreshToken", token)
-                .httpOnly(true)
-                .secure(isHttps)
-                .path("/")
-                .maxAge(maxAgeSeconds)
-                .sameSite(isHttps ? "None" : "Lax")
-                .build();
-        httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
+        RefreshTokenCookies.write(httpRequest, httpResponse, token, maxAgeSeconds);
     }
 
     private int incrementAttemptCounter(String key, Duration ttl) {

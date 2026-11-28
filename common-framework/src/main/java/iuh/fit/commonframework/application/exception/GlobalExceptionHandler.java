@@ -48,6 +48,15 @@ public class GlobalExceptionHandler {
                 return ResponseEntity.status(ErrorCode.UNCATEGORIZED_EXCEPTION.getStatusCode()).body(apiResponse);
         }
 
+        /** Lỗi có mã HTTP rõ ràng (vd 400 khi cấu hình sai, 403 khi đăng ký đang tắt): giữ đúng mã và thông điệp. */
+        @ExceptionHandler(value = org.springframework.web.server.ResponseStatusException.class)
+        public ResponseEntity<ApiResponse<Void>> handlingResponseStatusException(
+                        org.springframework.web.server.ResponseStatusException exception) {
+                int status = exception.getStatusCode().value();
+                String reason = exception.getReason() != null ? exception.getReason() : exception.getStatusCode().toString();
+                return ResponseEntity.status(status).body(ApiResponse.error(status, reason));
+        }
+
         @ExceptionHandler(value = BusinessException.class)
         public ResponseEntity<ApiResponse<Void>> handlingBusinessException(BusinessException exception) {
                 BaseError errorCode = exception.getErrorCode();
