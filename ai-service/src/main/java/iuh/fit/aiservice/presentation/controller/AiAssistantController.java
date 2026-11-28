@@ -1,7 +1,8 @@
 package iuh.fit.aiservice.presentation.controller;
 
 import iuh.fit.aiservice.application.dto.MessageSummaryDto;
-import iuh.fit.aiservice.application.engine.SmartAssistantEngine;
+import iuh.fit.aiservice.application.exception.AiServiceErrorCode;
+import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.aiservice.application.service.PostSummaryService;
 import iuh.fit.aiservice.application.service.RagAssistantService;
 import iuh.fit.aiservice.application.service.knowledge.KnowledgeSearchService;
@@ -30,23 +31,46 @@ import java.util.List;
 public class AiAssistantController {
 
     private final GeminiApiClient geminiApiClient;
-    private final SmartAssistantEngine smartAssistantEngine;
     private final PostSummaryService postSummaryService;
     private final RagAssistantService ragAssistantService;
 
+    // Các tính năng AI trên giao diện KHÔNG có kết quả mặc định: Gemini không trả lời được thì báo lỗi 400
+    // (AI_MODEL_UNAVAILABLE) để giao diện hiển thị rõ, thay vì trả về nội dung soạn sẵn trông như do AI tạo.
+
+    /** Văn bản do Gemini trả về; null hoặc rỗng nghĩa là không gọi được mô hình. */
+    private static String requireAiText(String text) {
+        if (text == null || text.isBlank()) {
+            throw new BusinessException(AiServiceErrorCode.AI_MODEL_UNAVAILABLE);
+        }
+        return text.trim();
+    }
+
+    /** Tách kết quả nhiều dòng của Gemini thành danh sách, bỏ số thứ tự và gạch đầu dòng. */
+    private static List<String> requireAiLines(String raw, int limit) {
+        List<String> lines = Arrays.stream(requireAiText(raw).split("\n"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .map(s -> s.replaceFirst("^[0-9]+[.\\-\\)]\\s*", "").replaceFirst("^[\\-*•]\\s*", "").trim())
+                .filter(s -> !s.isBlank())
+                .limit(limit)
+                .toList();
+        if (lines.isEmpty()) {
+            throw new BusinessException(AiServiceErrorCode.AI_MODEL_UNAVAILABLE);
+        }
+        return lines;
+    }
+
+    private static String requireInput(String value) {
+        if (value == null || value.isBlank()) {
+            throw new BusinessException(AiServiceErrorCode.AI_EMPTY_INPUT);
+        }
+        return value.trim();
+    }
+
     @PostMapping("/suggest-caption")
     public ResponseEntity<ApiResponse<CaptionSuggestionResponse>> suggestCaption(@RequestBody CaptionRequest request) {
-        String topic = request.getTopic() != null ? request.getTopic().trim() : "";
+        String topic = requireInput(request.getTopic());
         String tone = request.getTone() != null ? request.getTone() : "tự nhiên, thân thiện";
-
-        List<String> defaultCaptions = smartAssistantEngine.suggestCaptions(topic, tone);
-
-        if (topic.isBlank()) {
-            return ResponseEntity.ok(ApiResponse.success(
-                    new CaptionSuggestionResponse(defaultCaptions),
-                    "Gợi ý caption mặc định thành công"
-            ));
-        }
 
         String prompt = String.format("""
                 Bạn là một trợ lý viết nội dung mạng xã hội Tiếng Việt thông minh, chuẩn mực.
@@ -58,32 +82,15 @@ public class AiAssistantController {
                 - Ngôn từ văn minh, đúng chính tả, không dùng từ ngữ tiêu cực hay vi phạm chuẩn mực.
                 """, tone, topic);
 
-        String fallback = String.join("\n", defaultCaptions);
-        String rawResult = geminiApiClient.generateText(prompt, fallback);
-
-        List<String> suggestions = Arrays.stream(rawResult.split("\n"))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .map(s -> s.replaceFirst("^[0-9]+[.\\-\\)]\\s*", "").replaceFirst("^[\\-*•]\\s*", "").trim())
-                .filter(s -> !s.isBlank())
-                .limit(3)
-                .toList();
-
-        if (suggestions.isEmpty()) {
-            suggestions = defaultCaptions;
-        }
+        List<String> suggestions = requireAiLines(geminiApiClient.generateText(prompt, null), 3);
 
         return ResponseEntity.ok(ApiResponse.success(new CaptionSuggestionResponse(suggestions), "Tạo gợi ý nội dung thành công"));
     }
 
     @PostMapping("/enhance")
     public ResponseEntity<ApiResponse<EnhanceTextResponse>> enhanceText(@RequestBody EnhanceTextRequest request) {
-        String content = request.getContent() != null ? request.getContent().trim() : "";
+        String content = requireInput(request.getContent());
         String style = request.getStyle() != null ? request.getStyle() : "lịch sự, rõ ràng";
-
-        if (content.isBlank()) {
-            return ResponseEntity.ok(ApiResponse.success(new EnhanceTextResponse(content, content), "Nội dung rỗng"));
-        }
 
         String prompt = String.format("""
                 Bạn là chuyên gia biên tập nội dung tiếng Việt cho mạng xã hội.
@@ -97,15 +104,9 @@ public class AiAssistantController {
                 %s
                 """, style, style, content);
 
-        String fallback = smartAssistantEngine.enhanceText(content, style);
-        String enhanced = geminiApiClient.generateText(prompt, fallback);
-        if (enhanced != null) {
-            enhanced = enhanced.trim();
-            if (enhanced.startsWith("\"") && enhanced.endsWith("\"") && enhanced.length() > 1) {
-                enhanced = enhanced.substring(1, enhanced.length() - 1).trim();
-            }
-        } else {
-            enhanced = fallback;
+        String enhanced = requireAiText(geminiApiClient.generateText(prompt, null));
+        if (enhanced.startsWith("\"") && enhanced.endsWith("\"") && enhanced.length() > 1) {
+            enhanced = enhanced.substring(1, enhanced.length() - 1).trim();
         }
 
         return ResponseEntity.ok(ApiResponse.success(
@@ -116,17 +117,8 @@ public class AiAssistantController {
 
     @PostMapping("/suggest-hashtags")
     public ResponseEntity<ApiResponse<HashtagSuggestionResponse>> suggestHashtags(@RequestBody HashtagRequest request) {
-        String content = request.getContent() != null ? request.getContent().trim() : "";
+        String content = requireInput(request.getContent());
         int count = request.getCount() > 0 ? Math.min(request.getCount(), 10) : 5;
-
-        List<String> defaultHashtags = smartAssistantEngine.suggestHashtags(content, count);
-
-        if (content.isBlank()) {
-            return ResponseEntity.ok(ApiResponse.success(
-                    new HashtagSuggestionResponse(defaultHashtags),
-                    "Gợi ý hashtag mặc định thành công"
-            ));
-        }
 
         String prompt = String.format("""
                 Bạn là chuyên gia tối ưu nội dung mạng xã hội.
@@ -139,8 +131,7 @@ public class AiAssistantController {
                 - Chỉ trả về danh sách hashtag, không thêm bất kỳ văn bản giải thích nào khác.
                 """, count, content);
 
-        String fallback = String.join(" ", defaultHashtags);
-        String rawResult = geminiApiClient.generateText(prompt, fallback);
+        String rawResult = requireAiText(geminiApiClient.generateText(prompt, null));
 
         List<String> hashtags = Arrays.stream(rawResult.split("[\\s,\n]+"))
                 .map(String::trim)
@@ -151,7 +142,7 @@ public class AiAssistantController {
                 .toList();
 
         if (hashtags.isEmpty()) {
-            hashtags = defaultHashtags;
+            throw new BusinessException(AiServiceErrorCode.AI_MODEL_UNAVAILABLE);
         }
 
         return ResponseEntity.ok(ApiResponse.success(new HashtagSuggestionResponse(hashtags), "Gợi ý hashtag thành công"));
@@ -159,25 +150,17 @@ public class AiAssistantController {
 
     @PostMapping("/summarize")
     public ResponseEntity<ApiResponse<SummarizeResponse>> summarizeText(@RequestBody SummarizeRequest request) {
-        String content = request.getContent() != null ? request.getContent().trim() : "";
-        if (content.isBlank()) {
-            return ResponseEntity.ok(ApiResponse.success(new SummarizeResponse(content, content), "Nội dung rỗng"));
-        }
+        String content = requireInput(request.getContent());
 
-        String fallback = smartAssistantEngine.summarizeText(content);
-        String summary = postSummaryService.generate(content, fallback);
+        String summary = requireAiText(postSummaryService.generate(content, null));
 
         return ResponseEntity.ok(ApiResponse.success(new SummarizeResponse(content, summary), "Tóm tắt bài viết thành công"));
     }
 
     @PostMapping("/translate")
     public ResponseEntity<ApiResponse<TranslateResponse>> translateText(@RequestBody TranslateRequest request) {
-        String content = request.getContent() != null ? request.getContent().trim() : "";
+        String content = requireInput(request.getContent());
         String targetLang = request.getTargetLanguage() != null && !request.getTargetLanguage().isBlank() ? request.getTargetLanguage().trim() : "vi";
-
-        if (content.isBlank()) {
-            return ResponseEntity.ok(ApiResponse.success(new TranslateResponse(content, content, targetLang), "Nội dung rỗng"));
-        }
 
         String targetLangName = switch (targetLang.toLowerCase()) {
             case "en" -> "Tiếng Anh (English)";
@@ -198,12 +181,7 @@ public class AiAssistantController {
                 %s
                 """, targetLangName, content);
 
-        String translated = geminiApiClient.generateText(prompt, content);
-        if (translated != null) {
-            translated = translated.trim();
-        } else {
-            translated = content;
-        }
+        String translated = requireAiText(geminiApiClient.generateText(prompt, null));
 
         return ResponseEntity.ok(ApiResponse.success(new TranslateResponse(content, translated, targetLang), "Dịch nội dung thành công"));
     }
@@ -212,8 +190,8 @@ public class AiAssistantController {
     public ResponseEntity<ApiResponse<SmartRepliesResponse>> suggestReplies(@RequestBody SmartRepliesRequest request) {
         String postContent = request.getPostContent() != null ? request.getPostContent().trim() : "";
         String commentContent = request.getCommentContent() != null ? request.getCommentContent().trim() : "";
+        requireInput(postContent + commentContent);
 
-        List<String> defaultReplies = smartAssistantEngine.suggestReplies(postContent, commentContent);
         String context = !commentContent.isBlank() ? "Bình luận: \"" + commentContent + "\" (trong bài viết: \"" + postContent + "\")" : "Bài viết: \"" + postContent + "\"";
 
         String prompt = String.format("""
@@ -227,20 +205,7 @@ public class AiAssistantController {
                 - Chỉ trả về 3 dòng gợi ý.
                 """, context);
 
-        String fallback = String.join("\n", defaultReplies);
-        String rawResult = geminiApiClient.generateText(prompt, fallback);
-
-        List<String> replies = Arrays.stream(rawResult.split("\n"))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .map(s -> s.replaceFirst("^[0-9]+[.\\-\\)]\\s*", "").replaceFirst("^[\\-*•]\\s*", "").trim())
-                .filter(s -> !s.isBlank())
-                .limit(3)
-                .toList();
-
-        if (replies.isEmpty()) {
-            replies = defaultReplies;
-        }
+        List<String> replies = requireAiLines(geminiApiClient.generateText(prompt, null), 3);
 
         return ResponseEntity.ok(ApiResponse.success(new SmartRepliesResponse(replies), "Gợi ý câu trả lời nhanh thành công"));
     }
@@ -249,18 +214,21 @@ public class AiAssistantController {
     public ResponseEntity<ApiResponse<ChatResponse>> chatWithAssistant(@RequestBody ChatRequest request) {
         String message = request.getMessage() != null ? request.getMessage().trim() : "";
         if (message.isBlank()) {
-            return ResponseEntity.ok(ApiResponse.success(new ChatResponse("Xin chào! Tôi có thể giúp gì cho bạn hôm nay?"), "Tin nhắn rỗng"));
+            throw new BusinessException(AiServiceErrorCode.AI_ASSISTANT_EMPTY_MESSAGE);
         }
 
         // RAG: truy xuất tài liệu hướng dẫn (theo vai trò của người hỏi) và bài viết liên quan (theo quyền xem của người hỏi)
-        // rồi để mô hình sinh câu trả lời dựa trên tư liệu đó
+        // rồi để mô hình sinh câu trả lời dựa trên tư liệu đó.
+        // Không có câu trả lời dự phòng: nếu Gemini không trả lời được thì báo lỗi 400 rõ ràng cho giao diện.
         RagContextBuilder.Augmented rag = ragAssistantService.prepare(message, KnowledgeSearchService.audiencesFor(currentRoles()));
-        String fallbackReply = RagContextBuilder.fallbackWithSources(
-                smartAssistantEngine.generateChatReply(message, request.getHistory()), rag.sources());
-        String reply = geminiApiClient.chatWithHistory(rag.prompt(), request.getHistory(), fallbackReply);
+        String reply = geminiApiClient.chatWithHistory(rag.prompt(), request.getHistory(), null);
+        if (reply == null || reply.isBlank()) {
+            log.warn("Trợ lý AI không nhận được câu trả lời từ Gemini cho tin nhắn dài {} ký tự", message.length());
+            throw new BusinessException(AiServiceErrorCode.AI_ASSISTANT_UNAVAILABLE);
+        }
         List<ChatSource> sources = rag.sources().stream().map(AiAssistantController::toChatSource).toList();
 
-        return ResponseEntity.ok(ApiResponse.success(new ChatResponse(reply != null && !reply.isBlank() ? reply.trim() : fallbackReply, sources), "Trả lời thành công"));
+        return ResponseEntity.ok(ApiResponse.success(new ChatResponse(reply.trim(), sources), "Trả lời thành công"));
     }
 
     @PostMapping("/summarize-messages")
@@ -268,25 +236,13 @@ public class AiAssistantController {
             @RequestBody MessageSummaryDto.SummarizeMessagesRequest request) {
 
         if (request == null || request.getMessages() == null || request.getMessages().isEmpty()) {
-            return ResponseEntity.ok(ApiResponse.success(
-                    MessageSummaryDto.SummarizeMessagesResponse.builder()
-                            .summary("Không có tin nhắn nào để tóm tắt.")
-                            .mediaDescription("Không có hình ảnh đính kèm.")
-                            .actionItems(List.of())
-                            .messageCount(0)
-                            .imageCount(0)
-                            .build(),
-                    "Danh sách tin nhắn rỗng"
-            ));
+            throw new BusinessException(AiServiceErrorCode.AI_EMPTY_INPUT);
         }
 
-        var fallback = smartAssistantEngine.summarizeMessages(
-                request.getConversationName(),
-                request.getIsGroup(),
-                request.getMessages()
-        );
-
-        var result = geminiApiClient.summarizeMessagesWithGemini(request, fallback);
+        var result = geminiApiClient.summarizeMessagesWithGemini(request, null);
+        if (result == null || result.getSummary() == null || result.getSummary().isBlank()) {
+            throw new BusinessException(AiServiceErrorCode.AI_MODEL_UNAVAILABLE);
+        }
 
         return ResponseEntity.ok(ApiResponse.success(result, "Tóm tắt cuộc trò chuyện thành công"));
     }
@@ -297,8 +253,6 @@ public class AiAssistantController {
         String major = request.getMajor() != null ? request.getMajor().trim() : "";
         String interests = request.getInterests() != null ? request.getInterests().trim() : "";
         String tone = request.getTone() != null ? request.getTone().trim() : "năng động, trẻ trung";
-
-        List<String> defaultBios = smartAssistantEngine.suggestBios(name, major, interests, tone);
 
         String prompt = String.format("""
                 Bạn là một chuyên gia sáng tạo nội dung tiểu sử cá nhân (Profile Bio) cho mạng xã hội sinh viên.
@@ -315,35 +269,14 @@ public class AiAssistantController {
                 - BẮT BUỘC: Chỉ trả về 3 dòng gợi ý, không giải thích hay mở đầu.
                 """, name, major, interests, tone);
 
-        String fallback = String.join("\n", defaultBios);
-        String rawResult = geminiApiClient.generateText(prompt, fallback);
-
-        List<String> suggestions = Arrays.stream(rawResult.split("\n"))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .map(s -> s.replaceFirst("^[0-9]+[.\\-\\)]\\s*", "").replaceFirst("^[\\-*•]\\s*", "").trim())
-                .filter(s -> !s.isBlank())
-                .limit(3)
-                .toList();
-
-        if (suggestions.isEmpty()) {
-            suggestions = defaultBios;
-        }
+        List<String> suggestions = requireAiLines(geminiApiClient.generateText(prompt, null), 3);
 
         return ResponseEntity.ok(ApiResponse.success(new BioSuggestionResponse(suggestions), "Gợi ý tiểu sử cá nhân thành công"));
     }
 
     @PostMapping("/analyze-post")
     public ResponseEntity<ApiResponse<PostAnalysisResponse>> analyzePost(@RequestBody PostAnalysisRequest request) {
-        String content = request.getContent() != null ? request.getContent().trim() : "";
-        var fallback = smartAssistantEngine.analyzePost(content);
-
-        if (content.isBlank()) {
-            return ResponseEntity.ok(ApiResponse.success(
-                    new PostAnalysisResponse(fallback.getSentiment(), fallback.getEngagementScore(), fallback.getVibe(), fallback.getSuggestions()),
-                    "Nội dung bài viết rỗng"
-            ));
-        }
+        String content = requireInput(request.getContent());
 
         String prompt = String.format("""
                 Bạn là chuyên gia phân tích nội dung mạng xã hội và tối ưu tương tác (Engagement Growth).
@@ -359,39 +292,33 @@ public class AiAssistantController {
                 "%s"
                 """, content);
 
-        String rawResult = geminiApiClient.generateText(prompt, null);
-        if (rawResult != null && !rawResult.isBlank()) {
-            try {
-                String cleanJson = rawResult.trim();
-                if (cleanJson.startsWith("```json")) cleanJson = cleanJson.substring(7);
-                if (cleanJson.startsWith("```")) cleanJson = cleanJson.substring(3);
-                if (cleanJson.endsWith("```")) cleanJson = cleanJson.substring(0, cleanJson.length() - 3);
-                cleanJson = cleanJson.trim();
-
-                com.fasterxml.jackson.databind.JsonNode rootNode = new com.fasterxml.jackson.databind.ObjectMapper().readTree(cleanJson);
-                String sentiment = rootNode.has("sentiment") ? rootNode.get("sentiment").asText() : fallback.getSentiment();
-                int score = rootNode.has("engagementScore") ? rootNode.get("engagementScore").asInt() : fallback.getEngagementScore();
-                String vibe = rootNode.has("vibe") ? rootNode.get("vibe").asText() : fallback.getVibe();
-                List<String> suggestions = new ArrayList<>();
-                if (rootNode.has("suggestions") && rootNode.get("suggestions").isArray()) {
-                    for (com.fasterxml.jackson.databind.JsonNode item : rootNode.get("suggestions")) {
-                        suggestions.add(item.asText());
-                    }
-                }
-                if (suggestions.isEmpty()) suggestions = fallback.getSuggestions();
-
-                return ResponseEntity.ok(ApiResponse.success(
-                        new PostAnalysisResponse(sentiment, score, vibe, suggestions),
-                        "Phân tích bài viết bằng AI thành công"
-                ));
-            } catch (Exception e) {
-                log.warn("Could not parse AI analyze-post response, using fallback: {}", e.getMessage());
+        String rawResult = requireAiText(geminiApiClient.generateText(prompt, null));
+        com.fasterxml.jackson.databind.JsonNode rootNode;
+        try {
+            String cleanJson = rawResult;
+            if (cleanJson.startsWith("```json")) cleanJson = cleanJson.substring(7);
+            if (cleanJson.startsWith("```")) cleanJson = cleanJson.substring(3);
+            if (cleanJson.endsWith("```")) cleanJson = cleanJson.substring(0, cleanJson.length() - 3);
+            rootNode = new com.fasterxml.jackson.databind.ObjectMapper().readTree(cleanJson.trim());
+        } catch (Exception e) {
+            log.warn("Không đọc được kết quả analyze-post của Gemini: {}", e.getMessage());
+            throw new BusinessException(AiServiceErrorCode.AI_MODEL_UNAVAILABLE);
+        }
+        // Thiếu trường bắt buộc nghĩa là mô hình không trả về đúng định dạng: báo lỗi, không tự điền giá trị mặc định
+        if (!rootNode.hasNonNull("sentiment") || !rootNode.hasNonNull("engagementScore") || !rootNode.hasNonNull("vibe")) {
+            throw new BusinessException(AiServiceErrorCode.AI_MODEL_UNAVAILABLE);
+        }
+        List<String> suggestions = new ArrayList<>();
+        if (rootNode.has("suggestions") && rootNode.get("suggestions").isArray()) {
+            for (com.fasterxml.jackson.databind.JsonNode item : rootNode.get("suggestions")) {
+                suggestions.add(item.asText());
             }
         }
 
         return ResponseEntity.ok(ApiResponse.success(
-                new PostAnalysisResponse(fallback.getSentiment(), fallback.getEngagementScore(), fallback.getVibe(), fallback.getSuggestions()),
-                "Phân tích bài viết thành công"
+                new PostAnalysisResponse(rootNode.get("sentiment").asText(), rootNode.get("engagementScore").asInt(),
+                        rootNode.get("vibe").asText(), suggestions),
+                "Phân tích bài viết bằng AI thành công"
         ));
     }
 

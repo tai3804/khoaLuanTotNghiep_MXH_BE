@@ -120,7 +120,11 @@ public class JwtUtil {
         try {
             UUID userId = UUID.fromString(userIdStr);
             int version = extractTokenVersion(jwt);
-            return redisCacheService.isTokenRevoked(userId, version);
+            if (redisCacheService.isTokenRevoked(userId, version)) {
+                return true;
+            }
+            Object deviceClaim = jwt.getClaim("deviceId");
+            return deviceClaim != null && redisCacheService.isDeviceRevoked(UUID.fromString(deviceClaim.toString()));
         } catch (IllegalArgumentException e) {
             return false;
         }
@@ -145,6 +149,11 @@ public class JwtUtil {
 
         String redisKey = RedisCacheService.TOKEN_VERSION_PREFIX + userId;
         String cachedVersionStr = redisTemplate.opsForValue().get(redisKey);
+
+        Object deviceClaim = jwt.getClaim("deviceId");
+        if (deviceClaim != null && Boolean.TRUE.equals(redisTemplate.hasKey(RedisCacheService.DEVICE_REVOKED_PREFIX + deviceClaim))) {
+            return true;
+        }
 
         if (cachedVersionStr != null) {
             try {

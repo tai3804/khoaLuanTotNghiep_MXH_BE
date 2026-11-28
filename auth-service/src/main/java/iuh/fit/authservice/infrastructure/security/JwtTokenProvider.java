@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -26,11 +27,11 @@ public class JwtTokenProvider implements TokenProvider {
     private long refreshTokenExpiration;
 
     @Override
-    public String generateAccessToken(User user) {
+    public String generateAccessToken(User user, UUID deviceId) {
         Instant now = Instant.now();
         int version = user.getTokenVersion() != null ? user.getTokenVersion() : 1;
 
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
                 .issuer(issuerUri)
                 .issuedAt(now)
                 .expiresAt(now.plusMillis(accessTokenExpiration))
@@ -41,26 +42,30 @@ public class JwtTokenProvider implements TokenProvider {
                 .claim("middleName", user.getMiddleName() != null ? user.getMiddleName() : "")
                 .claim("roles", user.getRoles())
                 .claim("permissions", user.getPermissions())
-                .claim("tokenVersion", version)
-                .build();
+                .claim("tokenVersion", version);
+        if (deviceId != null) {
+            claims.claim("deviceId", deviceId.toString());
+        }
 
-        return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+        return jwtEncoder.encode(JwtEncoderParameters.from(claims.build())).getTokenValue();
     }
 
     @Override
-    public String generateRefreshToken(User user) {
+    public String generateRefreshToken(User user, UUID deviceId) {
         Instant now = Instant.now();
         int version = user.getTokenVersion() != null ? user.getTokenVersion() : 1;
 
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
                 .issuer(issuerUri)
                 .issuedAt(now)
                 .expiresAt(now.plusMillis(refreshTokenExpiration))
                 .subject(user.getId().toString())
                 .claim("type", "refresh")
-                .claim("tokenVersion", version)
-                .build();
+                .claim("tokenVersion", version);
+        if (deviceId != null) {
+            claims.claim("deviceId", deviceId.toString());
+        }
 
-        return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+        return jwtEncoder.encode(JwtEncoderParameters.from(claims.build())).getTokenValue();
     }
 }

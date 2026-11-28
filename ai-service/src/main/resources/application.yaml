@@ -45,7 +45,7 @@ spring:
 ai:
   gemini:
     api-key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+    model: ${GEMINI_MODEL:gemini-3.5-flash}
     api-url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models}
     # Ghim một model embedding để mọi vector cùng không gian (để trống = thử lần lượt text-embedding-004, embedding-001, gemini-embedding-001)
     embedding-model: ${GEMINI_EMBEDDING_MODEL:}

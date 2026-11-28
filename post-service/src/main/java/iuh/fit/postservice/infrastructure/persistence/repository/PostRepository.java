@@ -168,4 +168,12 @@ public interface PostRepository extends BaseJpaRepository<Post, UUID> {
     /** Các lượt chia sẻ gần đây (người chia sẻ, bài gốc, thời điểm) làm đầu vào cho lọc cộng tác. */
     @Query("SELECT s.authorId, s.originalPostId, s.createdAt FROM Post s WHERE s.originalPostId IS NOT NULL AND s.deleted = false AND s.createdAt >= :since ORDER BY s.createdAt DESC")
     List<Object[]> findRecentShareRows(@Param("since") java.time.LocalDateTime since, org.springframework.data.domain.Pageable pageable);
+
+    /** Các lượt chia sẻ của một người dùng (bài gốc, thời điểm) kể từ mốc `since`; dùng dựng bản đồ sở thích. */
+    @Query("SELECT s.originalPostId, s.createdAt FROM Post s WHERE s.authorId = :userId AND s.originalPostId IS NOT NULL AND s.deleted = false AND s.createdAt >= :since")
+    List<Object[]> findUserShareRows(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
+
+    /** Nội dung của các bài (id, nội dung), dạng nhẹ không nạp các tập EAGER. */
+    @Query("SELECT p.id, p.content FROM Post p WHERE p.id IN :ids")
+    List<Object[]> findContentByIds(@Param("ids") java.util.Collection<UUID> ids);
 }

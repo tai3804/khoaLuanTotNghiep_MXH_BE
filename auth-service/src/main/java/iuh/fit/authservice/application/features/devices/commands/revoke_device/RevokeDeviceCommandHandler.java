@@ -5,11 +5,16 @@ import iuh.fit.authservice.domain.enums.DeviceStatus;
 import iuh.fit.authservice.domain.repository.DeviceRepository;
 import iuh.fit.commonframework.application.exception.BusinessException;
 import iuh.fit.commonframework.application.exception.ErrorCode;
+import iuh.fit.commonframework.infrastructure.cache.RedisCacheService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.experimental.NonFinal;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Duration;
 
 @Service
 @RequiredArgsConstructor
@@ -17,6 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class RevokeDeviceCommandHandler {
 
     DeviceRepository deviceRepository;
+    RedisCacheService redisCacheService;
+
+    @NonFinal
+    @Value("${app.security.jwt.expiration.access-token:3600000}")
+    long accessTokenExpirationMs;
 
     @Transactional
     public void handle(RevokeDeviceCommand command) {
@@ -31,5 +41,7 @@ public class RevokeDeviceCommandHandler {
         device.setRefreshTokenHash(null);
         
         deviceRepository.save(device);
+        // Access token còn hạn của thiết bị này bị từ chối ngay ở yêu cầu kế tiếp
+        redisCacheService.revokeDevice(device.getId(), Duration.ofMillis(accessTokenExpirationMs).plusMinutes(1));
     }
 }

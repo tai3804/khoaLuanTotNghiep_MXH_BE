@@ -119,9 +119,6 @@ public class MfaVerifyCommandHandler {
         evictMfaSession(mfaToken);
 
         // Issue final Access & Refresh Tokens
-        String accessToken = tokenProvider.generateAccessToken(user);
-        String refreshToken = tokenProvider.generateRefreshToken(user);
-
         String fingerprint = (command.getDeviceFingerprint() != null && !command.getDeviceFingerprint().isBlank())
                 ? command.getDeviceFingerprint().trim()
                 : "default-web-device";
@@ -136,14 +133,21 @@ public class MfaVerifyCommandHandler {
 
         device.setStatus(DeviceStatus.ACTIVE);
         device.setLastActiveAt(LocalDateTime.now());
-        device.setRefreshTokenHash(jwtUtil.hashToken(refreshToken));
         if (command.getDeviceName() != null && !command.getDeviceName().isBlank()) {
             device.setDeviceName(command.getDeviceName());
         }
         if (command.getIpAddress() != null && !command.getIpAddress().isBlank()) {
             device.setIpAddress(command.getIpAddress());
         }
+        // Lưu thiết bị trước để có mã, rồi mới phát token mang claim deviceId (thu hồi theo thiết bị)
+        device = deviceRepository.save(device);
+
+        String accessToken = tokenProvider.generateAccessToken(user, device.getId());
+        String refreshToken = tokenProvider.generateRefreshToken(user, device.getId());
+
+        device.setRefreshTokenHash(jwtUtil.hashToken(refreshToken));
         deviceRepository.save(device);
+        redisCacheService.clearRevokedDevice(device.getId());
 
         return MfaVerifyResult.builder()
                 .accessToken(accessToken)

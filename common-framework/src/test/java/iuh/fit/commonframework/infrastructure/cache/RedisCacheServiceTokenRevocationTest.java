@@ -70,4 +70,21 @@ class RedisCacheServiceTokenRevocationTest {
         redisDown();
         assertFalse(service.isTokenRevoked(userId, 1));
     }
+
+    @Test
+    void revokedDeviceIsReportedUntilFlagIsCleared() {
+        UUID device = UUID.randomUUID();
+        when(redisTemplate.hasKey(RedisCacheService.DEVICE_REVOKED_PREFIX + device)).thenReturn(true);
+        assertTrue(service.isDeviceRevoked(device));
+        when(redisTemplate.hasKey(RedisCacheService.DEVICE_REVOKED_PREFIX + device)).thenReturn(false);
+        assertFalse(service.isDeviceRevoked(device));
+    }
+
+    @Test
+    void deviceCheckDoesNotRejectWhenRedisIsDownOrDeviceIsNull() {
+        UUID device = UUID.randomUUID();
+        when(redisTemplate.hasKey(anyString())).thenThrow(new RedisConnectionFailureException("down"));
+        assertFalse(service.isDeviceRevoked(device));
+        assertFalse(service.isDeviceRevoked(null));
+    }
 }

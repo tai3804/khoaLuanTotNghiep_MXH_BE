@@ -172,6 +172,55 @@ class RateLimitingGlobalFilterTest {
         assertEquals(3, blocked, "authCapacity = 3: 3 request cuối phải bị chặn dù phần tử đầu của X-Forwarded-For luôn khác");
     }
 
+    private static MockServerWebExchange postAs(String path, String token, String ip) {
+        MockServerHttpRequest req = MockServerHttpRequest.post(path)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .remoteAddress(new java.net.InetSocketAddress(ip, 5555))
+                .build();
+        return MockServerWebExchange.from(req);
+    }
+
+    @Test
+    @DisplayName("Ghi nhận lượt xem (POST /posts/{id}/view, /posts/seen) không tính vào hạn mức thao tác ghi")
+    void viewTrackingDoesNotUseMutationBudget() {
+        GatewayFilterChain chain = exchange -> Mono.empty();
+        String token = "viewer-token-xxxxxxxxxxxxxxxxxxxx";
+
+        // Bảng tin tải 8 bài: 8 lượt xem + 1 lô "seen", nhiều hơn mutationCapacity = 5
+        for (int i = 0; i < 8; i++) {
+            MockServerWebExchange ex = postAs("/api/v1/posts/00000000-0000-0000-0000-00000000000" + i + "/view", token, "10.0.0.70");
+            filter.filter(ex, chain).block();
+            assertNotEquals(HttpStatus.TOO_MANY_REQUESTS, ex.getResponse().getStatusCode(), "Lượt xem thứ " + (i + 1) + " không được bị chặn");
+        }
+        MockServerWebExchange seen = postAs("/api/v1/posts/seen", token, "10.0.0.70");
+        filter.filter(seen, chain).block();
+        assertNotEquals(HttpStatus.TOO_MANY_REQUESTS, seen.getResponse().getStatusCode(), "Lô seen không được bị chặn");
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> buckets = (java.util.Map<String, Object>) ReflectionTestUtils.getField(filter, "tokenBuckets");
+        assertTrue(buckets.keySet().stream().noneMatch(k -> k.startsWith("mutation")), "Lượt xem không được tạo bucket mutation");
+
+        // Hạn mức thao tác ghi vẫn còn nguyên: người dùng vẫn đăng bài, bình luận được
+        MockServerWebExchange create = postAs("/api/v1/posts", token, "10.0.0.70");
+        filter.filter(create, chain).block();
+        assertNotEquals(HttpStatus.TOO_MANY_REQUESTS, create.getResponse().getStatusCode());
+        assertTrue(buckets.keySet().stream().anyMatch(k -> k.startsWith("mutation:user:")), "Đăng bài vẫn thuộc nhóm mutation");
+    }
+
+    @Test
+    @DisplayName("Thao tác ghi thật trên bài viết vẫn bị giới hạn theo nhóm mutation")
+    void realPostMutationsStillLimited() {
+        GatewayFilterChain chain = exchange -> Mono.empty();
+        String token = "writer-token-xxxxxxxxxxxxxxxxxxxx";
+        int blocked = 0;
+        for (int i = 0; i < 7; i++) {
+            MockServerWebExchange ex = postAs("/api/v1/posts/00000000-0000-0000-0000-000000000001/reactions", token, "10.0.0.71");
+            filter.filter(ex, chain).block();
+            if (ex.getResponse().getStatusCode() == HttpStatus.TOO_MANY_REQUESTS) blocked++;
+        }
+        assertEquals(2, blocked, "mutationCapacity = 5 nên 2 request cuối phải bị chặn");
+    }
+
     @Test
     @DisplayName("Dọn dẹp: bucket rảnh quá lâu và đã đầy token phải bị xoá khỏi bộ nhớ")
     void idleFullBucketsAreCleanedUp() {

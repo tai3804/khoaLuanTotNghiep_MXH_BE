@@ -1,5 +1,6 @@
 package iuh.fit.authservice.presentation.controller.auth.v1;
 
+import iuh.fit.authservice.presentation.controller.auth.RefreshTokenCookies;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import iuh.fit.authservice.application.exception.AuthErrorCode;
 import iuh.fit.authservice.application.features.auth.commands.mfa_disable.MfaDisableCommandHandler;
@@ -117,17 +118,9 @@ public class MfaController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    /** Cookie refresh token tách theo ứng dụng (trang người dùng / trang quản trị), xem {@link RefreshTokenCookies}. */
     private void setRefreshTokenCookie(HttpServletRequest httpRequest, HttpServletResponse httpResponse, String token, long maxAgeSeconds) {
-        boolean isHttps = (httpRequest != null && httpRequest.isSecure())
-                || (httpRequest != null && "https".equalsIgnoreCase(httpRequest.getHeader("X-Forwarded-Proto")));
-        ResponseCookie springCookie = ResponseCookie.from("refreshToken", token)
-                .httpOnly(true)
-                .secure(isHttps)
-                .path("/")
-                .maxAge(maxAgeSeconds)
-                .sameSite(isHttps ? "None" : "Lax")
-                .build();
-        httpResponse.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
+        RefreshTokenCookies.write(httpRequest, httpResponse, token, maxAgeSeconds);
     }
 
     private String extractClientIp(HttpServletRequest request) {

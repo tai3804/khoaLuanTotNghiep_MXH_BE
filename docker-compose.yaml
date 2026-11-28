@@ -1,23 +1,37 @@
-version: '3.8'
+# Toàn bộ hệ thống KLTN Social: hạ tầng + 12 service Spring Boot.
+# Chạy: docker compose up -d --build      Dừng: docker compose down
+#
+# PostgreSQL + pgvector KHÔNG chạy bằng Docker: dùng bản cài trên máy
+# (dịch vụ Windows postgresql-x64-18, PostgreSQL 18 + pgvector, cổng 5432).
+# Máy mới cài thì tạo các database bằng init-scripts/init-databases.sql.
+#
+# Cấu hình của mọi service lấy từ file .env có sẵn (env_file). Mục environment bên dưới
+# chỉ thay các địa chỉ "localhost" trong .env bằng tên container hoặc máy chủ, vì bên trong
+# container "localhost" là chính container đó chứ không phải máy của bạn.
+
+x-spring-service: &spring-service
+  env_file: .env
+  restart: unless-stopped
+  mem_limit: 768m
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    - eureka-server
+    - kafka
+    - redis
+
+x-container-addresses: &container-addresses
+  EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  REDIS_HOST: redis
+  MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
 
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: postgres
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: root
-    command: postgres -c max_connections=300
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-scripts/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
-
+  # ------------------------------------------------------------------ hạ tầng
   redis:
     image: redis:alpine
     container_name: redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
 
@@ -32,6 +46,7 @@ services:
   kafka:
     image: apache/kafka:3.7.0
     container_name: kafka
+    restart: unless-stopped
     ports:
       - "9092:9092"
     environment:
@@ -67,5 +82,148 @@ services:
     ports:
       - "9411:9411"
 
-volumes:
-  postgres_data:
+  # TURN server (coturn): trung chuyển hình/tiếng của cuộc gọi và phát trực tiếp khi hai máy không nối thẳng được
+  # (NAT đối xứng, mạng 4G, tường lửa). Dùng chung TURN_SECRET với call-service để cấp tài khoản tạm (TURN REST API).
+  # TURN_EXTERNAL_IP: IP mà máy người dùng truy cập được (IP LAN khi thử trong mạng nội bộ, IP công khai khi triển khai).
+  coturn:
+    image: coturn/coturn:4.6.2
+    container_name: coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET:?Thiếu TURN_SECRET trong .env}
+      - --realm=${TURN_REALM:-kltn-mxh.me}
+      - --external-ip=${TURN_EXTERNAL_IP:?Thiếu TURN_EXTERNAL_IP trong .env}
+      - --fingerprint
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --no-multicast-peers
+
+  # ------------------------------------------------------------------ service
+  eureka-server:
+    build: { context: ., dockerfile: eureka-server/Dockerfile }
+    container_name: eureka-server
+    env_file: .env
+    restart: unless-stopped
+    mem_limit: 512m
+    ports:
+      - "8761:8761"
+
+  api-gateway:
+    <<: *spring-service
+    build: { context: ., dockerfile: api-gateway/Dockerfile }
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *container-addresses
+
+  auth-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: auth-service/Dockerfile }
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/auth_db
+
+  post-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: post-service/Dockerfile }
+    container_name: post-service
+    ports:
+      - "8082:8082"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/post_db
+
+  notification-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: notification-service/Dockerfile }
+    container_name: notification-service
+    ports:
+      - "8083:8083"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/notification_db
+
+  media-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: media-service/Dockerfile }
+    container_name: media-service
+    ports:
+      - "8084:8084"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/media_db
+
+  user-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: user-service/Dockerfile }
+    container_name: user-service
+    ports:
+      - "8085:8085"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/user_db
+
+  call-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: call-service/Dockerfile }
+    container_name: call-service
+    ports:
+      - "8086:8086"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/call_db
+
+  chat-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: chat-service/Dockerfile }
+    container_name: chat-service
+    ports:
+      - "8087:8087"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/chat_db
+
+  feed-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: feed-service/Dockerfile }
+    container_name: feed-service
+    ports:
+      - "8088:8088"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/feed_db
+
+  admin-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: admin-service/Dockerfile }
+    container_name: admin-service
+    ports:
+      - "8090:8090"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/admin_db
+
+  ai-service:
+    <<: *spring-service
+    build: { context: ., dockerfile: ai-service/Dockerfile }
+    container_name: ai-service
+    ports:
+      - "8091:8091"
+    environment:
+      <<: *container-addresses
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/ai_db

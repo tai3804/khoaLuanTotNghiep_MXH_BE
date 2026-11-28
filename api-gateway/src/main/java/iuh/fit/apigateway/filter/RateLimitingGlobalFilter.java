@@ -202,8 +202,18 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
             return new BucketConfig("auth", authCapacity, authRefillSeconds);
         }
 
-        if (path.startsWith("/api/v1/ai")) {
+        // Hạn mức AI chỉ dành cho request gọi Gemini (POST tóm tắt, trợ lý, kiểm duyệt...). Các GET của ai-service chỉ đọc DB
+        // (thống kê, nhật ký kiểm duyệt, từ khoá ở trang quản trị) nên tính như request đọc thường, nếu không trang
+        // "Kiểm duyệt AI" tải 3 bảng cùng lúc là chạm ngưỡng 5 request / 10 giây và bị 429.
+        if (path.startsWith("/api/v1/ai") && !HttpMethod.GET.equals(method)) {
             return new BucketConfig("ai", aiCapacity, aiRefillSeconds);
+        }
+
+        // Ghi nhận lượt xem (POST /posts/{id}/view, /posts/seen) do bảng tin tự gửi cho mỗi bài hiện lên màn hình,
+        // không phải thao tác của người dùng: không tính vào hạn mức mutation (10 request, 30 giây nạp 1) để không
+        // bị 429 hàng loạt và không làm cạn hạn mức đăng bài, bình luận, thả cảm xúc. Vẫn bị giới hạn theo nhóm general.
+        if (HttpMethod.POST.equals(method) && isViewTrackingPath(path)) {
+            return generalBucket();
         }
 
         if (isMutationMethod(method) && (path.startsWith("/api/v1/posts") || path.startsWith("/api/v1/media")
@@ -211,9 +221,19 @@ public class RateLimitingGlobalFilter implements GlobalFilter, Ordered {
             return new BucketConfig("mutation", mutationCapacity, mutationRefillSeconds);
         }
 
+        return generalBucket();
+    }
+
+    private BucketConfig generalBucket() {
         // Với general (GET): Tốc độ nạp 30 token/giây (0.033s/token) để client SPA tải mượt mà nhiều widget cùng lúc mà không bị 429
         double generalSecondsPerToken = Math.min((double) generalRefillSeconds, 0.033);
         return new BucketConfig("general", generalCapacity, generalSecondsPerToken);
+    }
+
+    private static final java.util.regex.Pattern POST_VIEW_PATH = java.util.regex.Pattern.compile("^/api/v1/posts/[^/]+/view/?$");
+
+    private static boolean isViewTrackingPath(String path) {
+        return path.equals("/api/v1/posts/seen") || path.equals("/api/v1/posts/seen/") || POST_VIEW_PATH.matcher(path).matches();
     }
 
     private boolean isMutationMethod(HttpMethod method) {

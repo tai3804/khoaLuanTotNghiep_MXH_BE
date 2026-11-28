@@ -22,4 +22,5 @@ public class GeminiModerationResult {
     @Builder.Default
     private List<String> extractedKeywords = new ArrayList<>(); // Các từ lóng/từ nhạy cảm mới được trích xuất
     private boolean isFallback; // true nếu kết quả sinh ra từ fallback engine
+    private boolean fromBlacklist; // true nếu bị chặn bởi từ cấm quản trị viên thêm (luật cứng, không qua Gemini)
 }

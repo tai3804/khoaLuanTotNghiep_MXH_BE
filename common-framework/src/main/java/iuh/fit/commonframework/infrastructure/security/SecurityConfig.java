@@ -166,6 +166,23 @@ public class SecurityConfig {
                         throw new JwtValidationException("Token has been revoked (User Banned or Logged Out)",
                                         List.of(new OAuth2Error("invalid_token", "Token has been revoked", null)));
                 }
+                UUID deviceId = deviceIdOf(jwt);
+                if (deviceId != null && redisCacheService.isDeviceRevoked(deviceId)) {
+                        throw new JwtValidationException("Token has been revoked (Device Signed Out)",
+                                        List.of(new OAuth2Error("invalid_token", "Device has been signed out", null)));
+                }
+        }
+
+        private static UUID deviceIdOf(Jwt jwt) {
+                Object claim = jwt.getClaim("deviceId");
+                if (claim == null) {
+                        return null;
+                }
+                try {
+                        return UUID.fromString(claim.toString());
+                } catch (IllegalArgumentException e) {
+                        return null;
+                }
         }
 
         /**

@@ -117,9 +117,6 @@ public class LoginUserCommandHandler {
             return processMfaLogin(user);
         }
 
-        String accessToken = tokenProvider.generateAccessToken(user);
-        String refreshToken = tokenProvider.generateRefreshToken(user);
-
         String fingerprint = (command.getDeviceFingerprint() != null && !command.getDeviceFingerprint().isBlank())
                 ? command.getDeviceFingerprint().trim()
                 : "default-web-device";
@@ -133,8 +130,16 @@ public class LoginUserCommandHandler {
                     return newDevice;
                 });
 
-        loginUserMapper.updateDevice(command, jwtUtil.hashToken(refreshToken), device);
+        // Lưu thiết bị trước để có mã, rồi mới phát token mang claim deviceId (thu hồi theo thiết bị)
+        loginUserMapper.updateDevice(command, null, device);
+        device = deviceRepository.save(device);
+
+        String accessToken = tokenProvider.generateAccessToken(user, device.getId());
+        String refreshToken = tokenProvider.generateRefreshToken(user, device.getId());
+
+        device.setRefreshTokenHash(jwtUtil.hashToken(refreshToken));
         deviceRepository.save(device);
+        redisCacheService.clearRevokedDevice(device.getId()); // đăng nhập lại trên thiết bị từng bị thu hồi
 
         return loginUserMapper.toLoginUserResult(accessToken, refreshToken, loginUserMapper.toDto(user));
     }
