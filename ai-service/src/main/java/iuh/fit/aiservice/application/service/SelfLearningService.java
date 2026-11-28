@@ -130,6 +130,10 @@ public class SelfLearningService {
     }
 
     public Page<SensitiveKeyword> searchKeywords(String keyword, String category, String status, Pageable pageable) {
-        return repository.searchKeywords(keyword, category, status, pageable);
+        return repository.searchKeywords(blankToEmpty(keyword), blankToEmpty(category), blankToEmpty(status), pageable);
+    }
+
+    private static String blankToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 }

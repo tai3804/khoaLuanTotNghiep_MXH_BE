@@ -40,4 +40,8 @@ public interface ReportRepository extends BaseJpaRepository<Report, UUID> {
     long countByStatusInAndResolvedAtBetween(Collection<ReportStatus> statuses, LocalDateTime start, LocalDateTime end);
 
     List<Report> findByCreatedAtAfter(LocalDateTime since);
+
+    /** Số báo cáo theo lý do (một truy vấn GROUP BY thay vì tải toàn bộ báo cáo về để đếm). */
+    @org.springframework.data.jpa.repository.Query("select r.reason, count(r) from Report r group by r.reason")
+    List<Object[]> countGroupByReason();
 }

@@ -28,6 +28,8 @@ public class RedisCacheService {
     RedisTemplate<String, Object> redisTemplate;
 
     public static final String TOKEN_VERSION_PREFIX = "auth-service:user:token_version:";
+    /** Khóa đánh dấu một thiết bị đã bị thu hồi: access token mang claim deviceId này bị từ chối ngay. */
+    public static final String DEVICE_REVOKED_PREFIX = "auth-service:device:revoked:";
 
     /** Thời gian tối đa tin vào phiên bản đã đọc trước đó khi Redis lỗi (bằng thời hạn access token). */
     private static final long FALLBACK_MAX_AGE_MS = Duration.ofMinutes(15).toMillis();
@@ -112,6 +114,35 @@ public class RedisCacheService {
             } catch (Exception e) {
                 log.error("Error deleting pattern [{}] from Redis: {}", pattern, e.getMessage());
             }
+        }
+    }
+
+    // Thu hồi theo thiết bị: đăng xuất từ xa phải làm access token của đúng thiết bị đó mất hiệu lực ngay,
+    // không ảnh hưởng các thiết bị khác của cùng người dùng.
+    public void revokeDevice(UUID deviceId, Duration ttl) {
+        if (deviceId == null)
+            return;
+        set(DEVICE_REVOKED_PREFIX + deviceId, "1", ttl);
+    }
+
+    public void clearRevokedDevice(UUID deviceId) {
+        if (deviceId == null)
+            return;
+        try {
+            delete(DEVICE_REVOKED_PREFIX + deviceId);
+        } catch (Exception e) {
+            log.warn("Could not clear revoked flag for device {}: {}", deviceId, e.getMessage());
+        }
+    }
+
+    public boolean isDeviceRevoked(UUID deviceId) {
+        if (deviceId == null)
+            return false;
+        try {
+            return hasKey(DEVICE_REVOKED_PREFIX + deviceId);
+        } catch (Exception e) {
+            log.warn("Redis unavailable, device revocation check skipped for {}: {}", deviceId, e.getMessage());
+            return false;
         }
     }
 

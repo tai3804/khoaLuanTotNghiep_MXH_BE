@@ -32,6 +32,7 @@ public class AiModerationService {
     private final AdminFeignClient adminFeignClient;
     private final GeminiApiClient geminiApiClient;
     private final FastSensitiveWordFilter fastFilter;
+    private final iuh.fit.aiservice.application.engine.AdminBlacklistMatcher adminBlacklist;
     private final SelfLearningService selfLearningService;
     private final AiNotificationProducer aiNotificationProducer;
     private final iuh.fit.aiservice.infrastructure.event.PostModerationProducer postModerationProducer;
@@ -151,7 +152,7 @@ public class AiModerationService {
             }
 
             // 3. Tầng 3: Tự học các từ nhạy cảm mới được trích xuất (lưu trạng thái PENDING_REVIEW để admin phê duyệt)
-            if (result.getExtractedKeywords() != null && !result.getExtractedKeywords().isEmpty()) {
+            if (!result.isFromBlacklist() && result.getExtractedKeywords() != null && !result.getExtractedKeywords().isEmpty()) {
                 selfLearningService.learnKeywords(
                         result.getExtractedKeywords(),
                         result.getCategory(),
@@ -197,6 +198,22 @@ public class AiModerationService {
                     .suggestedAction("ALLOW")
                     .reason("Nội dung rỗng")
                     .extractedKeywords(new ArrayList<>())
+                    .build();
+        }
+
+        // Luật cứng: từ cấm quản trị viên thêm thì luôn tạm ẩn, không để Gemini phán "an toàn" (vd từ "123" tự nó vô hại)
+        java.util.List<String> banned = adminBlacklist.findMatches(content);
+        if (!banned.isEmpty()) {
+            String words = String.join(", ", banned);
+            return GeminiModerationResult.builder()
+                    .isToxic(true)
+                    .toxicityScore(Math.max(thresholdHide, 0.70))
+                    .category("PROFANITY")
+                    .severity("HIGH")
+                    .suggestedAction("AUTO_HIDE")
+                    .reason("Bài viết bị tạm ẩn vì chứa từ nằm trong danh sách từ cấm của hệ thống (từ khóa: " + words + ").")
+                    .extractedKeywords(new ArrayList<>(banned))
+                    .fromBlacklist(true)
                     .build();
         }
 
@@ -304,7 +321,7 @@ public class AiModerationService {
                 log.info("AI Auto-Moderation: Post {} is CLEAN (Score: {})", postId, score);
             }
 
-            if (result.getExtractedKeywords() != null && !result.getExtractedKeywords().isEmpty()) {
+            if (!result.isFromBlacklist() && result.getExtractedKeywords() != null && !result.getExtractedKeywords().isEmpty()) {
                 selfLearningService.learnKeywords(
                         result.getExtractedKeywords(),
                         result.getCategory(),

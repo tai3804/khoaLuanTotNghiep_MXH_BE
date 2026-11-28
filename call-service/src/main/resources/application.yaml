@@ -41,3 +41,12 @@ eureka:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: true
+
+# WebRTC: STUN để tìm địa chỉ công khai, TURN (coturn) để trung chuyển khi không nối thẳng được.
+# TURN_SECRET phải trùng static-auth-secret của coturn; để trống thì chỉ dùng STUN.
+webrtc:
+  stun-urls: ${WEBRTC_STUN_URLS:stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302}
+  turn:
+    urls: ${TURN_URLS:}
+    secret: ${TURN_SECRET:}
+    ttl-seconds: ${TURN_TTL_SECONDS:43200}

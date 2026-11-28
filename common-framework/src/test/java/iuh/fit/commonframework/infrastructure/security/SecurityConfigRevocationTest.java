@@ -56,4 +56,32 @@ class SecurityConfigRevocationTest {
         RedisCacheService redis = mock(RedisCacheService.class);
         SecurityConfig.assertNotRevoked(jwt("service-account", 1), redis);
     }
+
+    private static Jwt jwtWithDevice(String subject, UUID device) {
+        return Jwt.withTokenValue("t").header("alg", "none").subject(subject)
+                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60))
+                .claim("tokenVersion", 1).claim("deviceId", device.toString()).build();
+    }
+
+    @Test
+    void tokenOfRevokedDeviceIsRejectedWhileOtherDeviceStillPasses() {
+        UUID user = UUID.randomUUID(), revoked = UUID.randomUUID(), other = UUID.randomUUID();
+        RedisCacheService redis = mock(RedisCacheService.class);
+        when(redis.isTokenRevoked(user, 1)).thenReturn(false);
+        when(redis.isDeviceRevoked(revoked)).thenReturn(true);
+        when(redis.isDeviceRevoked(other)).thenReturn(false);
+
+        JwtValidationException ex = assertThrows(JwtValidationException.class,
+                () -> SecurityConfig.assertNotRevoked(jwtWithDevice(user.toString(), revoked), redis));
+        assertFalse(ex.getErrors().isEmpty());
+        SecurityConfig.assertNotRevoked(jwtWithDevice(user.toString(), other), redis);
+    }
+
+    @Test
+    void tokenWithoutDeviceClaimIsNotAffectedByDeviceRevocation() {
+        UUID user = UUID.randomUUID();
+        RedisCacheService redis = mock(RedisCacheService.class);
+        when(redis.isTokenRevoked(user, 1)).thenReturn(false);
+        SecurityConfig.assertNotRevoked(jwt(user.toString(), 1), redis);
+    }
 }

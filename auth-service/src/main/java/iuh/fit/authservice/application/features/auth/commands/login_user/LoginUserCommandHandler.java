@@ -116,9 +116,6 @@ public class LoginUserCommandHandler {
             return processMfaLogin(user);
         }
 
-        String accessToken = tokenProvider.generateAccessToken(user);
-        String refreshToken = tokenProvider.generateRefreshToken(user);
-
         String fingerprint = (command.getDeviceFingerprint() != null && !command.getDeviceFingerprint().isBlank())
                 ? command.getDeviceFingerprint().trim()
                 : "default-web-device";
@@ -132,29 +129,37 @@ public class LoginUserCommandHandler {
                     return newDevice;
                 });
 
-        loginUserMapper.updateDevice(command, jwtUtil.hashToken(refreshToken), device);
+        // Lưu thiết bị trước để có mã, rồi mới phát token mang claim deviceId (thu hồi theo thiết bị)
+        loginUserMapper.updateDevice(command, null, device);
+        device = deviceRepository.save(device);
+
+        String accessToken = tokenProvider.generateAccessToken(user, device.getId());
+        String refreshToken = tokenProvider.generateRefreshToken(user, device.getId());
+
+        device.setRefreshTokenHash(jwtUtil.hashToken(refreshToken));
         deviceRepository.save(device);
+        redisCacheService.clearRevokedDevice(device.getId()); // đăng nhập lại trên thiết bị từng bị thu hồi
 
         return loginUserMapper.toLoginUserResult(accessToken, refreshToken, loginUserMapper.toDto(user));
     }
 
     private LoginUserResult processMfaLogin(User user) {
         String mfaToken = UUID.randomUUID().toString();
-        String redisKey = "mfa:token:" + mfaToken;
 
         String code = null;
         if (MfaType.EMAIL.equals(user.getMfaType())) {
             code = otpUtil.generateOtp();
         }
 
-        Map<String, String> mfaData = Map.of(
-                "userId", user.getId().toString(),
-                "mfaType", user.getMfaType().name(),
-                "code", code != null ? code : ""
-        );
-
+        // Phiên MFA tạm thời: đúng các khóa mà MfaVerifyCommandHandler đọc ở bước xác minh
+        // (trước đây lưu dưới khóa "mfa:token:" nên bước xác minh không tìm thấy phiên và luôn báo sai mã).
         try {
-            redisCacheService.set(redisKey, mfaData, otpUtil.getDefaultTtl());
+            Duration ttl = otpUtil.getDefaultTtl();
+            redisCacheService.set("mfa_session:" + mfaToken, user.getId().toString(), ttl);
+            redisCacheService.set("mfa_session_type:" + mfaToken, user.getMfaType().name(), ttl);
+            if (code != null) {
+                redisCacheService.set("mfa_email_otp:" + mfaToken, code, ttl);
+            }
         } catch (Exception e) {
             log.error("Redis Connection Error when processing MFA login: {}", e.getMessage());
             throw new BusinessException(AuthErrorCode.SERVICE_UNAVAILABLE);

@@ -44,4 +44,8 @@ public interface CommentRepository extends BaseJpaRepository<Comment, UUID> {
     /** Các bình luận gần đây (người dùng, bài, thời điểm) làm đầu vào cho lọc cộng tác. */
     @Query("SELECT c.authorId, c.postId, c.createdAt FROM Comment c WHERE c.deleted = false AND c.createdAt >= :since ORDER BY c.createdAt DESC")
     List<Object[]> findRecentInteractionRows(@Param("since") java.time.LocalDateTime since, org.springframework.data.domain.Pageable pageable);
+
+    /** Các bình luận của một người dùng (bài, thời điểm) kể từ mốc `since`; dùng dựng bản đồ sở thích. */
+    @Query("SELECT c.postId, c.createdAt FROM Comment c WHERE c.authorId = :userId AND c.deleted = false AND c.createdAt >= :since")
+    List<Object[]> findUserInteractionRows(@Param("userId") UUID userId, @Param("since") java.time.LocalDateTime since);
 }

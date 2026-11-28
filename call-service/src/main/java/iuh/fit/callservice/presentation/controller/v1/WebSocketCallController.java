@@ -211,9 +211,12 @@ public class WebSocketCallController {
         }
 
         WebRtcSignalType signalType = signalRequest.getSignalType();
+        // Tín hiệu chỉ chủ phòng được gửi: kết thúc, số người xem, OFFER, mời người xem ra, cài đặt phòng
         if (signalType == WebRtcSignalType.END_CALL
                 || signalType == WebRtcSignalType.VIEWER_COUNT
-                || signalType == WebRtcSignalType.OFFER) {
+                || signalType == WebRtcSignalType.OFFER
+                || signalType == WebRtcSignalType.KICK_PARTICIPANT
+                || signalType == WebRtcSignalType.LIVE_SETTINGS) {
             if (postUuid != null) {
                 Optional<CallSession> liveSessionOpt = callSessionRepository.findFirstByConversationIdOrderByStartedAtDesc(postUuid);
                 if (liveSessionOpt.isPresent() && !senderId.equals(liveSessionOpt.get().getHostUserId())) {

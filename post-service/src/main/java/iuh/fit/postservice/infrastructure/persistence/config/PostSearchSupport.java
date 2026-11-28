@@ -91,6 +91,21 @@ public class PostSearchSupport implements ApplicationRunner {
                     )
                 """);
 
+                // Lịch sử tìm kiếm (mỗi câu một dòng): góp vào vector sở thích như một tương tác, xem UserInterestProfile
+                jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS user_search_history (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id UUID NOT NULL,
+                        query_text VARCHAR(255) NOT NULL,
+                        embedding vector(768) NOT NULL,
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                """);
+                jdbcTemplate.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_user_search_history_user_time
+                    ON user_search_history (user_id, created_at DESC)
+                """);
+
                 log.info("pgvector extension and post_embeddings table with HNSW index successfully initialized!");
             } else {
                 log.warn("pgvector extension is not available in PostgreSQL.");

@@ -22,8 +22,8 @@ import java.util.UUID;
  * Mỗi bài người dùng từng tương tác có một vector ngữ nghĩa. Vector sở thích là trung bình có trọng số của các vector đó
  * (đã chuẩn hoá độ dài về 1), nên nó nằm "giữa" các chủ đề người dùng quan tâm:
  * <pre>
- * w(i)       = trọng_số_loại · 0,5 ^ (tuổi_ngày / 30)        // thích 1, bình luận 2, chia sẻ 3; nửa đời 30 ngày
- * profile    = chuẩn_hoá( Σ w(i) · v(i)/‖v(i)‖ / Σ w(i) )
+ * w(i)       = trọng_số_loại · 0,5 ^ (tuổi_ngày / 30)        // thích 1, bình luận 2, chia sẻ 3, tìm kiếm 1; nửa đời 30 ngày
+ * profile    = chuẩn_hoá( Σ w(i) · v(i)/‖v(i)‖ / Σ w(i) )     // v(i): vector của bài, hoặc vector của câu tìm kiếm
  * độ_giống   = cosine(profile, vector bài ứng viên)
  * cộng điểm  = clamp( (độ_giống − 0,45) / 0,55 , 0, 1 )      // 0 nếu độ giống dưới sàn
  * </pre>
@@ -36,6 +36,10 @@ public final class UserInterestProfile {
     public static final int MAX_ITEMS = 50;
     public static final int MIN_ITEMS = 3;
     public static final double SIM_FLOOR = 0.45;
+    /** Trọng số của một lần tìm kiếm, ngang một lượt thích: tìm kiếm là ý định rõ ràng nhưng chưa chắc đã thích nội dung. */
+    public static final double W_SEARCH = 1.0;
+    /** Số câu tìm kiếm gần nhất tối đa đưa vào hồ sơ. */
+    public static final int MAX_SEARCHES = 20;
 
     private UserInterestProfile() {
     }
@@ -44,14 +48,37 @@ public final class UserInterestProfile {
     public record Weighted(UUID postId, double weight) {
     }
 
+    /** Một câu tìm kiếm của người dùng: nội dung, vector ngữ nghĩa của câu, thời điểm tìm. */
+    public record Search(String query, float[] vector, LocalDateTime at) {
+    }
+
+    /** Vector có trọng số không gắn với bài nào (dùng cho câu tìm kiếm). */
+    public record WeightedVector(float[] vector, double weight) {
+    }
+
+    /** Trọng số đã suy giảm của các câu tìm kiếm (tối đa {@link #MAX_SEARCHES} câu gần nhất). */
+    public static List<WeightedVector> searchWeights(Collection<Search> searches, LocalDateTime now) {
+        if (searches == null || searches.isEmpty()) return List.of();
+        return searches.stream()
+                .filter(s -> s.vector() != null && s.vector().length > 0 && s.at() != null)
+                .sorted(Comparator.comparing(Search::at).reversed())
+                .limit(MAX_SEARCHES)
+                .map(s -> new WeightedVector(s.vector(), W_SEARCH * decay(s.at(), now)))
+                .toList();
+    }
+
+    private static double decay(LocalDateTime at, LocalDateTime now) {
+        double ageDays = Math.max(0, Duration.between(at, now).toMinutes() / 1440.0);
+        return Math.pow(0.5, ageDays / HALF_LIFE_DAYS);
+    }
+
     /** Gom tương tác của {@code viewerId} thành danh sách bài có trọng số, lấy tối đa {@link #MAX_ITEMS} bài nặng nhất. */
     public static List<Weighted> aggregate(UUID viewerId, Collection<Interaction> data, LocalDateTime now) {
         if (viewerId == null || data == null) return List.of();
         Map<UUID, Double> byPost = new HashMap<>();
         for (Interaction it : data) {
             if (!viewerId.equals(it.userId()) || it.postId() == null || it.at() == null) continue;
-            double ageDays = Math.max(0, Duration.between(it.at(), now).toMinutes() / 1440.0);
-            byPost.merge(it.postId(), it.weight() * Math.pow(0.5, ageDays / HALF_LIFE_DAYS), Double::sum);
+            byPost.merge(it.postId(), it.weight() * decay(it.at(), now), Double::sum);
         }
         List<Weighted> out = new ArrayList<>(byPost.size());
         byPost.forEach((id, w) -> out.add(new Weighted(id, w)));
@@ -64,11 +91,26 @@ public final class UserInterestProfile {
      * bài có vector thì trả về rỗng.
      */
     public static Optional<float[]> centroid(List<Weighted> items, Map<UUID, float[]> embeddings) {
+        return centroid(items, embeddings, List.of());
+    }
+
+    /**
+     * Như {@link #centroid(List, Map)} nhưng cộng thêm các vector không gắn với bài (câu tìm kiếm). Ngưỡng
+     * {@link #MIN_ITEMS} tính trên tổng số bài có vector và câu tìm kiếm.
+     */
+    public static Optional<float[]> centroid(List<Weighted> items, Map<UUID, float[]> embeddings, List<WeightedVector> extra) {
+        List<WeightedVector> all = new ArrayList<>();
+        for (Weighted w : items) {
+            float[] v = embeddings.get(w.postId());
+            if (v != null) all.add(new WeightedVector(v, w.weight()));
+        }
+        if (extra != null) all.addAll(extra);
+
         double[] sum = null;
         double total = 0;
         int used = 0;
-        for (Weighted w : items) {
-            float[] v = embeddings.get(w.postId());
+        for (WeightedVector w : all) {
+            float[] v = w.vector();
             if (v == null || v.length == 0 || w.weight() <= 0) continue;
             double norm = norm(v);
             if (norm == 0) continue;

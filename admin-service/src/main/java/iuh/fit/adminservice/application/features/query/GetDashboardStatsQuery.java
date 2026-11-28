@@ -23,13 +23,58 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+/**
+ * Số liệu trang tổng quan. Bốn API (stats, growth, interactions, report-categories) được gọi song song mỗi lần mở trang: danh
+ * sách người dùng (tải từ user-service) được dùng chung trong {@link #USERS_TTL_MS} ms thay vì mỗi API tự tải lại; số bài,
+ * bình luận, lượt cảm xúc theo ngày do post-service đếm bằng GROUP BY; báo cáo theo loại đếm bằng một truy vấn gom nhóm.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class GetDashboardStatsQuery {
+    static final long USERS_TTL_MS = 15_000;
+
     private final UserFeignClient userFeignClient;
     private final PostFeignClient postFeignClient;
     private final ReportRepository reportRepository;
+
+    private final Object usersLock = new Object();
+    private volatile List<UserResponse> cachedUsers;
+    private volatile long cachedUsersAt;
+
+    /** Danh sách người dùng dùng chung giữa các API của trang tổng quan trong {@link #USERS_TTL_MS} ms. */
+    private List<UserResponse> users() {
+        List<UserResponse> c = cachedUsers;
+        if (c != null && System.currentTimeMillis() - cachedUsersAt < USERS_TTL_MS) return c;
+        synchronized (usersLock) {
+            if (cachedUsers != null && System.currentTimeMillis() - cachedUsersAt < USERS_TTL_MS) return cachedUsers;
+            List<UserResponse> fresh = userFeignClient.getAllUsers();
+            cachedUsers = fresh != null ? fresh : List.of();
+            cachedUsersAt = System.currentTimeMillis();
+            return cachedUsers;
+        }
+    }
+
+    /** Số bài / bình luận / cảm xúc mới theo ngày (yyyy-MM-dd -> [posts, comments, reactions]); lỗi thì rỗng. */
+    private Map<LocalDate, long[]> dailyActivity(int days) {
+        Map<LocalDate, long[]> out = new HashMap<>();
+        try {
+            List<Map<String, Object>> rows = postFeignClient.getDailyActivity(days);
+            if (rows != null) {
+                for (Map<String, Object> r : rows) {
+                    LocalDate d = parseDate(String.valueOf(r.get("date")));
+                    if (d != null) out.put(d, new long[]{num(r.get("posts")), num(r.get("comments")), num(r.get("reactions"))});
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch daily activity from post-service: {}", e.getMessage());
+        }
+        return out;
+    }
+
+    private static long num(Object o) {
+        return o instanceof Number n ? n.longValue() : 0L;
+    }
 
     private LocalDate parseDate(String str) {
         if (str == null || str.isBlank()) return null;
@@ -56,7 +101,7 @@ public class GetDashboardStatsQuery {
         long onlineUsers = 0;
 
         try {
-            users = userFeignClient.getAllUsers();
+            users = users();
             if (users != null) {
                 totalUsers = users.size();
                 for (UserResponse u : users) {
@@ -74,23 +119,16 @@ public class GetDashboardStatsQuery {
         }
 
         long totalPosts = 0;
-        long newPostsToday = 0;
         try {
-            PostPagedResponse postResp = postFeignClient.getPosts(1, 100);
+            // Chỉ cần tổng số: lấy trang 1 cỡ 1 thay vì tải 100 bài
+            PostPagedResponse postResp = postFeignClient.getPosts(1, 1);
             if (postResp != null) {
                 totalPosts = postResp.getTotalElements();
-                if (postResp.getData() != null) {
-                    for (var post : postResp.getData()) {
-                        LocalDate postDate = parseDate(post.getCreatedAt());
-                        if (postDate != null && postDate.isEqual(today)) {
-                            newPostsToday++;
-                        }
-                    }
-                }
             }
         } catch (Exception e) {
             log.warn("Failed to fetch posts for dashboard stats: {}", e.getMessage());
         }
+        long newPostsToday = dailyActivity(1).getOrDefault(today, new long[3])[0];
 
         long totalReports = 0;
         long pendingReports = 0;
@@ -129,8 +167,10 @@ public class GetDashboardStatsQuery {
 
         List<UserResponse> users = List.of();
         try {
-            users = userFeignClient.getAllUsers();
-        } catch (Exception ignored) {}
+            users = users();
+        } catch (Exception e) {
+            log.warn("Failed to fetch users for growth chart: {}", e.getMessage());
+        }
 
         Map<LocalDate, Long> newUsersPerDay = new HashMap<>();
         for (int i = 6; i >= 0; i--) {
@@ -170,27 +210,12 @@ public class GetDashboardStatsQuery {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM");
         LocalDate today = LocalDate.now();
 
-        Map<LocalDate, Long> postsPerDay = new HashMap<>();
-        for (int i = 6; i >= 0; i--) {
-            postsPerDay.put(today.minusDays(i), 0L);
-        }
-
-        try {
-            PostPagedResponse postResp = postFeignClient.getPosts(1, 100);
-            if (postResp != null && postResp.getData() != null) {
-                for (var post : postResp.getData()) {
-                    LocalDate d = parseDate(post.getCreatedAt());
-                    if (d != null && postsPerDay.containsKey(d)) {
-                        postsPerDay.put(d, postsPerDay.get(d) + 1);
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-
+        // Số thật của từng ngày: bài viết, bình luận, lượt cảm xúc (trước đây bình luận và lượt thích luôn là 0)
+        Map<LocalDate, long[]> activity = dailyActivity(7);
         for (int i = 6; i >= 0; i--) {
             LocalDate d = today.minusDays(i);
-            long posts = postsPerDay.getOrDefault(d, 0L);
-            list.add(new InteractionStatResponse(d.format(formatter), posts, 0L, 0L));
+            long[] c = activity.getOrDefault(d, new long[3]);
+            list.add(new InteractionStatResponse(d.format(formatter), c[0], c[1], c[2]));
         }
         return list;
     }
@@ -203,11 +228,10 @@ public class GetDashboardStatsQuery {
         }
 
         try {
-            List<Report> reports = reportRepository.findAll();
-            for (Report r : reports) {
-                String reason = r.getReason() != null ? r.getReason().name() : "OTHER";
+            for (Object[] row : reportRepository.countGroupByReason()) {
+                String reason = row[0] != null ? row[0].toString() : "OTHER";
                 ReportCategory cat = ReportCategory.fromReason(reason);
-                categoryCount.put(cat, categoryCount.get(cat) + 1);
+                categoryCount.put(cat, categoryCount.get(cat) + ((Number) row[1]).longValue());
             }
         } catch (Exception e) {
             log.warn("Failed to aggregate report categories: {}", e.getMessage());
